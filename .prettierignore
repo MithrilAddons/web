@@ -1,0 +1,7 @@
+package-lock.json
+uv.lock
+.venv/
+.tools/
+frontend/dist/
+.pytest_cache/
+.ruff_cache/

@@ -1,0 +1,40 @@
+{
+  "name": "mithril-web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.15.0 <25"
+  },
+  "scripts": {
+    "dev": "python tools/dev.py",
+    "dev:frontend": "vite --config frontend/vite.config.ts",
+    "build": "tsc --project frontend/tsconfig.json && vite build --config frontend/vite.config.ts",
+    "test": "vitest run --config frontend/vite.config.ts",
+    "lint": "eslint frontend",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check": "python tools/check.py"
+  },
+  "dependencies": {
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "skinview3d": "3.4.2"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@testing-library/react": "16.3.3",
+    "@types/node": "24.13.6",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.1",
+    "eslint": "10.11.0",
+    "globals": "17.12.0",
+    "jsdom": "30.1.1",
+    "prettier": "3.9.9",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.70.1",
+    "vite": "8.3.1",
+    "vitest": "5.0.1"
+  }
+}
