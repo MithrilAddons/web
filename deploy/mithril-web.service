@@ -1,0 +1,31 @@
+[Unit]
+Description=MithrilPF web API
+After=network.target
+
+[Service]
+Type=simple
+User=mithril-web
+Group=mithril-web
+WorkingDirectory=/opt/mithril-web/current
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=MITHRIL_AUTH_DB=/var/lib/mithril-web/auth.sqlite3
+StateDirectory=mithril-web
+StateDirectoryMode=0700
+ExecStart=/opt/mithril-web/current/.venv/bin/python -m uvicorn mithril_web.app:app --app-dir backend --host 127.0.0.1 --port 8780 --no-access-log --no-proxy-headers
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

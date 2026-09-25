@@ -1,0 +1,91 @@
+"""Offline visual harness: synthetic account/skin, loopback only, no auth or Mojang calls."""
+
+import base64
+import json
+import struct
+import zlib
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import urlsplit
+
+DIST = Path(__file__).resolve().parents[1] / "frontend/dist"
+
+
+def synthetic_skin():
+    def chunk(kind, data):
+        return (
+            struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+        )
+
+    rows = bytearray()
+    for y in range(64):
+        rows.append(0)
+        for x in range(64):
+            if y < 16:
+                color = (190, 155, 125, 255) if x < 32 else (0, 0, 0, 0)
+                if y < 8:
+                    color = (65, 47, 40, 255) if x < 32 else (0, 0, 0, 0)
+                if y == 11 and x in (10, 13):
+                    color = (30, 45, 60, 255)
+            elif y < 32:
+                color = (60, 65, 90, 255) if x < 16 else (110, 115, 210, 255)
+            elif y < 48:
+                color = (0, 0, 0, 0)
+            else:
+                color = (
+                    (60, 65, 90, 255)
+                    if 16 <= x < 32
+                    else ((110, 115, 210, 255) if 32 <= x < 48 else (0, 0, 0, 0))
+                )
+            rows.extend(color)
+    image = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 64, 64, 8, 6, 0, 0, 0))
+    image += chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b"")
+    return "data:image/png;base64," + base64.b64encode(image).decode()
+
+
+class Preview(SimpleHTTPRequestHandler):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, directory=str(DIST), **kwargs)
+
+    def do_GET(self):
+        path = urlsplit(self.path).path
+        routes = {
+            "/api/v1/health": {"status": "ok", "service": "mithril-web", "api_version": 1},
+            "/api/v1/auth/session": {
+                "authenticated": True,
+                "user": {"name": "TestPlayer", "uuid": "0123456789abcdef0123456789abcdef"},
+            },
+            "/api/v1/auth/skin": {"image": synthetic_skin(), "model": "default"},
+        }
+        if path in routes:
+            data = json.dumps(routes[path]).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+        elif path in ("/", "/party-finder", "/cookies"):
+            self.path = "/index.html"
+            super().do_GET()
+        else:
+            super().do_GET()
+
+    def end_headers(self):
+        self.send_header(
+            "Content-Security-Policy",
+            "default-src 'none'; script-src 'self'; "
+            "style-src 'self'; img-src 'self' data:; connect-src 'self'",
+        )
+        self.send_header("Cache-Control", "no-store")
+        super().end_headers()
+
+
+if __name__ == "__main__":
+    if not (DIST / "index.html").is_file():
+        raise SystemExit("Run npm run build first.")
+    print("Synthetic preview only: http://127.0.0.1:8770/party-finder — Ctrl+C to stop", flush=True)
+    with ThreadingHTTPServer(("127.0.0.1", 8770), Preview) as server:
+        try:
+            server.serve_forever()
+        except KeyboardInterrupt:
+            pass
