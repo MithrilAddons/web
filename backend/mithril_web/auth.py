@@ -2,7 +2,9 @@
 
 import hashlib
 import http.client
+import ipaddress
 import json
+import math
 import secrets
 import sqlite3
 import threading
@@ -16,6 +18,43 @@ from fastapi import HTTPException
 COOKIE = "__Host-mithril_session"
 DAY = 86400
 CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+
+
+class AuthAttempts:
+    """Bound anonymous work and limiter memory; denied attempts do not extend the window."""
+
+    def __init__(self, per_client, total, clock=time.monotonic):
+        self.per_client, self.total, self.clock = per_client, total, clock
+        self.lock = threading.Lock()
+        self.attempts = deque()
+
+    def check(self, client):
+        # Use the ASGI peer, never a caller-supplied forwarding header. A /64 groups
+        # IPv6 privacy addresses; IPv4-mapped IPv6 shares the IPv4 client's budget.
+        try:
+            address = ipaddress.ip_address(client)
+            if isinstance(address, ipaddress.IPv6Address):
+                address = address.ipv4_mapped or ipaddress.ip_network(f"{address}/64", strict=False)
+            client = str(address)
+        except ValueError:
+            client = "unknown"
+        with self.lock:
+            now = self.clock()
+            while self.attempts and self.attempts[0][0] <= now - 60:
+                self.attempts.popleft()
+            own = [at for at, peer in self.attempts if peer == client]
+            deadlines = []
+            if len(self.attempts) >= self.total:
+                deadlines.append(self.attempts[0][0] + 60)
+            if len(own) >= self.per_client:
+                deadlines.append(own[0] + 60)
+            if deadlines:
+                raise HTTPException(
+                    429,
+                    "Too many authentication attempts. Try again shortly.",
+                    headers={"Retry-After": str(max(1, math.ceil(max(deadlines) - now)))},
+                )
+            self.attempts.append((now, client))
 
 
 class CodeAttempts:

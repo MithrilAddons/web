@@ -51,6 +51,11 @@ timeout; listings alone are compressed. Access logs are disabled.
 Party state is in memory: a restart clears listings/searches, not links or PBs.
 One application process owns this state; do not add workers without shared storage.
 Short-code guessing also has bounded per-client and global limits in this process.
+Anonymous linking has separate in-process challenge/verification budgets and
+reserved lookup capacity for already-linked players; see API.md for limits.
+These are single-process admission controls, not distributed DDoS protection.
+Do not add workers without shared rate-limit state. Existing persistent receipt
+and sync-token capacity limits are unchanged by these abuse controls.
 Deploy the service and nginx config together: nginx overwrites X-Forwarded-For
 with the connection address, and Uvicorn trusts proxy headers only from 127.0.0.1.
 Never bind the backend publicly or broaden that trust to arbitrary senders.

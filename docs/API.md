@@ -27,6 +27,26 @@ through Mojang's `joinServer`. **Only Mojang receives the Minecraft access token
 The reply contains `link_token`, `receipt_token`, `user_code` (`ABCD-EFGH` format)
 and a 300-second lifetime. Existing long-token clients remain supported.
 
+Anonymous challenge creation is limited to 10 requests/client/minute and 300
+globally/minute; anonymous verification has a separate 20/client/minute and
+300/global/minute budget. Limits use sliding 60-second windows and return 429
+with `Retry-After` seconds. Rejections do not extend the window, create tokens,
+consume proofs or call Mojang. Admitted failed verification attempts count too.
+Clients are identified by the trusted ASGI peer address, not claimed Minecraft
+identity or raw forwarding headers. IPv6 addresses share a /64 budget; IPv4-mapped
+IPv6 shares the corresponding IPv4 budget. Addresses are held in bounded process
+memory (expired entries are evicted on the next request), never persisted or
+logged by the limiter. Users behind the same public IP share the allowance.
+
+At most two anonymous and two linked-credential ownership lookups run concurrently.
+Linked verification requires a valid receipt before using its reserved capacity
+and rechecks the receipt after the lookup. Capacity rejection returns 503 with
+`Retry-After: 1` without consuming the challenge; an actual verification attempt
+still consumes it once. Existing party/record operations do not use the anonymous
+budgets. These safeguards bound work, not guarantee access during a distributed
+attack; global-budget exhaustion can temporarily deny new links. Limits reset on
+process restart; the store's existing row caps remain a final bound.
+
 The mod opens `https://mithril.foo/link#<link_token>`. The browser removes the
 fragment, previews the account with `POST auth/preview {token}`, and explicitly
 confirms it with `POST auth/complete {token, remember}`. Confirmation consumes the
