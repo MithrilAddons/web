@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { SkinPreview } from "./SkinPreview";
+import { PlayerCard } from "./PlayerCard";
 
 type User = { uuid: string; name: string };
 type Session = { authenticated: boolean; user?: User };
@@ -18,6 +19,8 @@ async function request<T>(path: string, body?: object): Promise<T> {
 }
 
 export function Account() {
+  const [cardOpen, setCardOpen] = useState(false);
+  const nameButton = useRef<HTMLButtonElement>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [error, setError] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -55,11 +58,28 @@ export function Account() {
               {session.user.name.slice(0, 1)}
             </span>
             <div>
-              <span className="account-name">{session.user.name}</span>
+              <button
+                ref={nameButton}
+                className="account-name"
+                aria-haspopup="dialog"
+                onClick={() => setCardOpen(true)}
+              >
+                {session.user.name}
+              </button>
               <span className="quiet-label">Minecraft account</span>
             </div>
           </div>
           <SkinPreview key={session.user.uuid} name={session.user.name} />
+          {cardOpen && (
+            <PlayerCard
+              key={`card-${session.user.uuid}`}
+              user={session.user}
+              onClose={() => {
+                setCardOpen(false);
+                nameButton.current?.focus();
+              }}
+            />
+          )}
           <button
             className="secondary"
             disabled={busy}
@@ -181,7 +201,7 @@ export function CookiePolicy() {
     <article>
       <title>Cookie policy · Mithril</title>
       <h1>Cookie policy</h1>
-      <p>Updated 25 September 2026.</p>
+      <p>Updated 26 September 2026.</p>
       <p>
         Browsing Mithril without signing in sets no cookies. We do not use
         analytics, advertising cookies, or third-party trackers.
@@ -228,6 +248,11 @@ export function CookiePolicy() {
         Your skin preview is fetched by our server from Mojang and Minecraft’s
         texture servers and cached temporarily in memory. Your browser contacts
         only Mithril for this preview; no extra cookie is used.
+      </p>
+      <p>
+        Opening your player card fetches your selected SkyBlock profile from
+        Hypixel. Dungeon stats are cached in server memory for up to five
+        minutes; no extra cookie is used.
       </p>
     </article>
   );

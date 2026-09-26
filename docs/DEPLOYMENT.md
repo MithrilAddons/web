@@ -1,47 +1,50 @@
-# Deployment foundation
+# Deployment
 
-Target: existing Hetzner server, alongside (not replacing) Atlas and the development
-relay. Public host: `https://mithril.foo`; `www` redirects to it. `.foo` requires
-working HTTPS in browsers. DNS is managed at Porkbun: root A points to the server,
-`www` CNAME points to `mithril.foo`. There is no wildcard or AAAA record.
+Production serves `https://mithril.foo`; www redirects to the root.
+The .foo domain requires HTTPS. Serve the frontend and API from one origin,
+with the backend bound to loopback behind nginx. Keep other hosted services unchanged.
 
-This deployment exposes the website, health, and versioned account-linking API.
-It does not expose matching or accept gameplay records yet.
+## Release layout
 
-## Manual release layout
+- `/opt/mithril-web/releases/<release>/`: root-owned source, frontend build and venv.
+- `/opt/mithril-web/current`: active release symlink.
+- `deploy/mithril-web.service`: unprivileged mithril-web service, loopback port 8780.
+- `/var/lib/mithril-web/`: private persistent auth.sqlite3.
+- `/etc/nginx/sites-available/mithril.foo`: installed deploy/nginx.conf.
+- `/var/www/mithril-web-acme`: certificate challenge webroot.
 
-- `/opt/mithril-web/releases/<release>/`: root-owned code, built frontend, and Python venv.
-- `/opt/mithril-web/current`: symlink to the selected release.
-- Dedicated unprivileged `mithril-web` user runs `deploy/mithril-web.service`.
-- API listens only on `127.0.0.1:8780`; nginx exposes health and `/api/v1/auth/`.
-- `StateDirectory=mithril-web` owns `/var/lib/mithril-web/auth.sqlite3` with mode 0700
-  on its parent. It persists across release changes and service restarts. Never
-  copy it into source control, releases, fixtures, or public artifacts.
-- Authentication requests are limited by nginx to 30/minute/IP with a burst of 15;
-  bodies are limited to 4 KiB. No access logs, cross-origin API access, or redirects
-  from Mojang verification requests. Do not expose the backend port publicly.
-- `/etc/nginx/sites-available/mithril.foo`: `deploy/nginx.conf`, linked into sites-enabled.
-- `/var/www/mithril-web-acme`: webroot for certificate challenges.
-- Certbot certificate named `mithril.foo`, covering both root and www.
+The service reads `HYPIXEL_API_KEY` from a root-only environment file at
+`/etc/mithril-web/hypixel.env`, loaded through its systemd drop-in. The file must
+be mode 0600 inside a 0700 directory. Never print or package it. Preserve the file
+and drop-in across releases. Development keys are temporary; production needs an
+approved application key. API credentials never reach browsers or mods.
 
-Before deployment run all checks. Build the frontend locally, export production
-Python dependencies with `uv export --locked --no-dev --no-emit-project`, and install
-that export in the release venv using pip with `--require-hashes`. Do not upload
-local virtual environments, credentials, node_modules, or the Git directory.
+## Deploy and roll back
 
-For first certificate issuance use `deploy/nginx-bootstrap.conf`, verify `nginx -t`,
-then reload nginx. Obtain the certificate using Certbot's webroot authenticator
-and the existing server account. Replace the bootstrap with the final TLS config,
-verify `nginx -t`, and reload. Certificate renewal needs a deploy hook to reload nginx.
-Never restart or rewrite the other hosts as part of this setup.
+1. Run all checks and build the frontend. Export production dependencies with
+   `uv export --locked --no-dev --no-emit-project`.
+2. Package only backend source, built frontend and deployment files. Exclude
+   local environments, Git, credentials, databases, node_modules and user records.
+3. Create a new release and venv; install the export using pip `--require-hashes`.
+   Verify backend imports as the service user without touching live user data.
+4. Back up the persistent databases using SQLite's backup API and keep backups
+   root-only. Preserve the previous release and any nginx configuration changed.
+5. Switch the current symlink atomically, restart only mithril-web and verify
+   HTTPS, health, authentication boundaries and served asset hashes.
+6. Roll back by restoring the previous symlink and restarting the service.
+   Keep persistent data in place; schema changes require a separate migration plan.
 
-Release changes are manual: create a new release, point current to it, restart only
-mithril-web, and verify HTTPS and health. Keep the previous release for rollback;
-point current back and restart the service if necessary. Leave the auth database
-in place when rolling back. The initial schema only creates an isolated auth table;
-future schema changes require a migration/backup policy. Backups contain account
-data and need the same access restrictions and a separately defined retention policy.
+No CI job deploys. Never restore a stale database backup as a routine code rollback.
+If nginx changes, run `nginx -t` before reload and check the existing hosts too.
+Certificates cover root/www; renewal must validate and reload nginx. Use the
+bootstrap config only for initial certificate issuance.
 
-Check the root and www HTTPS responses, unknown API routes, certificate renewal,
-and the existing Atlas/relay hosts after nginx changes. Source/unit tests alone do
-not prove deployment health. CI has no deployment credentials and does not publish.
+## Operational boundaries
+
+API responses are not publicly cached. Authentication has an nginx limit of
+30 requests/minute/IP (burst 15).
+Bodies are limited to 4 KiB. Access logs are disabled.
+
+Keep auth databases and backups outside releases, source control and test
+fixtures. Account-data retention/deletion policy and multi-account/load testing
+must be completed before broad distribution. See [API.md](API.md).

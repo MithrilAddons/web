@@ -9,6 +9,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 DIST = Path(__file__).resolve().parents[1] / "frontend/dist"
+CARD = DIST.parents[1] / "contracts/player-card-v1.json"
 
 
 def synthetic_skin():
@@ -56,6 +57,7 @@ class Preview(SimpleHTTPRequestHandler):
                 "user": {"name": "TestPlayer", "uuid": "0123456789abcdef0123456789abcdef"},
             },
             "/api/v1/auth/skin": {"image": synthetic_skin(), "model": "default"},
+            "/api/v1/auth/player-card": json.loads(CARD.read_text(encoding="utf-8")),
         }
         if path in routes:
             data = json.dumps(routes[path]).encode()
