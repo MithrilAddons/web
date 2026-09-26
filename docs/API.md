@@ -28,12 +28,34 @@ The mod stores only the status receipt per UUID. `POST auth/link-status {token}`
 returns `pending`, `expired` or `linked` with the user identity. A receipt cannot
 log in, renew a browser session or authorize uploads/party actions by itself.
 
+## Mod record syncing
+
+`POST auth/sync-challenge` accepts `{version, uuid, name, receipt_token}` and
+requires a linked receipt for that UUID. It returns a fresh 60-second Mojang
+challenge. `POST auth/sync-verify {challenge_id, receipt_token}` consumes it and
+returns `{version, user, sync_token, expires_in_seconds: 900}` after ownership
+verification. Use `Authorization: Bearer <sync_token>` for uploads.
+
+The credential cannot log into the browser. Every upload rechecks the parent
+browser session: logout, replacement or expiry stops access. Mod routes reject
+Origin headers, but that is not a substitute for authentication. Tokens are
+hashed on the server and held only in mod memory. Linking/syncing serialize
+ownership proofs in the client; receipts alone cannot authorize uploads.
+
+`POST auth/sync-records` accepts `contracts/mod-records-v1.json`: at most four
+unique `(floor, kind)` pairs, F7/M7 and `solo_clear`/`terminals`, positive real
+milliseconds and ticks, bounded at two hours. The backend transaction merges
+independent minimums; repeated or slower uploads cannot overwrite bests. These
+are client-reported records, not proof of gameplay. Room records/full run history
+are not uploaded. Logout does not delete records. Records persist in
+`records.sqlite3` beside auth storage.
+
 ## Player card
 
 `GET auth/player-card` requires a browser session and derives identity from it.
 It returns selected-profile Catacombs level, secrets, highest recorded magical
 power, and S+ PBs for F1–F7/M1–M7. Missing values are null, not zero.
-The mod-record fields are reserved and empty until syncing is implemented.
+Account-wide mod records are shown separately; SS is not collected yet.
 See the shared synthetic `contracts/player-card-v1.json` fixture.
 
 `GET auth/skin` serves a validated Mojang skin for the signed-in account. Arbitrary

@@ -1,4 +1,4 @@
-"""Same-origin web API. Authentication does not authorize gameplay records yet."""
+"""Same-origin web API with separately scoped, ownership-proven mod submissions."""
 
 import asyncio
 import contextlib
@@ -18,6 +18,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .auth import COOKIE, DAY, AuthStore, digest, mojang_profile
 from .player_card import PlayerCardCache
+from .records import RecordStore, Submission, with_mod_records
 from .skins import SkinCache
 
 
@@ -43,6 +44,14 @@ class Complete(Link):
     remember: bool
 
 
+class SyncChallenge(Challenge):
+    receipt_token: str = Field(pattern=r"^[A-Za-z0-9_-]{43}$")
+
+
+class SyncProof(Proof):
+    receipt_token: str = Field(pattern=r"^[A-Za-z0-9_-]{43}$")
+
+
 def identity(row):
     return {"uuid": row["uuid"], "name": row["name"]}
 
@@ -54,31 +63,38 @@ class Health(BaseModel):
 
 
 def create_app(
-    *, database=None, profile_lookup=mojang_profile, clock=None, skin_loader=None, card_loader=None
+    *,
+    database=None,
+    profile_lookup=mojang_profile,
+    clock=None,
+    skin_loader=None,
+    card_loader=None,
 ) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app):
         path = database or Path(os.environ.get("MITHRIL_AUTH_DB", ".local/auth.sqlite3"))
         app.state.auth = AuthStore(Path(path), **({"clock": clock} if clock else {}))
+        app.state.records = RecordStore(Path(path).with_name("records.sqlite3"))
 
         async def cleanup():
             while True:
                 await asyncio.sleep(3600)
                 app.state.auth.cleanup()
 
-        task = asyncio.create_task(cleanup())
+        tasks = [asyncio.create_task(cleanup())]
         try:
             yield
         finally:
-            task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await task
+            for task in tasks:
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
             app.state.auth.close()
+            app.state.records.close()
 
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
     verification_slots = threading.BoundedSemaphore(4)
     skins = SkinCache(**({"loader": skin_loader} if skin_loader else {}))
-
     cards = PlayerCardCache(**({"loader": card_loader} if card_loader else {}))
 
     @app.middleware("http")
@@ -135,11 +151,9 @@ def create_app(
             "expires_in_seconds": 60,
         }
 
-    @app.post("/api/v1/auth/verify")
-    def verify(body: Proof, request: Request):
-        mod(request)
+    def verify_ownership(request, challenge_id, kind):
         store = request.app.state.auth
-        row = store.get(body.challenge_id, "challenge", consume=True)
+        row = store.get(challenge_id, kind, consume=True)
         if not row:
             raise HTTPException(410, "Verification expired. Try again.")
         if not verification_slots.acquire(blocking=False):
@@ -159,14 +173,71 @@ def create_app(
             verification_slots.release()
         if not valid:
             raise HTTPException(401, "Minecraft ownership could not be verified. Try again.")
-        token = store.issue("link", row["uuid"], profile["name"], 300)
-        receipt = store.issue("receipt", row["uuid"], profile["name"], 300, server_id=digest(token))
+        return {**row, "name": profile["name"]}
+
+    @app.post("/api/v1/auth/verify")
+    def verify(body: Proof, request: Request):
+        mod(request)
+        store = request.app.state.auth
+        row = verify_ownership(request, body.challenge_id, "challenge")
+        token = store.issue("link", row["uuid"], row["name"], 300)
+        receipt = store.issue("receipt", row["uuid"], row["name"], 300, server_id=digest(token))
         return {
             "version": 1,
             "link_token": token,
             "receipt_token": receipt,
             "expires_in_seconds": 300,
         }
+
+    @app.post("/api/v1/auth/sync-challenge")
+    def sync_challenge(body: SyncChallenge, request: Request):
+        return scoped_challenge(body, request, "sync")
+
+    def scoped_challenge(body, request, scope):
+        mod(request)
+        store = request.app.state.auth
+        session = store.linked_receipt(body.receipt_token)
+        if not session or session["uuid"] != body.uuid:
+            raise HTTPException(401, "Link your browser first")
+        server_id = secrets.token_hex(20)[1:]
+        token = store.issue(f"{scope}_challenge", body.uuid, body.name, 60, server_id)
+        return {
+            "version": 1,
+            "challenge_id": token,
+            "server_id": server_id,
+            "expires_in_seconds": 60,
+        }
+
+    @app.post("/api/v1/auth/sync-verify")
+    def sync_verify(body: SyncProof, request: Request):
+        return scoped_verify(body, request, "sync", 900)
+
+    def scoped_verify(body, request, scope, lifetime):
+        mod(request)
+        store = request.app.state.auth
+        row = verify_ownership(request, body.challenge_id, f"{scope}_challenge")
+        session = store.linked_receipt(body.receipt_token)
+        if not session or session["uuid"] != row["uuid"]:
+            raise HTTPException(401, "Link your browser first")
+        token = store.issue(scope, row["uuid"], row["name"], lifetime, server_id=session["token"])
+        return {
+            "version": 1,
+            f"{scope}_token": token,
+            "expires_in_seconds": lifetime,
+            "user": identity(row),
+        }
+
+    @app.post("/api/v1/auth/sync-records")
+    def sync_records(body: Submission, request: Request):
+        mod(request)
+        authorization = request.headers.get("authorization", "")
+        if not re.fullmatch(r"Bearer [A-Za-z0-9_-]{43}", authorization):
+            raise HTTPException(401, "Mod authentication required")
+        user = request.app.state.auth.sync_identity(authorization[7:])
+        if not user:
+            raise HTTPException(401, "Mod authentication expired")
+        request.app.state.records.merge(user["uuid"], body.records)
+        return {"version": 1, "user": user, "accepted": len(body.records)}
 
     @app.post("/api/v1/auth/link-status")
     def link_status(body: Link, request: Request):
@@ -235,6 +306,7 @@ def create_app(
         summary = cards.get(row["uuid"])
         if summary is None:
             raise HTTPException(503, "Player stats unavailable. Try again shortly.")
+        summary = with_mod_records(summary, request.app.state.records.read(row["uuid"]))
         return {"version": 1, "user": identity(row), **summary}
 
     app.add_middleware(

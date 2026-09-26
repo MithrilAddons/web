@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "records": [
+    { "floor": "F7", "kind": "solo_clear", "real_ms": 300000, "ticks": 5800 },
+    { "floor": "F7", "kind": "terminals", "real_ms": 40000, "ticks": 780 },
+    { "floor": "M7", "kind": "solo_clear", "real_ms": 320000, "ticks": 6200 },
+    { "floor": "M7", "kind": "terminals", "real_ms": 42000, "ticks": 800 }
+  ]
+}
