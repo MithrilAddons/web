@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .auth import COOKIE, DAY, AuthStore, digest, mojang_profile
+from .player_card import PlayerCardCache
 from .skins import SkinCache
 
 
@@ -53,7 +54,7 @@ class Health(BaseModel):
 
 
 def create_app(
-    *, database=None, profile_lookup=mojang_profile, clock=None, skin_loader=None
+    *, database=None, profile_lookup=mojang_profile, clock=None, skin_loader=None, card_loader=None
 ) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app):
@@ -77,6 +78,8 @@ def create_app(
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
     verification_slots = threading.BoundedSemaphore(4)
     skins = SkinCache(**({"loader": skin_loader} if skin_loader else {}))
+
+    cards = PlayerCardCache(**({"loader": card_loader} if card_loader else {}))
 
     @app.middleware("http")
     async def limits(request, call_next):
@@ -223,6 +226,16 @@ def create_app(
         request.app.state.auth.revoke(request.cookies.get(COOKIE, ""))
         response.delete_cookie(COOKIE, secure=True, httponly=True, samesite="strict", path="/")
         return {"authenticated": False}
+
+    @app.get("/api/v1/auth/player-card")
+    def player_card(request: Request):
+        row = request.app.state.auth.get(request.cookies.get(COOKIE, ""), "session")
+        if not row:
+            raise HTTPException(401, "Sign in first")
+        summary = cards.get(row["uuid"])
+        if summary is None:
+            raise HTTPException(503, "Player stats unavailable. Try again shortly.")
+        return {"version": 1, "user": identity(row), **summary}
 
     app.add_middleware(
         TrustedHostMiddleware,

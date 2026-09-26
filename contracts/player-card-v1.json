@@ -1,0 +1,127 @@
+{
+  "version": 1,
+  "user": {
+    "uuid": "0123456789abcdef0123456789abcdef",
+    "name": "TestPlayer"
+  },
+  "profile": {
+    "id": "11111111111111111111111111111111",
+    "name": "Apple"
+  },
+  "catacombs": {
+    "level": 42.5,
+    "experience": 97559640
+  },
+  "secrets": 12345,
+  "magical_power": 1000,
+  "magical_power_basis": "highest_recorded",
+  "class_levels": {
+    "archer": null,
+    "berserk": null,
+    "healer": null,
+    "mage": null,
+    "tank": null
+  },
+  "mod_records_available": false,
+  "floors": [
+    {
+      "floor": "F1",
+      "s_plus_ms": null,
+      "solo_clear_ms": null,
+      "ss_ms": null,
+      "terminals_ms": null
+    },
+    {
+      "floor": "F2",
+      "s_plus_ms": null,
+      "solo_clear_ms": null,
+      "ss_ms": null,
+      "terminals_ms": null
+    },
+    {
+      "floor": "F3",
+      "s_plus_ms": null,
+      "solo_clear_ms": null,
+      "ss_ms": null,
+      "terminals_ms": null
+    },
+    {
+      "floor": "F4",
+      "s_plus_ms": null,
+      "solo_clear_ms": null,
+      "ss_ms": null,
+      "terminals_ms": null
+    },
+    {
+      "floor": "F5",
+      "s_plus_ms": null,
+      "solo_clear_ms": null,
+      "ss_ms": null,
+      "terminals_ms": null
+    },
+    {
+      "floor": "F6",
+      "s_plus_ms": null,
+      "solo_clear_ms": null,
+      "ss_ms": null,
+      "terminals_ms": null
+    },
+    {
+      "floor": "F7",
+      "s_plus_ms": 260000,
+      "solo_clear_ms": null,
+      "ss_ms": null,
+      "terminals_ms": null
+    },
+    {
+      "floor": "M1",
+      "s_plus_ms": null,
+      "solo_clear_ms": null,
+      "ss_ms": null,
+      "terminals_ms": null
+    },
+    {
+      "floor": "M2",
+      "s_plus_ms": null,
+      "solo_clear_ms": null,
+      "ss_ms": null,
+      "terminals_ms": null
+    },
+    {
+      "floor": "M3",
+      "s_plus_ms": null,
+      "solo_clear_ms": null,
+      "ss_ms": null,
+      "terminals_ms": null
+    },
+    {
+      "floor": "M4",
+      "s_plus_ms": null,
+      "solo_clear_ms": null,
+      "ss_ms": null,
+      "terminals_ms": null
+    },
+    {
+      "floor": "M5",
+      "s_plus_ms": null,
+      "solo_clear_ms": null,
+      "ss_ms": null,
+      "terminals_ms": null
+    },
+    {
+      "floor": "M6",
+      "s_plus_ms": null,
+      "solo_clear_ms": null,
+      "ss_ms": null,
+      "terminals_ms": null
+    },
+    {
+      "floor": "M7",
+      "s_plus_ms": 290000,
+      "solo_clear_ms": null,
+      "ss_ms": null,
+      "terminals_ms": null
+    }
+  ],
+  "fetched_at": 1800000000
+}
