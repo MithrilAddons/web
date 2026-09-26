@@ -43,7 +43,18 @@ commits and PRs. Preserve protocol compatibility and optional-mod independence.
 Do not put secrets, account data or runtime files in fixtures or commits.
 Only this guide, the API contract and deployment guide are public documentation;
 working plans, design notes, agent files and verification journals stay local.
-No project license has been selected; preserve all third-party notices.
+Original MithrilPF web code is copyright (c) 2026 Timofei Gerasimov and
+contributors, licensed under [GNU AGPL version 3 only](../LICENSE)
+(SPDX: AGPL-3.0-only), without warranty. Contributions must use the same license;
+only submit code you have permission to contribute. Third-party components
+retain their own licenses; preserve their notices, including the bundled
+skin-viewer notices in frontend/public/skin-viewer-licenses.txt.
+
+The shared footer links to the public source repository and license. Deployments
+must make the corresponding frontend/backend source, dependency lockfiles and
+build/deployment instructions for the running version available to users.
+Publish source changes before deployment; a fork must update the source link to
+its own corresponding source. Never include credentials or user databases.
 
 ## Manual verification
 

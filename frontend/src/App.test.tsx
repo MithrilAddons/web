@@ -127,6 +127,24 @@ it("keeps the cookie policy available in the shared page layout", () => {
   expect(screen.getByText("__Host-mithril_session")).toBeTruthy();
 });
 
+it.each(["/", "/party-finder", "/link", "/cookies", "/not-a-page"])(
+  "offers source and license links on %s",
+  (path) => {
+    window.history.replaceState(null, "", path);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(() => new Promise(() => {})),
+    );
+    render(<App />);
+    expect(
+      screen.getByRole("link", { name: "Source code" }).getAttribute("href"),
+    ).toBe("https://github.com/MithrilAddons/web");
+    expect(
+      screen.getByRole("link", { name: "AGPL-3.0" }).getAttribute("href"),
+    ).toBe("https://github.com/MithrilAddons/web/blob/main/LICENSE");
+  },
+);
+
 it("shows an unavailable state without leaking an error body", async () => {
   vi.stubGlobal(
     "fetch",

@@ -21,7 +21,10 @@ approved application key. API credentials never reach browsers or mods.
 
 ## Deploy and roll back
 
-1. Run all checks and build the frontend. Export production dependencies with
+1. Publish the corresponding source for the version being deployed, including
+   LICENSE, lockfiles and build/deployment instructions. Keep the shared footer's
+   source link accurate (forks must update it). Do not deploy unpublished changes.
+   Run all checks and build the frontend. Export production dependencies with
    `uv export --locked --no-dev --no-emit-project`.
 2. Package only backend source, built frontend and deployment files. Exclude
    local environments, Git, credentials, databases, node_modules and user records.
