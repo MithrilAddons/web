@@ -106,6 +106,10 @@ export function App() {
       <footer className="site-footer">
         <p>Not affiliated with Hypixel or Mojang.</p>
         <a href="/cookies">Cookies</a>
+        <a href="https://github.com/MithrilAddons/web">Source code</a>
+        <a href="https://github.com/MithrilAddons/web/blob/main/LICENSE">
+          AGPL-3.0
+        </a>
       </footer>
     </>
   );

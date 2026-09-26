@@ -2,6 +2,8 @@
 name = "mithril-web"
 version = "0.0.0"
 description = "MithrilPF website backend foundation"
+license = "AGPL-3.0-only"
+license-files = ["LICENSE"]
 requires-python = ">=3.12,<3.15"
 dependencies = ["fastapi==0.141.1", "uvicorn==0.54.0"]
 
