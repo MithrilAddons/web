@@ -80,7 +80,7 @@ def catacombs_level(experience):
         if remaining < required:
             return level + remaining / required
         remaining -= required
-    return 50.0
+    return 50.0 + remaining / 200_000_000
 
 
 def object_value(value):

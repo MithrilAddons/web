@@ -6,12 +6,45 @@ import {
   type PlayerCardData,
 } from "./playerCardApi";
 
+export function PartyPlayerName({
+  user,
+}: {
+  user: { uuid: string; name: string };
+}) {
+  const [open, setOpen] = useState(false);
+  const button = useRef<HTMLButtonElement>(null);
+  return (
+    <>
+      <button
+        ref={button}
+        className="party-player-name"
+        aria-haspopup="dialog"
+        onClick={() => setOpen(true)}
+      >
+        {user.name}
+      </button>
+      {open && (
+        <PlayerCard
+          user={user}
+          partyMember
+          onClose={() => {
+            setOpen(false);
+            button.current?.focus();
+          }}
+        />
+      )}
+    </>
+  );
+}
+
 export function PlayerCard({
   user,
   onClose,
+  partyMember = false,
 }: {
   user: { uuid: string; name: string };
   onClose: () => void;
+  partyMember?: boolean;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [data, setData] = useState<PlayerCardData | null>(null);
@@ -36,7 +69,7 @@ export function PlayerCard({
     const controller = new AbortController();
     let active = true;
     const deadline = setTimeout(() => controller.abort(), 10000);
-    void getPlayerCard(user.uuid, controller.signal)
+    void getPlayerCard(user.uuid, controller.signal, partyMember)
       .then(
         (value) => {
           if (active) setData(value);
@@ -57,7 +90,7 @@ export function PlayerCard({
       controller.abort();
       clearTimeout(deadline);
     };
-  }, [user.uuid, attempt]);
+  }, [user.uuid, attempt, partyMember]);
   const record = data?.floors.find((row) => row.floor === mode);
   const count = (value: number | null) =>
     value === null ? "—" : value.toLocaleString();

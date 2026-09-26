@@ -64,42 +64,41 @@ it("does not show party finder at unknown paths", () => {
   expect(fetcher).not.toHaveBeenCalled();
 });
 
-it("shows the workspace without suggesting that party matching is already live", async () => {
+it("asks signed-out visitors to link before browsing parties", async () => {
   vi.stubGlobal(
     "fetch",
-    vi
-      .fn()
-      .mockImplementation((url: string) =>
-        Promise.resolve(
-          new Response(
-            JSON.stringify(
-              url.endsWith("/health") ? fixture : { authenticated: false },
+    vi.fn().mockImplementation((url: string) =>
+      Promise.resolve(
+        url.endsWith("/party/state")
+          ? new Response(JSON.stringify({ detail: "Sign in first" }), {
+              status: 401,
+            })
+          : new Response(
+              JSON.stringify(
+                url.endsWith("/health") ? fixture : { authenticated: false },
+              ),
             ),
-          ),
-        ),
       ),
+    ),
   );
   render(<App />);
-  expect(screen.getByText("In development.")).toBeTruthy();
-  expect(screen.queryByText("Dungeons")).toBeNull();
   expect(
     screen.getByRole("heading", { name: "Dungeon party finder" }),
   ).toBeTruthy();
   expect(await screen.findByText("Service online")).toBeTruthy();
+  expect(
+    await screen.findByText(
+      "Link your Minecraft account to browse and join parties.",
+    ),
+  ).toBeTruthy();
   expect(screen.getByRole("region", { name: "Parties" })).toBeTruthy();
   expect(screen.getByRole("heading", { name: "Your account" })).toBeTruthy();
-  expect(
-    screen.getByText("Party browsing and matching are coming next."),
-  ).toBeTruthy();
   expect(
     screen
       .getByRole("link", { name: "Party finder" })
       .getAttribute("aria-current"),
   ).toBe("page");
-  expect(
-    screen.queryByText(/a party worth|foundation is in place|find your group/i),
-  ).toBeNull();
-  expect(screen.queryByRole("button", { name: /sign in|search/i })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Start looking" })).toBeNull();
 });
 
 it("keeps a working primary destination and keyboard skip link on the home page", () => {

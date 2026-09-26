@@ -7,6 +7,7 @@ import os
 import re
 import secrets
 import threading
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
@@ -14,10 +15,13 @@ from uuid import UUID
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
+from starlette.concurrency import run_in_threadpool
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from .auth import COOKIE, DAY, AuthStore, digest, mojang_profile
-from .player_card import PlayerCardCache
+from .auth import COOKIE, DAY, AuthStore, CodeAttempts, digest, mojang_profile
+from .parties import Finder
+from .party_api import WAIT, StatsService, mojang_uuid, register
+from .player_card import PlayerCardCache, fetch_card
 from .records import RecordStore, Submission, with_mod_records
 from .skins import SkinCache
 
@@ -40,7 +44,13 @@ class Link(StrictModel):
     token: str = Field(pattern=r"^[A-Za-z0-9_-]{43}$")
 
 
-class Complete(Link):
+class BrowserLink(StrictModel):
+    token: str = Field(
+        pattern=r"^(?:[A-Za-z0-9_-]{43}|[A-HJ-NP-Za-hj-np-z2-9]{4}-?[A-HJ-NP-Za-hj-np-z2-9]{4})$"
+    )
+
+
+class Complete(BrowserLink):
     remember: bool
 
 
@@ -69,6 +79,8 @@ def create_app(
     clock=None,
     skin_loader=None,
     card_loader=None,
+    party_wait=WAIT,
+    name_lookup=mojang_uuid,
 ) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app):
@@ -81,7 +93,7 @@ def create_app(
                 await asyncio.sleep(3600)
                 app.state.auth.cleanup()
 
-        tasks = [asyncio.create_task(cleanup())]
+        tasks = [asyncio.create_task(cleanup()), asyncio.create_task(sweep_parties())]
         try:
             yield
         finally:
@@ -94,12 +106,13 @@ def create_app(
 
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
     verification_slots = threading.BoundedSemaphore(4)
+    code_attempts = CodeAttempts(clock=clock or time.monotonic)
     skins = SkinCache(**({"loader": skin_loader} if skin_loader else {}))
     cards = PlayerCardCache(**({"loader": card_loader} if card_loader else {}))
 
     @app.middleware("http")
     async def limits(request, call_next):
-        if request.url.path.startswith("/api/v1/auth/"):
+        if request.url.path.startswith(("/api/v1/auth/", "/api/v1/party/")):
             # Nginx also bounds streaming requests; do not accept chunked auth bodies.
             length = request.headers.get("content-length", "0")
             if (
@@ -123,7 +136,9 @@ def create_app(
             raise HTTPException(403, "Use the Minecraft mod")
 
     def require_link(request, token, consume=False):
-        row = request.app.state.auth.get(token, "link", consume)
+        if len(token) != 43:
+            code_attempts.check(request.client.host if request.client else "unknown")
+        row = request.app.state.auth.get_link(token, consume)
         if not row:
             raise HTTPException(410, "Link expired or already used. Create another in Minecraft.")
         return row
@@ -182,16 +197,22 @@ def create_app(
         row = verify_ownership(request, body.challenge_id, "challenge")
         token = store.issue("link", row["uuid"], row["name"], 300)
         receipt = store.issue("receipt", row["uuid"], row["name"], 300, server_id=digest(token))
+        code = store.issue_code(token)
         return {
             "version": 1,
             "link_token": token,
             "receipt_token": receipt,
+            "user_code": code,
             "expires_in_seconds": 300,
         }
 
     @app.post("/api/v1/auth/sync-challenge")
     def sync_challenge(body: SyncChallenge, request: Request):
         return scoped_challenge(body, request, "sync")
+
+    @app.post("/api/v1/auth/party-challenge")
+    def party_challenge(body: SyncChallenge, request: Request):
+        return scoped_challenge(body, request, "party")
 
     def scoped_challenge(body, request, scope):
         mod(request)
@@ -211,6 +232,10 @@ def create_app(
     @app.post("/api/v1/auth/sync-verify")
     def sync_verify(body: SyncProof, request: Request):
         return scoped_verify(body, request, "sync", 900)
+
+    @app.post("/api/v1/auth/party-verify")
+    def party_verify(body: SyncProof, request: Request):
+        return scoped_verify(body, request, "party", 30 * DAY)
 
     def scoped_verify(body, request, scope, lifetime):
         mod(request)
@@ -245,7 +270,7 @@ def create_app(
         return request.app.state.auth.receipt_status(body.token)
 
     @app.post("/api/v1/auth/preview")
-    def preview(body: Link, request: Request):
+    def preview(body: BrowserLink, request: Request):
         browser(request)
         return identity(require_link(request, body.token))
 
@@ -262,7 +287,7 @@ def create_app(
             remembered=body.remember,
         )
         store.revoke(request.cookies.get(COOKIE, ""))
-        store.confirm_receipts(body.token, token)
+        store.confirm_link_hash(row["token"], token)
         set_cookie(response, token, body.remember)
         return {"authenticated": True, "user": identity(row)}
 
@@ -308,6 +333,36 @@ def create_app(
             raise HTTPException(503, "Player stats unavailable. Try again shortly.")
         summary = with_mod_records(summary, request.app.state.records.read(row["uuid"]))
         return {"version": 1, "user": identity(row), **summary}
+
+    @app.get("/api/v1/party/player-card/{uuid}")
+    async def party_player_card(uuid: str, request: Request):
+        row = request.app.state.auth.get(request.cookies.get(COOKIE, ""), "session")
+        if not row:
+            raise HTTPException(401, "Sign in first")
+        finder = request.app.state.finder
+        player = finder.players.get(uuid)
+        party = finder.parties.get(player.party) if player else None
+        if not party or (
+            row["uuid"] not in party.members()
+            and (party.paused or party.full_since is not None or row["uuid"] in party.blocked)
+        ):
+            raise HTTPException(404, "Player not in a visible party")
+        user = {"uuid": player.uuid, "name": player.name}
+        summary = await run_in_threadpool(cards.get, uuid)
+        if summary is None:
+            raise HTTPException(503, "Player stats unavailable. Try again shortly.")
+        records = await run_in_threadpool(request.app.state.records.read, uuid)
+        return {"version": 1, "user": user, **with_mod_records(summary, records)}
+
+    sweep_parties = register(
+        app,
+        Finder(clock or time.time),
+        StatsService(card_loader or fetch_card, lambda uuid: app.state.records.read(uuid)),
+        browser,
+        mod,
+        wait=party_wait,
+        name_lookup=name_lookup,
+    )
 
     app.add_middleware(
         TrustedHostMiddleware,

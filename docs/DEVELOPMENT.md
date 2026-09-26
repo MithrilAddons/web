@@ -47,8 +47,9 @@ No project license has been selected; preserve all third-party notices.
 
 ## Manual verification
 
-Build first, then run `python tools/preview_skin.py` for a loopback preview with
-synthetic accounts. Check desktop/narrow layouts, keyboard focus, skin rotation,
-player-card dialogs and service failures. Verify record syncing separately in
-Minecraft against the website, including logout, account switches and outages. Automated tests do not establish
-live Minecraft/browser authentication correctness.
+Build first, then run `python tools/preview_skin.py` or
+`python tools/preview_party.py` for loopback previews with synthetic accounts.
+Check desktop/narrow layouts, keyboard focus, skin rotation, player-card dialogs,
+form inputs and service failures. Test party creation, eligible class selection,
+restored floor selection and full/invited states. Live Minecraft handoff checks
+are in API.md. Automated tests do not establish live-game correctness.

@@ -86,6 +86,29 @@ it("shows a safe error and retries without rendering upstream details", async ()
   expect(await screen.findByText("42.50")).toBeTruthy();
 });
 
+it.each([false, true])(
+  "shows overflow Catacombs on cards (party member: %s)",
+  async (partyMember) => {
+    const data = {
+      ...fixture,
+      catacombs: { level: 53.25, experience: 569809640 + 650000000 },
+    };
+    expect(parsePlayerCard(data, fixture.user.uuid)).toEqual(data);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(JSON.stringify(data))),
+    );
+    render(
+      <PlayerCard
+        user={fixture.user}
+        onClose={() => {}}
+        partyMember={partyMember}
+      />,
+    );
+    expect(await screen.findByText("53.25")).toBeTruthy();
+  },
+);
+
 it("handles session expiry and Escape without inventing stats", async () => {
   vi.stubGlobal(
     "fetch",
@@ -133,6 +156,9 @@ it("validates the shared contract and rejects mixed identities, bad numbers and 
     { ...fixture, version: 2 },
     { ...fixture, secrets: -1 },
     { ...fixture, magical_power: Infinity },
+    { ...fixture, catacombs: { level: Infinity, experience: 1e9 } },
+    { ...fixture, catacombs: { level: -1, experience: 0 } },
+    { ...fixture, catacombs: { level: NaN, experience: 1e9 } },
     { ...fixture, floors: Array(14).fill(fixture.floors[0]) },
   ]) {
     expect(() => parsePlayerCard(invalid, fixture.user.uuid)).toThrow();

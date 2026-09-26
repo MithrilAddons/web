@@ -11,7 +11,7 @@ Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=MITHRIL_AUTH_DB=/var/lib/mithril-web/auth.sqlite3
 StateDirectory=mithril-web
 StateDirectoryMode=0700
-ExecStart=/opt/mithril-web/current/.venv/bin/python -m uvicorn mithril_web.app:app --app-dir backend --host 127.0.0.1 --port 8780 --no-access-log --no-proxy-headers
+ExecStart=/opt/mithril-web/current/.venv/bin/python -m uvicorn mithril_web.app:app --app-dir backend --host 127.0.0.1 --port 8780 --no-access-log --proxy-headers --forwarded-allow-ips=127.0.0.1
 Restart=on-failure
 RestartSec=3
 TimeoutStopSec=10

@@ -61,7 +61,7 @@ def test_shared_contract_and_selected_profile_not_highest_xp():
     assert result == expected
 
 
-def test_xp_curve_every_level_boundary_and_cap():
+def test_xp_curve_every_level_boundary_and_overflow():
     assert sum(CATACOMBS_XP) == 569809640
     total = 0
     for level, xp in enumerate(CATACOMBS_XP):
@@ -69,7 +69,33 @@ def test_xp_curve_every_level_boundary_and_cap():
         assert catacombs_level(total + xp / 2) == level + 0.5
         total += xp
     assert catacombs_level(total) == 50
-    assert catacombs_level(total + 200000000) == 50
+    assert catacombs_level(total + 200000000) == 51
+
+
+@pytest.mark.parametrize(
+    "extra_xp,expected",
+    [
+        (-1, 50 - 1 / CATACOMBS_XP[-1]),
+        (0, 50),
+        (100_000_000, 50.5),
+        (199_999_999, 51 - 1 / 200_000_000),
+        (200_000_000, 51),
+        (200_000_001, 51 + 1 / 200_000_000),
+        (650_000_000, 53.25),
+    ],
+)
+def test_card_catacombs_and_all_classes_use_same_overflow(extra_xp, expected):
+    data = payload()
+    dungeons = data["profiles"][0]["members"][UUID]["dungeons"]
+    experience = sum(CATACOMBS_XP) + extra_xp
+    dungeons["dungeon_types"]["catacombs"]["experience"] = experience
+    roles = ("archer", "berserk", "healer", "mage", "tank")
+    dungeons["player_classes"] = {role: {"experience": experience} for role in roles}
+    result = parse_profiles(data, UUID)
+    assert result["catacombs"]["level"] == pytest.approx(expected)
+    assert result["catacombs"]["experience"] == experience
+    for role in roles:
+        assert result["class_levels"][role] == pytest.approx(expected)
 
 
 def test_hypixel_hyphenated_profile_id_is_normalized():
@@ -87,10 +113,12 @@ def test_invalid_stats_are_unknown_not_zero(value):
     member = data["profiles"][0]["members"][UUID]
     member["dungeons"]["secrets"] = value
     member["dungeons"]["dungeon_types"]["catacombs"]["experience"] = value
+    member["dungeons"]["player_classes"] = {"mage": {"experience": value}}
     member["accessory_bag_storage"]["highest_magical_power"] = value
     member["dungeons"]["dungeon_types"]["catacombs"]["fastest_time_s_plus"]["7"] = value
     result = parse_profiles(data, UUID)
     assert result["catacombs"] is result["secrets"] is result["magical_power"] is None
+    assert result["class_levels"]["mage"] is None
     assert result["floors"][6]["s_plus_ms"] is None
 
 
