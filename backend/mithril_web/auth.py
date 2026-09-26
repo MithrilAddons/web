@@ -230,11 +230,18 @@ class AuthStore:
 
     def renew(self, token):
         with self.lock, self.db:
+            session = self.db.execute(
+                "SELECT remembered FROM auth WHERE token=? AND kind='session' AND expires>?",
+                (digest(token), self.clock()),
+            ).fetchone()
+            if session is None:
+                raise HTTPException(401, "Session expired")
+            expires = self.clock() + (30 * DAY if session["remembered"] else DAY)
             self.db.execute(
                 "UPDATE auth SET expires=? WHERE token=? AND kind='session'",
-                (self.clock() + 30 * DAY, digest(token)),
+                (expires, digest(token)),
             )
             self.db.execute(
                 "UPDATE auth SET expires=? WHERE kind='receipt' AND server_id=? AND remembered=1",
-                (self.clock() + 30 * DAY, digest(token)),
+                (expires, digest(token)),
             )

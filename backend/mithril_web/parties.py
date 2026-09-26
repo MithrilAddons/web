@@ -12,6 +12,7 @@ import secrets
 import time
 from collections import deque
 
+from .party_chat import ChatLog, valid_text
 from .player_card import CATACOMBS_XP, catacombs_level
 
 CLASSES = ("archer", "berserk", "healer", "mage", "tank")
@@ -62,6 +63,7 @@ class Player:
         "notices",
         "version",
         "state_id",
+        "chat_sent",
     )
 
     def __init__(self, uuid, name, state_id):
@@ -75,6 +77,7 @@ class Player:
         self.notices = deque(maxlen=NOTICES)
         self.version = 0
         self.state_id = state_id
+        self.chat_sent = deque(maxlen=20)
 
 
 class Party:
@@ -95,6 +98,8 @@ class Party:
         "handoff_id",
         "invited_at",
         "accepted",
+        "completed",
+        "chat",
     )
 
     def __init__(self, floor, leader, created, rules, blocked, roles):
@@ -111,6 +116,8 @@ class Party:
         self.handoff_id = secrets.token_urlsafe(9)
         self.invited_at = None
         self.accepted = set()
+        self.completed = False
+        self.chat = ChatLog()
 
     def members(self):
         return [slot["member"] for slot in self.slots if slot["member"]]
@@ -378,7 +385,7 @@ class Finder:
         if player.stats is None:
             raise PartyError("stats_unavailable")
         party = self.parties.get(party_id)
-        if not party or party.paused or uuid in party.blocked:
+        if not party or party.completed or party.paused or uuid in party.blocked:
             raise PartyError("not_found")
         if party.full_since is not None:
             raise PartyError("party_full")
@@ -408,7 +415,7 @@ class Finder:
 
     def _fit(self, party, player):
         """The first looking class this player can take in this party, or None."""
-        if party.paused or party.full_since is not None:
+        if party.completed or party.paused or party.full_since is not None:
             return None
         if player.uuid in party.blocked:
             return None
@@ -562,6 +569,8 @@ class Finder:
         """Legacy `joined` wire field means current game presence, not party membership."""
         changed = False
         for slot in party.slots:
+            if not slot["member"]:
+                continue
             player = self.players[slot["member"]]
             present = player.in_game and player.mod_seen > now - PRESENCE_GRACE
             if slot["joined"] != present:
@@ -574,7 +583,7 @@ class Finder:
         """Small mod view; no requirements, bans, stats or arbitrary commands."""
         player = self.players.get(uuid)
         party = self.parties.get(player.party) if player else None
-        if not party:
+        if not party or party.completed:
             return None
         now = self.clock()
         return {
@@ -599,6 +608,8 @@ class Finder:
         party = self._led(uuid)
         if party.id != party_id or party.handoff_id != handoff_id:
             raise PartyError("stale_handoff")
+        if party.completed:
+            return None
         expected = {self.players[member].name.lower(): member for member in party.members()}
         actual = {name.lower() for name in names}
         if leader.lower() != self.players[uuid].name.lower() or not actual <= expected.keys():
@@ -640,6 +651,8 @@ class Finder:
         party = self._led(uuid)
         if party.id != party_id or party.open_roles() or set(members) != set(party.members()):
             raise PartyError("roster_mismatch")
+        if party.completed:
+            return
         now = self.clock()
         roster = [
             {"uuid": member, "name": self.players[member].name, "role": slot["role"]}
@@ -648,9 +661,45 @@ class Finder:
         ]
         for member in party.members():
             player = self.players[member]
-            player.party = None
             self._notice(player, "party_joined", now, party=party.id, roster=roster)
-        self._drop(party)
+        party.completed = True
+        self._touch_party(party)
+
+    def send_chat(self, uuid, party_id, request_id, text, source):
+        """Never accept a client-supplied sender; retries are scoped to this membership."""
+        player = self._get(uuid)
+        party = self.parties.get(player.party)
+        if not party or party.id != party_id:
+            raise PartyError("not_in_party")
+        if not valid_text(text) or not re.fullmatch(r"[A-Za-z0-9_-]{16,64}", request_id):
+            raise PartyError("invalid_message")
+        text = text.strip()
+        now = self.clock()
+        if previous := party.chat.previous(uuid, request_id, now):
+            if previous["text"] != text or previous["source"] != source:
+                raise PartyError("message_conflict")
+            return previous
+        while player.chat_sent and player.chat_sent[0] <= now - 60:
+            player.chat_sent.popleft()
+        if len(player.chat_sent) >= 20 or sum(at > now - 5 for at in player.chat_sent) >= 5:
+            raise PartyError("chat_rate_limited")
+        player.chat_sent.append(now)
+        message = party.chat.append(uuid, player.name, request_id, text, source, now)
+        for member in party.members():
+            self._touch(self.players[member])
+        return message
+
+    def chat_view(self, uuid, party_id, after=0):
+        player = self._get(uuid)
+        party = self.parties.get(player.party)
+        if not party or party.id != party_id:
+            raise PartyError("not_in_party")
+        return {
+            "version": 1,
+            "party_id": party.id,
+            "latest": party.chat.sequence,
+            "messages": [m for m in party.chat.messages if int(m["id"]) > after],
+        }
 
     # -- periodic sweep ------------------------------------------------------------
 
@@ -672,7 +721,9 @@ class Finder:
                     self._notice(player, "stopped_looking", now, reason="offline")
                 party = self.parties.get(player.party)
                 # Once full, the five-minute join window decides instead (with a ban).
-                if party and (party.full_since is None or party.invited_at is not None):
+                if party and (
+                    party.completed or party.full_since is None or party.invited_at is not None
+                ):
                     self._vacate(party, player.uuid, now, "offline")
                     refill.add(party.id)
                 elif (
@@ -687,7 +738,11 @@ class Finder:
             if party.full_since is None:
                 continue
             self._check_joined(party, now)
-            if party.invited_at is None and now >= party.full_since + JOIN_WINDOW:
+            if (
+                not party.completed
+                and party.invited_at is None
+                and now >= party.full_since + JOIN_WINDOW
+            ):
                 # Collect first: vacating reopens the party and clears the joined flags.
                 missing = [s["member"] for s in party.slots if not s["joined"]]
                 for uuid in missing:
@@ -704,6 +759,7 @@ class Finder:
             party
             for party in self.parties.values()
             if party.full_since is None
+            and not party.completed
             and party.counted_at <= now - COUNT_INTERVAL
             and self.players[party.leader].web_seen > now - PRESENCE_GRACE
         ]
@@ -790,7 +846,7 @@ class Finder:
         return {**self.listing(party), "members": members}
 
     def visible(self, party, player):
-        return not party.paused and player.uuid not in party.blocked
+        return not party.completed and not party.paused and player.uuid not in party.blocked
 
     def personal(self, uuid):
         now = self.clock()
@@ -801,9 +857,11 @@ class Finder:
             view = {
                 **self.detail(party),
                 "paused": party.paused,
+                "completed": party.completed,
+                "messages": list(party.chat.messages),
                 "full_since": party.full_since,
                 "join_deadline": party.full_since + JOIN_WINDOW
-                if party.full_since is not None and party.invited_at is None
+                if not party.completed and party.full_since is not None and party.invited_at is None
                 else None,
                 "joined": [s["joined"] for s in party.slots],
                 "invited": party.invited_at is not None,

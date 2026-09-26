@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Account } from "./account";
+import { ModDownload } from "./ModDownload";
+import { PartyChat } from "./PartyChat";
 import { LeaderView, PartyForm } from "./PartyLead";
 import {
   andList,
@@ -144,6 +146,16 @@ export function PartyWorkspace() {
         {state && <Notices state={state} />}
         {error && <p role="alert">{error}</p>}
         {main}
+        {!signedOut && state?.party && (
+          <PartyChat
+            key={state.party.id}
+            messages={state.party.messages ?? []}
+            connected={!offline}
+            onSend={async (text, requestId) => {
+              apply(await partyApi.chat(state.party!.id, text, requestId));
+            }}
+          />
+        )}
       </div>
       <aside className="account-panel">
         <h2>Your account</h2>
@@ -172,6 +184,7 @@ function SignedOut() {
     >
       <h2 id="parties-heading">Parties</h2>
       <p>Link your Minecraft account to browse and join parties.</p>
+      <ModDownload />
     </section>
   );
 }
@@ -728,7 +741,7 @@ function HeldPanel({
 }) {
   const party = state.party!;
   const leave = () => void run(partyApi.leave);
-  if (party.full_since !== null)
+  if (party.completed || party.full_since !== null)
     return <FullPanel state={state} onLeave={leave} busy={busy} />;
   const mine = party.members.find((member) => member.name === state.you.name);
   const role = mine ? party.slots[mine.slot]!.role : null;

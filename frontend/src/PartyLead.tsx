@@ -64,7 +64,7 @@ export function LeaderView({
   const open = openRoles(party);
   const matching = party.matching;
 
-  if (party.full_since !== null)
+  if (party.completed || party.full_since !== null)
     return (
       <FullPanel
         state={state}
@@ -501,7 +501,12 @@ export function PartyForm({
           A joiner must meet every rule for their slot. Leave a field empty for
           no rule.
         </p>
-        <div className="matrix-wrap">
+        <div
+          className="matrix-wrap"
+          role="region"
+          aria-label="Class requirements"
+          tabIndex={0}
+        >
           <table className="rule-matrix">
             <thead>
               <tr>

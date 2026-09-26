@@ -65,6 +65,7 @@ def test_shared_mod_handoff_contract(setup):
     )
     assert response.status_code == 200
     actual = response.json()
+    assert actual.pop("chat_party_id") == actual["party"]["party_id"]
     actual["party"]["party_id"] = "party0000001"
     actual["party"]["handoff_id"] = "batch0000001"
     fixture = Path(__file__).resolve().parents[2] / "contracts/mod-party-v1.json"
@@ -148,7 +149,7 @@ def test_one_automatic_round_then_explicit_retry_only_and_roster_completion(setu
         "/api/v1/party/mod/roster", headers=headers, json={**body, "members": names}
     )
     assert complete.json()["party"] is None
-    assert party.id not in finder.parties
+    assert finder.parties[party.id].completed
     assert finder.players[UUID].notices[-1]["kind"] == "party_joined"
 
 

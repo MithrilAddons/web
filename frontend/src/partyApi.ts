@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { ChatMessage } from "./PartyChat";
 
 export const CLASSES = ["archer", "berserk", "healer", "mage", "tank"] as const;
 export type Role = (typeof CLASSES)[number];
@@ -122,6 +123,8 @@ export type Notice = {
   roster?: { name: string; role: Role }[];
 };
 export type PartyView = Detail & {
+  completed?: boolean;
+  messages?: ChatMessage[];
   paused: boolean;
   full_since: number | null;
   join_deadline: number | null;
@@ -298,6 +301,10 @@ export class PartyRequestError extends Error {
 }
 
 const MESSAGES: Record<string, string> = {
+  chat_rate_limited: "You’re sending messages too quickly. Wait a moment.",
+  invalid_message: "Use 1–256 characters without control or formatting codes.",
+  message_conflict:
+    "That message could not be retried. Change it and send again.",
   banned: "You can’t reserve or look for parties yet.",
   in_party: "You’re already in a party. Leave it first.",
   not_in_party: "You’re not in a party.",
@@ -418,6 +425,13 @@ export const partyApi = {
   reserve: (partyId: string, role: Role) =>
     action("reserve", { party_id: partyId, role }),
   leave: () => action("leave"),
+  chat: (partyId: string, text: string, requestId: string) =>
+    action("chat", {
+      version: 1,
+      party_id: partyId,
+      text,
+      request_id: requestId,
+    }),
   publish: (body: PublishBody) => action("publish", body),
   edit: (rules: Rules, blocked: string[], blockNames: string[]) =>
     action("edit", { rules, blocked, block_names: blockNames }),

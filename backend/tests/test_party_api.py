@@ -260,7 +260,12 @@ def test_game_presence_uses_the_scoped_mod_credential(setup):
         == 403
     )
     untracked = client.post(url, headers=bearer, json={"version": 1}).json()
-    assert untracked == {"version": 1, "interval_seconds": 120, "party": None}
+    assert untracked == {
+        "version": 1,
+        "interval_seconds": 120,
+        "party": None,
+        "chat_party_id": None,
+    }
     assert state(client, headers)["you"]["in_game"] is False
     tracked = client.post(url, headers=bearer, json={"version": 1}).json()
     assert tracked["interval_seconds"] == 25

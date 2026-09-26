@@ -61,6 +61,56 @@ it("does not request malformed links", () => {
   expect(fetcher).not.toHaveBeenCalled();
 });
 
+it("resumes a matching browser once and redirects without confirmation", async () => {
+  const redirect = vi.fn();
+  vi.stubGlobal("location", { replace: redirect });
+  const fetcher = vi.fn((url: string) =>
+    Promise.resolve(
+      new Response(
+        JSON.stringify(
+          url.endsWith("preview")
+            ? { ...user, already_linked: true }
+            : { authenticated: true, user },
+        ),
+      ),
+    ),
+  );
+  vi.stubGlobal("fetch", fetcher);
+  render(
+    <StrictMode>
+      <LinkAccount token={token} />
+    </StrictMode>,
+  );
+  await waitFor(() => expect(redirect).toHaveBeenCalledWith("/party-finder"));
+  expect(
+    fetcher.mock.calls.filter(([url]) => url.endsWith("resume")),
+  ).toHaveLength(1);
+  expect(
+    screen.queryByRole("button", { name: "Continue as TestPlayer" }),
+  ).toBeNull();
+  expect(fetcher.mock.calls.some(([url]) => url.endsWith("complete"))).toBe(
+    false,
+  );
+});
+
+it("does not redirect when renewing the browser session fails", async () => {
+  const redirect = vi.fn();
+  vi.stubGlobal("location", { replace: redirect });
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((url: string) =>
+      Promise.resolve(
+        url.endsWith("preview")
+          ? new Response(JSON.stringify({ ...user, already_linked: true }))
+          : new Response("", { status: 409 }),
+      ),
+    ),
+  );
+  render(<LinkAccount token={token} />);
+  expect(await screen.findByRole("alert")).toBeTruthy();
+  expect(redirect).not.toHaveBeenCalled();
+});
+
 it("accepts a typed code but still requires explicit account confirmation", async () => {
   const fetcher = vi.fn((url: string) =>
     Promise.resolve(
