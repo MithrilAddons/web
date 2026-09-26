@@ -9,7 +9,7 @@ with the backend bound to loopback behind nginx. Keep other hosted services unch
 - `/opt/mithril-web/releases/<release>/`: root-owned source, frontend build and venv.
 - `/opt/mithril-web/current`: active release symlink.
 - `deploy/mithril-web.service`: unprivileged mithril-web service, loopback port 8780.
-- `/var/lib/mithril-web/`: private persistent auth.sqlite3.
+- `/var/lib/mithril-web/`: private persistent auth.sqlite3 and records.sqlite3.
 - `/etc/nginx/sites-available/mithril.foo`: installed deploy/nginx.conf.
 - `/var/www/mithril-web-acme`: certificate challenge webroot.
 
@@ -45,6 +45,6 @@ API responses are not publicly cached. Authentication has an nginx limit of
 30 requests/minute/IP (burst 15).
 Bodies are limited to 4 KiB. Access logs are disabled.
 
-Keep auth databases and backups outside releases, source control and test
+Keep auth/record databases and backups outside releases, source control and test
 fixtures. Account-data retention/deletion policy and multi-account/load testing
 must be completed before broad distribution. See [API.md](API.md).

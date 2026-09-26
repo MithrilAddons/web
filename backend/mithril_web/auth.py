@@ -124,6 +124,32 @@ class AuthStore:
             return {"version": 1, "status": "expired"}
         return {"version": 1, "status": "linked", "user": dict(session)}
 
+    def linked_receipt(self, token):
+        row = self.get(token, "receipt")
+        if not row or not row["remembered"]:
+            return None
+        with self.lock:
+            session = self.db.execute(
+                "SELECT * FROM auth WHERE token=? AND kind='session' AND uuid=? AND expires>?",
+                (row["server_id"], row["uuid"], self.clock()),
+            ).fetchone()
+        return dict(session) if session else None
+
+    def sync_identity(self, token):
+        return self._scoped_identity(token, "sync")
+
+    def _scoped_identity(self, token, kind):
+        row = self.get(token, kind)
+        if not row:
+            return None
+        with self.lock:
+            session = self.db.execute(
+                "SELECT uuid, name FROM auth WHERE token=? AND kind='session' "
+                "AND uuid=? AND expires>?",
+                (row["server_id"], row["uuid"], self.clock()),
+            ).fetchone()
+        return dict(session) if session else None
+
     def renew(self, token):
         with self.lock, self.db:
             self.db.execute(

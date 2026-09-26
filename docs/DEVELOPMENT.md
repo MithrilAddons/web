@@ -49,5 +49,6 @@ No project license has been selected; preserve all third-party notices.
 
 Build first, then run `python tools/preview_skin.py` for a loopback preview with
 synthetic accounts. Check desktop/narrow layouts, keyboard focus, skin rotation,
-player-card dialogs and service failures. Automated tests do not establish
+player-card dialogs and service failures. Verify record syncing separately in
+Minecraft against the website, including logout, account switches and outages. Automated tests do not establish
 live Minecraft/browser authentication correctness.

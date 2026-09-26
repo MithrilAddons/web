@@ -254,6 +254,14 @@ export function CookiePolicy() {
         Hypixel. Dungeon stats are cached in server memory for up to five
         minutes; no extra cookie is used.
       </p>
+      <p>
+        A linked MithrilPF mod syncs your account-wide solo-clear and terminal
+        personal bests after a separate Minecraft ownership check. We store
+        these timings with your UUID so they remain available while you are
+        offline. No full run history or Minecraft access token is uploaded.
+        Logging out stops uploads through that browser link but does not erase
+        previously saved records.
+      </p>
     </article>
   );
 }
