@@ -49,7 +49,6 @@ export function parsePlayerCard(value: unknown, uuid: string): PlayerCardData {
       value.catacombs === null ||
       (object(value.catacombs) &&
         numeric(value.catacombs.level) &&
-        value.catacombs.level <= 50 &&
         numeric(value.catacombs.experience))
     ) ||
     !nullableNumber(value.secrets) ||
@@ -83,12 +82,18 @@ export function parsePlayerCard(value: unknown, uuid: string): PlayerCardData {
 export async function getPlayerCard(
   uuid: string,
   signal: AbortSignal,
+  partyMember = false,
 ): Promise<PlayerCardData> {
-  const response = await fetch("/api/v1/auth/player-card", {
-    credentials: "same-origin",
-    cache: "no-store",
-    signal,
-  });
+  const response = await fetch(
+    partyMember
+      ? `/api/v1/party/player-card/${encodeURIComponent(uuid)}`
+      : "/api/v1/auth/player-card",
+    {
+      credentials: "same-origin",
+      cache: "no-store",
+      signal,
+    },
+  );
   if (response.status === 401)
     throw new Error("Your session ended. Sign in again.");
   if (!response.ok)

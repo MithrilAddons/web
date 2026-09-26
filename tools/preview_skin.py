@@ -66,11 +66,29 @@ class Preview(SimpleHTTPRequestHandler):
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)
-        elif path in ("/", "/party-finder", "/cookies"):
+        elif path in ("/", "/party-finder", "/cookies", "/link"):
             self.path = "/index.html"
             super().do_GET()
         else:
             super().do_GET()
+
+    def do_POST(self):
+        """Link-screen preview only; these fixed synthetic credentials never authenticate."""
+        path = urlsplit(self.path).path
+        length = int(self.headers.get("Content-Length", "0"))
+        if not 0 < length <= 4096 or path not in ("/api/v1/auth/preview", "/api/v1/auth/complete"):
+            self.send_error(400)
+            return
+        body = json.loads(self.rfile.read(length))
+        valid = body.get("token") in ("ABCDEFGH", "a" * 43)
+        user = {"name": "TestPlayer", "uuid": "0123456789abcdef0123456789abcdef"}
+        result = user if path.endswith("preview") else {"authenticated": True, "user": user}
+        data = json.dumps(result if valid else {"detail": "Synthetic code only"}).encode()
+        self.send_response(200 if valid else 410)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
 
     def end_headers(self):
         self.send_header(

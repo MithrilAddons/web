@@ -254,3 +254,66 @@ def test_confirmed_receipt_survives_store_restart(tmp_path):
     assert store.receipt_status(receipt)["status"] == "linked"
     assert receipt.encode() not in path.read_bytes()
     store.close()
+
+
+@pytest.mark.parametrize("use_code", [True, False])
+def test_code_and_link_redeem_the_same_single_use_login(auth, use_code):
+    client, _, _ = auth
+    issued = receipt_link(client)
+    code = issued["user_code"].replace("-", "").lower()
+    assert client.post("/api/v1/auth/preview", headers=ORIGIN, json={"token": code}).json() == {
+        "uuid": UUID,
+        "name": NAME,
+    }
+    assert status(client, issued["receipt_token"])["status"] == "pending"
+    assert complete(client, code if use_code else issued["link_token"]).status_code == 200
+    assert status(client, issued["receipt_token"])["status"] == "linked"
+    assert complete(client, code).status_code == 410
+    assert complete(client, issued["link_token"]).status_code == 410
+
+
+def test_short_code_expiry_origin_and_guess_limits(auth):
+    client, now, _ = auth
+    issued = receipt_link(client)
+    code = issued["user_code"]
+    assert client.post("/api/v1/auth/preview", json={"token": code}).status_code == 403
+    for _ in range(10):
+        assert complete(client, "AAAAAAAA").status_code == 410
+    assert complete(client, code).status_code == 429
+    # Long links remain usable when short-code guesses are throttled.
+    assert complete(client, issued["link_token"]).status_code == 200
+    now[0] += 60
+    issued = receipt_link(client)
+    now[0] += 300
+    assert complete(client, issued["user_code"]).status_code == 410
+
+
+def test_code_hashing_restart_and_concurrent_redemption(tmp_path):
+    path = tmp_path / "auth.db"
+    store = AuthStore(path, clock=lambda: 100)
+    token = store.issue("link", UUID, NAME, 300)
+    code = store.issue_code(token)
+    store.close()
+    assert code.replace("-", "").encode() not in path.read_bytes()
+    assert token.encode() not in path.read_bytes()
+    store = AuthStore(path, clock=lambda: 100)
+    with ThreadPoolExecutor(8) as pool:
+        results = list(pool.map(lambda t: store.get_link(t, consume=True), [code, token] * 4))
+    assert sum(result is not None for result in results) == 1
+    store.close()
+
+
+def test_code_attempt_global_budget_is_bounded():
+    from fastapi import HTTPException
+    from mithril_web.auth import CodeAttempts
+
+    now = [0]
+    attempts = CodeAttempts(lambda: now[0])
+    for i in range(100):
+        attempts.check(str(i))
+    with pytest.raises(HTTPException) as failure:
+        attempts.check("another-client")
+    assert failure.value.status_code == 429
+    now[0] = 60
+    attempts.check("another-client")
+    assert len(attempts.attempts) == 1

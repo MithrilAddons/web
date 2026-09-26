@@ -14,7 +14,12 @@ async function request<T>(path: string, body?: object): Promise<T> {
     cache: "no-store",
     signal: AbortSignal.timeout(10000),
   });
-  if (!response.ok) throw new Error("Request failed");
+  if (!response.ok)
+    throw new Error(
+      response.status === 429
+        ? "Wait a minute before trying again."
+        : "Request failed",
+    );
   return response.json() as Promise<T>;
 }
 
@@ -99,6 +104,7 @@ export function Account() {
               Select <strong>Link browser</strong>.
             </li>
           </ol>
+          <a href="/link">Enter a linking code</a>
         </div>
       ) : !error ? (
         <p className="quiet-label">Checking account…</p>
@@ -109,6 +115,9 @@ export function Account() {
 }
 
 export function LinkAccount({ token }: { token: string }) {
+  const [credential, setCredential] = useState(token);
+  const [code, setCode] = useState("");
+  const valid = /^(?:[A-Za-z0-9_-]{43}|[A-HJ-NP-Z2-9]{8})$/.test(credential);
   const [user, setUser] = useState<User | null>(null);
   const [remember, setRemember] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -116,25 +125,29 @@ export function LinkAccount({ token }: { token: string }) {
   const [done, setDone] = useState(false);
   useEffect(() => {
     let active = true;
-    if (!/^[A-Za-z0-9_-]{43}$/.test(token)) return;
-    void request<User>("preview", { token }).then(
+    if (!valid) return;
+    void request<User>("preview", { token: credential }).then(
       (value) => {
         if (active) setUser(value);
       },
-      () => {
+      (reason: unknown) => {
         if (active)
-          setError("Link unavailable or expired. Create another in Minecraft.");
+          setError(
+            reason instanceof Error && reason.message.startsWith("Wait")
+              ? reason.message
+              : "Link unavailable or expired. Create another in Minecraft.",
+          );
       },
     );
     return () => {
       active = false;
     };
-  }, [token]);
+  }, [credential, valid]);
   async function complete() {
     setBusy(true);
     setError("");
     try {
-      await request<Session>("complete", { token, remember });
+      await request<Session>("complete", { token: credential, remember });
       setDone(true);
     } catch {
       setError("Could not sign in. Create another link in Minecraft.");
@@ -155,8 +168,48 @@ export function LinkAccount({ token }: { token: string }) {
         </>
       ) : (
         <>
-          {!/^[A-Za-z0-9_-]{43}$/.test(token) ? (
-            <p>Open Link browser in Minecraft to create a new link.</p>
+          {!valid ? (
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                const normalized = code.replace(/[-\s]/g, "").toUpperCase();
+                if (!/^[A-HJ-NP-Z2-9]{8}$/.test(normalized)) {
+                  setError(
+                    "Enter the eight-character code shown in Minecraft.",
+                  );
+                  return;
+                }
+                setError("");
+                setCredential(normalized);
+              }}
+            >
+              <p>Open Link browser in Minecraft to create a new link.</p>
+              <label htmlFor="link-code">Linking code</label>
+              <input
+                id="link-code"
+                value={code}
+                maxLength={12}
+                autoComplete="off"
+                autoCapitalize="characters"
+                spellCheck={false}
+                placeholder="ABCD-EFGH"
+                onChange={(event) => {
+                  const value = event.target.value;
+                  const normalized = value.replace(/[-\s]/g, "").toUpperCase();
+                  const separator =
+                    normalized.length > 4 ||
+                    (normalized.length === 4 && value.length >= code.length);
+                  setCode(
+                    separator
+                      ? `${normalized.slice(0, 4)}-${normalized.slice(4)}`
+                      : normalized,
+                  );
+                }}
+              />
+              <button className="primary" type="submit">
+                Check code
+              </button>
+            </form>
           ) : user ? (
             <>
               <p>
@@ -190,6 +243,18 @@ export function LinkAccount({ token }: { token: string }) {
             !error && <p role="status">Checking link…</p>
           )}
           {error && <p role="alert">{error}</p>}
+          {error && valid && (
+            <button
+              onClick={() => {
+                setCredential("");
+                setUser(null);
+                setError("");
+                setCode("");
+              }}
+            >
+              Enter another code
+            </button>
+          )}
         </>
       )}
     </>
@@ -233,9 +298,11 @@ export function CookiePolicy() {
         We verify account ownership with Mojang and store your Minecraft UUID,
         username, a hash of the session identifier, and its expiry. Minecraft
         access tokens are never sent to this website. Verification challenges
-        expire after one minute and unused sign-in links after five minutes.
-        Expired records are removed during authentication activity or within an
-        hour while the service is running.
+        expire after one minute and unused sign-in links and their alternative
+        short codes after five minutes. Short-code guesses are rate-limited;
+        codes are stored hashed, not as readable text. Expired records are
+        removed during authentication activity or within an hour while the
+        service is running.
       </p>
       <p>
         The mod can save a per-account link-status reference in its instance
@@ -261,6 +328,15 @@ export function CookiePolicy() {
         offline. No full run history or Minecraft access token is uploaded.
         Logging out stops uploads through that browser link but does not erase
         previously saved records.
+      </p>
+      <p>
+        When you use the party finder, the server keeps your name, the dungeon
+        stats and personal bests used for matching, your search, your party and
+        any blocked players in memory. Other party-finder users see the members
+        and stats of listed parties. While you look for or belong to a party,
+        this page contacts the server about every 25 seconds so it knows the
+        page is open; that uses the same sign-in cookie. This state is not
+        written to disk and is cleared when the service restarts.
       </p>
     </article>
   );

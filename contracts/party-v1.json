@@ -1,0 +1,398 @@
+{
+  "state": {
+    "version": 1,
+    "state_version": 3,
+    "state_id": "fixture:2",
+    "server_time": 1060.0,
+    "you": {
+      "uuid": "fedcba9876543210fedcba9876543210",
+      "name": "Sable",
+      "in_game": false,
+      "banned_until": null,
+      "looking": null,
+      "stats": {
+        "catacombs": 51.0,
+        "class_levels": {
+          "archer": 50.0,
+          "berserk": 50.0,
+          "healer": 49.5,
+          "mage": 50.0,
+          "tank": 50.0
+        },
+        "magical_power": 1380,
+        "s_plus_ms": {
+          "F7": 268000,
+          "M7": 331000
+        },
+        "solo_ms": {
+          "F7": null,
+          "M7": null
+        },
+        "terminals_ms": {
+          "F7": null,
+          "M7": null
+        },
+        "ss_ms": null
+      }
+    },
+    "notices": [
+      {
+        "id": "n00000000001",
+        "kind": "reserved",
+        "at": 1060.0,
+        "party": "party0000001",
+        "role": "healer"
+      }
+    ],
+    "party": {
+      "id": "party0000001",
+      "floor": "M7",
+      "leader": "Noctis",
+      "leader_uuid": "0123456789abcdef0123456789abcdef",
+      "created_at": 1000.0,
+      "slots": [
+        {
+          "role": "archer",
+          "filled": false
+        },
+        {
+          "role": "berserk",
+          "filled": false
+        },
+        {
+          "role": "healer",
+          "filled": true
+        },
+        {
+          "role": "mage",
+          "filled": true
+        },
+        {
+          "role": "tank",
+          "filled": false
+        }
+      ],
+      "rules": {
+        "shared": {
+          "catacombs": 48,
+          "magical_power": 1300
+        },
+        "per_class": {
+          "healer": {
+            "class_level": 45
+          }
+        },
+        "exempt": []
+      },
+      "team": {
+        "catacombs_avg": 52.5,
+        "s_plus_ms_avg": 324500.0
+      },
+      "members": [
+        {
+          "slot": 2,
+          "uuid": "fedcba9876543210fedcba9876543210",
+          "name": "Sable",
+          "leader": false,
+          "stats": {
+            "catacombs": 51.0,
+            "class_level": 49.5,
+            "magical_power": 1380,
+            "s_plus_ms": 331000,
+            "solo_ms": null,
+            "terminals_ms": null,
+            "ss_ms": null
+          }
+        },
+        {
+          "slot": 3,
+          "uuid": "0123456789abcdef0123456789abcdef",
+          "name": "Noctis",
+          "leader": true,
+          "stats": {
+            "catacombs": 54.0,
+            "class_level": 50.0,
+            "magical_power": 1520,
+            "s_plus_ms": 318000,
+            "solo_ms": 352000,
+            "terminals_ms": 41000,
+            "ss_ms": null
+          }
+        }
+      ],
+      "paused": false,
+      "full_since": null,
+      "join_deadline": null,
+      "joined": [false, false, false, false, false],
+      "invited": false,
+      "accepted": [false, false, false, false, false],
+      "you_lead": false
+    }
+  },
+  "leader_state": {
+    "version": 1,
+    "state_version": 4,
+    "state_id": "fixture:1",
+    "server_time": 1060.0,
+    "you": {
+      "uuid": "0123456789abcdef0123456789abcdef",
+      "name": "Noctis",
+      "in_game": false,
+      "banned_until": null,
+      "looking": null,
+      "stats": {
+        "catacombs": 54.0,
+        "class_levels": {
+          "archer": 50.0,
+          "berserk": 50.0,
+          "healer": 49.5,
+          "mage": 50.0,
+          "tank": 50.0
+        },
+        "magical_power": 1520,
+        "s_plus_ms": {
+          "F7": 268000,
+          "M7": 318000
+        },
+        "solo_ms": {
+          "F7": null,
+          "M7": 352000
+        },
+        "terminals_ms": {
+          "F7": null,
+          "M7": 41000
+        },
+        "ss_ms": null
+      }
+    },
+    "notices": [
+      {
+        "id": "n00000000002",
+        "kind": "member_joined",
+        "at": 1060.0,
+        "name": "Sable",
+        "role": "healer"
+      }
+    ],
+    "party": {
+      "id": "party0000001",
+      "floor": "M7",
+      "leader": "Noctis",
+      "leader_uuid": "0123456789abcdef0123456789abcdef",
+      "created_at": 1000.0,
+      "slots": [
+        {
+          "role": "archer",
+          "filled": false
+        },
+        {
+          "role": "berserk",
+          "filled": false
+        },
+        {
+          "role": "healer",
+          "filled": true
+        },
+        {
+          "role": "mage",
+          "filled": true
+        },
+        {
+          "role": "tank",
+          "filled": false
+        }
+      ],
+      "rules": {
+        "shared": {
+          "catacombs": 48,
+          "magical_power": 1300
+        },
+        "per_class": {
+          "healer": {
+            "class_level": 45
+          }
+        },
+        "exempt": []
+      },
+      "team": {
+        "catacombs_avg": 52.5,
+        "s_plus_ms_avg": 324500.0
+      },
+      "members": [
+        {
+          "slot": 2,
+          "uuid": "fedcba9876543210fedcba9876543210",
+          "name": "Sable",
+          "leader": false,
+          "stats": {
+            "catacombs": 51.0,
+            "class_level": 49.5,
+            "magical_power": 1380,
+            "s_plus_ms": 331000,
+            "solo_ms": null,
+            "terminals_ms": null,
+            "ss_ms": null
+          }
+        },
+        {
+          "slot": 3,
+          "uuid": "0123456789abcdef0123456789abcdef",
+          "name": "Noctis",
+          "leader": true,
+          "stats": {
+            "catacombs": 54.0,
+            "class_level": 50.0,
+            "magical_power": 1520,
+            "s_plus_ms": 318000,
+            "solo_ms": 352000,
+            "terminals_ms": 41000,
+            "ss_ms": null
+          }
+        }
+      ],
+      "paused": false,
+      "full_since": null,
+      "join_deadline": null,
+      "joined": [false, false, false, false, false],
+      "invited": false,
+      "accepted": [false, false, false, false, false],
+      "you_lead": true,
+      "blocked": [
+        {
+          "uuid": "cccccccccccccccccccccccccccccccc",
+          "name": "Grim"
+        }
+      ],
+      "matching": null
+    }
+  },
+  "listings": {
+    "version": 1,
+    "floor": "M7",
+    "parties": [
+      {
+        "id": "party0000001",
+        "floor": "M7",
+        "leader": "Noctis",
+        "leader_uuid": "0123456789abcdef0123456789abcdef",
+        "created_at": 1000.0,
+        "slots": [
+          {
+            "role": "archer",
+            "filled": false
+          },
+          {
+            "role": "berserk",
+            "filled": false
+          },
+          {
+            "role": "healer",
+            "filled": true
+          },
+          {
+            "role": "mage",
+            "filled": true
+          },
+          {
+            "role": "tank",
+            "filled": false
+          }
+        ],
+        "rules": {
+          "shared": {
+            "catacombs": 48,
+            "magical_power": 1300
+          },
+          "per_class": {
+            "healer": {
+              "class_level": 45
+            }
+          },
+          "exempt": []
+        },
+        "team": {
+          "catacombs_avg": 52.5,
+          "s_plus_ms_avg": 324500.0
+        }
+      }
+    ]
+  },
+  "detail": {
+    "version": 1,
+    "id": "party0000001",
+    "floor": "M7",
+    "leader": "Noctis",
+    "leader_uuid": "0123456789abcdef0123456789abcdef",
+    "created_at": 1000.0,
+    "slots": [
+      {
+        "role": "archer",
+        "filled": false
+      },
+      {
+        "role": "berserk",
+        "filled": false
+      },
+      {
+        "role": "healer",
+        "filled": true
+      },
+      {
+        "role": "mage",
+        "filled": true
+      },
+      {
+        "role": "tank",
+        "filled": false
+      }
+    ],
+    "rules": {
+      "shared": {
+        "catacombs": 48,
+        "magical_power": 1300
+      },
+      "per_class": {
+        "healer": {
+          "class_level": 45
+        }
+      },
+      "exempt": []
+    },
+    "team": {
+      "catacombs_avg": 52.5,
+      "s_plus_ms_avg": 324500.0
+    },
+    "members": [
+      {
+        "slot": 2,
+        "uuid": "fedcba9876543210fedcba9876543210",
+        "name": "Sable",
+        "leader": false,
+        "stats": {
+          "catacombs": 51.0,
+          "class_level": 49.5,
+          "magical_power": 1380,
+          "s_plus_ms": 331000,
+          "solo_ms": null,
+          "terminals_ms": null,
+          "ss_ms": null
+        }
+      },
+      {
+        "slot": 3,
+        "uuid": "0123456789abcdef0123456789abcdef",
+        "name": "Noctis",
+        "leader": true,
+        "stats": {
+          "catacombs": 54.0,
+          "class_level": 50.0,
+          "magical_power": 1520,
+          "s_plus_ms": 318000,
+          "solo_ms": 352000,
+          "terminals_ms": 41000,
+          "ss_ms": null
+        }
+      }
+    ]
+  }
+}

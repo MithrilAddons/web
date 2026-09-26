@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { getHealth } from "./api";
-import { Account, CookiePolicy, LinkAccount } from "./account";
+import { CookiePolicy, LinkAccount } from "./account";
+import { PartyWorkspace } from "./PartyFinder";
 
 // Remove the bearer secret before React renders (including StrictMode remounts).
 const linkToken =
@@ -153,28 +154,7 @@ function PartyFinder() {
           {status}
         </p>
       </div>
-      <div className="workspace">
-        <section className="party-panel" aria-labelledby="parties-heading">
-          <div className="panel-toolbar">
-            <h2 id="parties-heading">Parties</h2>
-            <span className="tag">In development.</span>
-          </div>
-          <div className="empty-state">
-            <svg viewBox="0 0 48 48" fill="none" aria-hidden="true">
-              <rect x="8" y="8" width="13" height="13" rx="3" />
-              <rect x="27" y="8" width="13" height="13" rx="3" />
-              <rect x="8" y="27" width="13" height="13" rx="3" />
-              <rect x="27" y="27" width="13" height="13" rx="3" />
-            </svg>
-            <h3>Not quite ready yet.</h3>
-            <p>Party browsing and matching are coming next.</p>
-          </div>
-        </section>
-        <aside className="account-panel">
-          <h2>Your account</h2>
-          <Account />
-        </aside>
-      </div>
+      <PartyWorkspace />
     </>
   );
 }

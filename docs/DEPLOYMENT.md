@@ -42,8 +42,16 @@ bootstrap config only for initial certificate issuance.
 ## Operational boundaries
 
 API responses are not publicly cached. Authentication has an nginx limit of
-30 requests/minute/IP (burst 15).
-Bodies are limited to 4 KiB. Access logs are disabled.
+30 requests/minute/IP (burst 15), party routes 60/minute/IP (burst 30).
+Bodies are limited to 4 KiB. Held party state requests need a 40-second proxy
+timeout; listings alone are compressed. Access logs are disabled.
+Party state is in memory: a restart clears listings/searches, not links or PBs.
+One application process owns this state; do not add workers without shared storage.
+Short-code guessing also has bounded per-client and global limits in this process.
+Deploy the service and nginx config together: nginx overwrites X-Forwarded-For
+with the connection address, and Uvicorn trusts proxy headers only from 127.0.0.1.
+Never bind the backend publicly or broaden that trust to arbitrary senders.
+Held requests use two nginx connections each; size worker_connections accordingly.
 
 Keep auth/record databases and backups outside releases, source control and test
 fixtures. Account-data retention/deletion policy and multi-account/load testing

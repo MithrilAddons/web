@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "interval_seconds": 25,
+  "party": {
+    "party_id": "party0000001",
+    "handoff_id": "batch0000001",
+    "leader": "Alpha",
+    "you_lead": true,
+    "full": true,
+    "invited": false,
+    "members": [
+      { "name": "Alpha", "online": true, "accepted": false },
+      { "name": "Beta", "online": true, "accepted": false },
+      { "name": "Gamma", "online": true, "accepted": false },
+      { "name": "Delta", "online": true, "accepted": false },
+      { "name": "Epsilon", "online": true, "accepted": false }
+    ]
+  }
+}
