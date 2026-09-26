@@ -4,6 +4,18 @@ All production requests use `https://mithril.foo/api/v1`. Responses and explicit
 versioned request bodies use `version: 1`. Synthetic fixtures live in `contracts/`;
 Python and frontend tests check their meanings. No real accounts belong in fixtures.
 
+## Mod download
+
+`GET mod-release` is public and returns `{status, release}`. Status is `ready`,
+`none` (no supported published release), or `unavailable`. A ready release contains
+`{version, url}` pointing directly to the versioned JAR on GitHub. Metadata uses
+the highest supported version among GitHub's ten recent releases, cached for five
+minutes. Published alpha/beta/rc builds are included and labelled Beta in the UI;
+drafts and releases without the expected gameplay JAR are excluded. Stable wins
+over prereleases of the same version. Failed refreshes retain a known good link
+and retry after one minute.
+No GitHub credentials or proxying of JAR contents are involved.
+
 ## Account linking and scoped mod credentials
 
 The user starts linking in Minecraft. `POST auth/challenge` accepts `{version,
@@ -18,7 +30,14 @@ and a 300-second lifetime. Existing long-token clients remain supported.
 The mod opens `https://mithril.foo/link#<link_token>`. The browser removes the
 fragment, previews the account with `POST auth/preview {token}`, and explicitly
 confirms it with `POST auth/complete {token, remember}`. Confirmation consumes the
-link and replaces this browser's previous session. `GET auth/session` returns
+link and replaces this browser's previous session.
+`preview` adds `already_linked: true` only for a valid browser session with the same
+UUID. In that case `POST auth/resume {token}` consumes the link, confirms its mod
+receipt against the existing session, and renews that session/cookie without
+changing its remember-browser choice or revoking existing mod credentials. The
+browser then replaces the link page with `/party-finder`. Missing, expired or
+different-account sessions still require explicit confirmation; resume rejects
+them without consuming the link. `GET auth/session` returns
 `{authenticated, user?: {uuid, name}}`; `POST auth/logout` revokes the session.
 Browser mutations require the exact production Origin. Cookies are Secure,
 HttpOnly, SameSite=Strict, host-only; see the public `/cookies` page. Remembered
@@ -80,6 +99,10 @@ does not delete records. Records persist in `records.sqlite3` alongside auth sto
 `GET auth/skin` serves a validated Mojang skin for the signed-in UUID; arbitrary
 URLs/redirects are rejected. The lazy skin renderer's licenses ship in
 `/skin-viewer-licenses.txt`. No analytics or third-party browser skin requests.
+`GET party/skin/{uuid}` uses the same bounded skin cache, requires browser sign-in,
+and accepts only the viewer, members of their current party, or senders in its
+retained chat history. Avatars crop the face and hat layers from this texture;
+the account avatar and 3D preview share the same browser-side request.
 
 Hypixel responses are bounded at 16 MiB with fixed destinations and socket timeouts.
 The player-card cache (five minutes, 128 accounts) and matching cache (six hours,
@@ -141,16 +164,63 @@ only by a member whose website or mod is currently present; otherwise the party 
   `retry:true`, the leader explicitly retries missing players (10-second cooldown).
   The mod command is `/mithrilpfreinvite`; commands are paced one per second.
 - `handoff_id` changes when the roster changes. Stale claims/reports are rejected.
-  A full exact game roster closes the listing and emits `party_joined`. Game
+  A full exact game roster makes the session private and emits `party_joined`. Game
   presence alone cannot do this. Partial acceptance remains visible to the website.
   Before completion, a departure reopens the same party ID. After completion,
-  players create another listing if needed; there is no automatic recreation.
+  players leave the private session and create another listing if needed; there
+  is no automatic recreation. The private chat remains available during the run.
 
 The mod requires English Hypixel party-list messages; incomplete/unknown/expired
 responses fail closed. It checks game membership every ten seconds during handoff.
 Actual server timing, message formatting, chat visibility and multi-client behavior
 still require Minecraft testing. A scope is not anti-cheat: observed roster reports
 are authenticated client input, not cryptographic proof of Hypixel membership.
+
+### Party chat
+
+`POST party/chat` uses the browser session and same-origin checks, with
+`{version:1,party_id,request_id,text}`. It returns the updated personal party state.
+The existing held `party/state` request wakes immediately for party messages; there
+is no separate browser connection or short-interval polling. Session validity is
+checked again after a held request. A party's `messages` field contains the latest
+100 messages, including on refresh/reconnect. It is never in public listing/detail
+responses. Each message is `{id,text,at,sender:{uuid,name},source}`; `at` is epoch
+milliseconds and `source` is `web` or `game`. IDs are increasing decimal strings
+within one party. The server derives the sender from authentication, never input.
+
+Text is 1–256 Unicode characters, trimmed, plain text; controls, directional
+overrides and Minecraft formatting codes are rejected. `request_id` is a client
+generated 16–64 character URL-safe identifier; reuse it when retrying the same
+send. Retries are deduplicated for ten minutes (bounded to 1024 receipts per party);
+changed text/source with the same ID is rejected. Sending is limited per account
+to five messages in five seconds and twenty per minute (HTTP 429). Readers and
+writers must still belong to the exact party; removal/leave immediately revokes
+access, including on held mod reads. New members can read retained party history.
+
+The mod transport is available under the existing scoped party credential:
+
+- `POST party/mod/chat/send` accepts the same payload and returns
+  `{version:1,message}`.
+- `POST party/mod/chat/state` accepts `{version:1,party_id,after:0}`. It holds for
+  up to 25 seconds if caught up, then returns `{version:1,party_id,latest,messages}`
+  containing retained messages after that sequence. A reader falling behind more
+  than 100 messages receives only retained history. Membership and credentials are
+  rechecked after waiting. This read does not replace the presence heartbeat.
+- `party/mod/presence` additionally returns `chat_party_id` (nullable), including
+  after handoff. Old clients can ignore this additive field. A future mod chat
+  reader needs a bounded response limit of 256 KiB, separate from the existing
+  16 KiB handoff limit.
+
+After handoff, `party.completed` is true and the legacy mod handoff `party` is
+null so old clients stop inviting. The private session never relists automatically,
+even when members leave. The existing 60-second absence policy still releases
+members with neither the site nor mod connected; no no-show penalty applies.
+
+This deployment enables website chat; older Minecraft clients do
+not yet display/send relay messages. Nothing is forwarded to Hypixel chat or
+interpreted as commands. History lives only in process memory: leaving/expiry of
+the last member, disbanding or a backend restart deletes it. It is not logged or
+saved in the account/record databases. No additional cookies are used.
 
 ## Operations and limits
 

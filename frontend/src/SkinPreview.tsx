@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import type { SkinViewer } from "skinview3d";
+import { loadSkin } from "./skins";
 
-export function SkinPreview({ name }: { name: string }) {
+export function SkinPreview({ name, uuid }: { name: string; uuid: string }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const container = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<SkinViewer | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "failed">("loading");
 
   useEffect(() => {
-    const controller = new AbortController();
     let active = true;
     let viewer: SkinViewer | undefined;
     let observer: ResizeObserver | undefined;
@@ -23,26 +23,9 @@ export function SkinPreview({ name }: { name: string }) {
     };
     async function load() {
       try {
-        const response = await fetch("/api/v1/auth/skin", {
-          credentials: "same-origin",
-          cache: "no-store",
-          signal: AbortSignal.any([
-            controller.signal,
-            AbortSignal.timeout(12000),
-          ]),
-        });
-        if (!response.ok) throw new Error("Skin unavailable");
-        const skin = (await response.json()) as {
-          image: string;
-          model: string;
-        };
-        if (
-          typeof skin.image !== "string" ||
-          skin.image.length > 90000 ||
-          !/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(skin.image) ||
-          (skin.model !== "default" && skin.model !== "slim")
-        )
-          throw new Error("Invalid skin");
+        const skin = await loadSkin(uuid);
+        if (!skin) throw new Error("Skin unavailable");
+        if (!active) return;
         const { SkinViewer } = await import("skinview3d");
         if (!active || !canvas.current || !container.current) return;
         viewer = new SkinViewer({
@@ -91,13 +74,12 @@ export function SkinPreview({ name }: { name: string }) {
     void load();
     return () => {
       active = false;
-      controller.abort();
       observer?.disconnect();
       document.removeEventListener("visibilitychange", render);
       release();
       viewerRef.current = null;
     };
-  }, []);
+  }, [uuid]);
 
   function reset() {
     const viewer = viewerRef.current;

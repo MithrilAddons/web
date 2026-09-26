@@ -317,3 +317,73 @@ def test_code_attempt_global_budget_is_bounded():
     now[0] = 60
     attempts.check("another-client")
     assert len(attempts.attempts) == 1
+
+
+@pytest.mark.parametrize("remember", [True, False])
+@pytest.mark.parametrize("use_code", [True, False])
+def test_resume_renews_matching_browser_and_preserves_existing_mod_links(auth, remember, use_code):
+    client, now, _ = auth
+    first = receipt_link(client)
+    complete(client, first["link_token"], remember)
+    cookie = client.cookies.get(COOKIE)
+    store = client.app.state.auth
+    from mithril_web.auth import digest
+
+    party_token = store.issue("party", UUID, NAME, 30 * DAY, server_id=digest(cookie))
+    now[0] += 3600
+    issued = receipt_link(client)
+    token = issued["user_code"] if use_code else issued["link_token"]
+    preview = client.post("/api/v1/auth/preview", headers=ORIGIN, json={"token": token})
+    assert preview.json() == {"uuid": UUID, "name": NAME, "already_linked": True}
+    assert status(client, issued["receipt_token"])["status"] == "pending"
+    result = client.post("/api/v1/auth/resume", headers=ORIGIN, json={"token": token})
+    assert result.status_code == 200
+    assert result.json() == {"authenticated": True, "user": {"uuid": UUID, "name": NAME}}
+    assert client.cookies.get(COOKIE) == cookie
+    assert ("Max-Age=2592000" in result.headers["set-cookie"]) == remember
+    assert store.get(cookie, "session")["expires"] == now[0] + (30 * DAY if remember else DAY)
+    assert status(client, issued["receipt_token"])["status"] == "linked"
+    assert status(client, first["receipt_token"])["status"] == "linked"
+    assert store.party_identity(party_token)["uuid"] == UUID
+    assert complete(client, issued["link_token"]).status_code == 410
+    assert complete(client, issued["user_code"]).status_code == 410
+    assert (
+        client.post("/api/v1/auth/resume", headers=ORIGIN, json={"token": token}).status_code == 410
+    )
+
+
+@pytest.mark.parametrize("session_kind", ["missing", "expired", "different"])
+def test_resume_does_not_skip_confirmation_for_other_or_missing_sessions(auth, session_kind):
+    client, now, _ = auth
+    if session_kind == "expired":
+        complete(client, link(client), False)
+        now[0] += DAY
+    elif session_kind == "different":
+        cookie = client.app.state.auth.issue("session", "f" * 32, "OtherPlayer", DAY)
+        client.cookies.set(COOKIE, cookie, domain="mithril.foo", path="/")
+    issued = receipt_link(client)
+    body = {"token": issued["link_token"]}
+    assert (
+        "already_linked"
+        not in client.post("/api/v1/auth/preview", headers=ORIGIN, json=body).json()
+    )
+    assert client.post("/api/v1/auth/resume", headers=ORIGIN, json=body).status_code == 409
+    assert status(client, issued["receipt_token"])["status"] == "pending"
+    assert complete(client, issued["link_token"]).status_code == 200
+
+
+def test_resume_requires_origin_and_valid_link(auth):
+    client, now, _ = auth
+    complete(client, link(client))
+    issued = receipt_link(client)
+    body = {"token": issued["link_token"]}
+    assert client.post("/api/v1/auth/resume", json=body).status_code == 403
+    assert (
+        client.post(
+            "/api/v1/auth/resume", headers={"Origin": "https://evil.invalid"}, json=body
+        ).status_code
+        == 403
+    )
+    assert status(client, issued["receipt_token"])["status"] == "pending"
+    now[0] += 300
+    assert client.post("/api/v1/auth/resume", headers=ORIGIN, json=body).status_code == 410

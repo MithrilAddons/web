@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { SkinPreview } from "./SkinPreview";
 import { PlayerCard } from "./PlayerCard";
+import { SkinAvatar } from "./SkinAvatar";
 
 type User = { uuid: string; name: string };
 type Session = { authenticated: boolean; user?: User };
@@ -59,9 +60,11 @@ export function Account() {
       {session?.authenticated && session.user ? (
         <div className="signed-in">
           <div className="account-identity">
-            <span className="avatar" aria-hidden="true">
-              {session.user.name.slice(0, 1)}
-            </span>
+            <SkinAvatar
+              className="avatar"
+              name={session.user.name}
+              uuid={session.user.uuid}
+            />
             <div>
               <button
                 ref={nameButton}
@@ -74,7 +77,11 @@ export function Account() {
               <span className="quiet-label">Minecraft account</span>
             </div>
           </div>
-          <SkinPreview key={session.user.uuid} name={session.user.name} />
+          <SkinPreview
+            key={session.user.uuid}
+            name={session.user.name}
+            uuid={session.user.uuid}
+          />
           {cardOpen && (
             <PlayerCard
               key={`card-${session.user.uuid}`}
@@ -126,19 +133,24 @@ export function LinkAccount({ token }: { token: string }) {
   useEffect(() => {
     let active = true;
     if (!valid) return;
-    void request<User>("preview", { token: credential }).then(
-      (value) => {
-        if (active) setUser(value);
-      },
-      (reason: unknown) => {
+    void request<User & { already_linked?: boolean }>("preview", {
+      token: credential,
+    })
+      .then(async (value) => {
+        if (!active) return;
+        if (value.already_linked) {
+          await request<Session>("resume", { token: credential });
+          if (active) location.replace("/party-finder");
+        } else setUser(value);
+      })
+      .catch((reason: unknown) => {
         if (active)
           setError(
             reason instanceof Error && reason.message.startsWith("Wait")
               ? reason.message
               : "Link unavailable or expired. Create another in Minecraft.",
           );
-      },
-    );
+      });
     return () => {
       active = false;
     };
@@ -285,6 +297,8 @@ export function CookiePolicy() {
       <p>
         If you choose “Remember this browser”, it lasts up to 30 days and renews
         when you return after at least a day. You can leave this option off.
+        Opening a new Minecraft link for the same signed-in account also renews
+        your existing session, keeping your original remember-browser choice.
       </p>
       <h2>Removing it</h2>
       <p>

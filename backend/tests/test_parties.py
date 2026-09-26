@@ -300,10 +300,10 @@ def test_full_party_waits_for_confirmed_hypixel_roster_not_just_game_presence(wo
     with pytest.raises(PartyError, match="roster_mismatch"):
         finder.confirm_joined(leader, party, [leader, *members[:-1]])
     finder.confirm_joined(leader, party, [leader, *members])
-    assert party not in finder.parties
+    assert finder.parties[party].completed
     formed = finder.players[leader].notices[-1]
     assert formed["kind"] == "party_joined" and len(formed["roster"]) == 5
-    assert all(finder.players[uuid].party is None for uuid in [leader, *members])
+    assert all(finder.players[uuid].party == party for uuid in [leader, *members])
 
 
 def test_no_shows_are_removed_banned_and_their_slot_relisted(world):

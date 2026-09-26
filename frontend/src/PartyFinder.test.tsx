@@ -58,6 +58,69 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it("sends party chat through the authenticated API and retains it while editing", async () => {
+  const message = {
+    id: "1",
+    at: 1000,
+    text: "hello",
+    sender: { uuid: leading.you.uuid, name: leading.you.name },
+    source: "web",
+  };
+  const calls = mockApi({
+    "party/state": () => leading,
+    "party/chat": () => ({
+      ...leading,
+      state_version: leading.state_version + 1,
+      party: { ...leading.party, messages: [message] },
+    }),
+  });
+  render(<PartyWorkspace />);
+  const input = await screen.findByRole("textbox", {
+    name: "Message your party",
+  });
+  fireEvent.change(input, { target: { value: "hello" } });
+  fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+  expect(
+    await within(screen.getByRole("log")).findByText("hello"),
+  ).toBeTruthy();
+  expect(calls.find((call) => call.path === "party/chat")?.body).toEqual({
+    version: 1,
+    party_id: leading.party!.id,
+    text: "hello",
+    request_id: expect.any(String),
+  });
+  fireEvent.change(input, { target: { value: "draft" } });
+  fireEvent.click(screen.getByRole("button", { name: "Edit requirements" }));
+  expect(screen.getByRole("textbox", { name: "Message your party" })).toBe(
+    input,
+  );
+  expect((input as HTMLInputElement).value).toBe("draft");
+});
+
+it("keeps completed private parties and their chat visible without an invite countdown", async () => {
+  mockApi({
+    "party/state": () => ({
+      ...joined,
+      party: { ...joined.party, completed: true, join_deadline: null },
+    }),
+    "party/leave": () => ({ ...idle, state_version: joined.state_version + 1 }),
+  });
+  render(<PartyWorkspace />);
+  expect(
+    await screen.findByRole("heading", { name: "Your party" }),
+  ).toBeTruthy();
+  expect(
+    screen.getByRole("textbox", { name: "Message your party" }),
+  ).toBeTruthy();
+  expect(screen.queryByText(/left to join Hypixel/)).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Leave party" }));
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("textbox", { name: "Message your party" }),
+    ).toBeNull(),
+  );
+});
+
 it.each([null, "Mage"])(
   "reserves any eligible class with %s selected for matching",
   async (selection) => {
@@ -208,7 +271,7 @@ it("starts looking with the party-average limit and marks parties it will skip",
     classes: ["tank"],
     max_team_s_plus_ms: 300000,
   });
-  expect(chime).toHaveBeenCalledTimes(1);
+  await waitFor(() => expect(chime).toHaveBeenCalledTimes(1));
 });
 
 it("lets the leader remove and block a member", async () => {
@@ -236,6 +299,30 @@ it("lets the leader remove and block a member", async () => {
     }),
   );
 });
+
+it.each(["create", "edit"] as const)(
+  "keeps %s requirements in a keyboard-accessible scroll region",
+  (mode) => {
+    render(
+      <PartyForm
+        mode={mode}
+        state={mode === "edit" ? leading : idle}
+        floor="M7"
+        run={vi.fn()}
+        busy={false}
+        onDone={vi.fn()}
+      />,
+    );
+    const region = screen.getByRole("region", { name: "Class requirements" });
+    expect(region.tabIndex).toBe(0);
+    expect(within(region).getByRole("table")).toBeTruthy();
+    const field = within(region).getByRole("textbox", {
+      name: "SS average, Tank",
+    });
+    fireEvent.change(field, { target: { value: "14.0" } });
+    expect((field as HTMLInputElement).value).toBe("14.0");
+  },
+);
 
 it("publishes a party with shared and class rules and names to block", async () => {
   const calls = mockApi({

@@ -23,6 +23,7 @@ from .parties import Finder
 from .party_api import WAIT, StatsService, mojang_uuid, register
 from .player_card import PlayerCardCache, fetch_card
 from .records import RecordStore, Submission, with_mod_records
+from .releases import ReleaseCache
 from .skins import SkinCache
 
 
@@ -81,6 +82,7 @@ def create_app(
     card_loader=None,
     party_wait=WAIT,
     name_lookup=mojang_uuid,
+    release_loader=None,
 ) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app):
@@ -109,6 +111,7 @@ def create_app(
     code_attempts = CodeAttempts(clock=clock or time.monotonic)
     skins = SkinCache(**({"loader": skin_loader} if skin_loader else {}))
     cards = PlayerCardCache(**({"loader": card_loader} if card_loader else {}))
+    releases = ReleaseCache(**({"loader": release_loader} if release_loader else {}))
 
     @app.middleware("http")
     async def limits(request, call_next):
@@ -272,7 +275,27 @@ def create_app(
     @app.post("/api/v1/auth/preview")
     def preview(body: BrowserLink, request: Request):
         browser(request)
-        return identity(require_link(request, body.token))
+        row = require_link(request, body.token)
+        session = request.app.state.auth.get(request.cookies.get(COOKIE, ""), "session")
+        result = identity(row)
+        if session and session["uuid"] == row["uuid"]:
+            result["already_linked"] = True
+        return result
+
+    @app.post("/api/v1/auth/resume")
+    def resume(body: BrowserLink, request: Request, response: Response):
+        browser(request)
+        store = request.app.state.auth
+        token = request.cookies.get(COOKIE, "")
+        session = store.get(token, "session")
+        row = require_link(request, body.token)
+        if not session or session["uuid"] != row["uuid"]:
+            raise HTTPException(409, "Confirm this account before signing in")
+        row = require_link(request, body.token, consume=True)
+        store.renew(token)
+        store.confirm_link_hash(row["token"], token)
+        set_cookie(response, token, bool(session["remembered"]))
+        return {"authenticated": True, "user": identity(row)}
 
     @app.post("/api/v1/auth/complete")
     def complete(body: Complete, request: Request, response: Response):
@@ -323,6 +346,31 @@ def create_app(
         response.delete_cookie(COOKIE, secure=True, httponly=True, samesite="strict", path="/")
         return {"authenticated": False}
 
+    @app.get("/api/v1/party/skin/{uuid}")
+    async def party_skin(uuid: str, request: Request):
+        row = request.app.state.auth.get(request.cookies.get(COOKIE, ""), "session")
+        if not row:
+            raise HTTPException(401, "Sign in first")
+        if not re.fullmatch(r"[0-9a-f]{32}", uuid):
+            raise HTTPException(404, "Skin unavailable")
+        finder = request.app.state.finder
+        viewer = finder.players.get(row["uuid"])
+        party = finder.parties.get(viewer.party) if viewer else None
+        # Retained chat can still contain messages from a member who has left.
+        if uuid != row["uuid"] and (
+            not party
+            or row["uuid"] not in party.members()
+            or (
+                uuid not in party.members()
+                and not any(m["sender"]["uuid"] == uuid for m in party.chat.messages)
+            )
+        ):
+            raise HTTPException(404, "Player not in your party")
+        result = await run_in_threadpool(skins.get, uuid)
+        if not result:
+            raise HTTPException(503, "Skin unavailable. Try again later.")
+        return result
+
     @app.get("/api/v1/auth/player-card")
     def player_card(request: Request):
         row = request.app.state.auth.get(request.cookies.get(COOKIE, ""), "session")
@@ -368,6 +416,10 @@ def create_app(
         TrustedHostMiddleware,
         allowed_hosts=["mithril.foo", "www.mithril.foo", "localhost", "127.0.0.1"],
     )
+
+    @app.get("/api/v1/mod-release")
+    def mod_release():
+        return releases.get()
 
     @app.get("/api/v1/health", response_model=Health)
     def health(response: Response) -> Health:

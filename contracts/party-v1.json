@@ -121,6 +121,8 @@
         }
       ],
       "paused": false,
+      "completed": false,
+      "messages": [],
       "full_since": null,
       "join_deadline": null,
       "joined": [false, false, false, false, false],
@@ -251,6 +253,8 @@
         }
       ],
       "paused": false,
+      "completed": false,
+      "messages": [],
       "full_since": null,
       "join_deadline": null,
       "joined": [false, false, false, false, false],

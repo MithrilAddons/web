@@ -7,6 +7,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { SkinPreview } from "./SkinPreview";
+import { SkinAvatar } from "./SkinAvatar";
 
 const mocks = vi.hoisted(() => ({
   construct: vi.fn(),
@@ -72,13 +73,22 @@ function setup() {
 
 it("loads only same-origin skin data, pauses rendering, supports reset and disposes on unmount", async () => {
   setup();
-  const view = render(<SkinPreview name="TestPlayer" />);
+  const view = render(
+    <>
+      <SkinPreview name="TestPlayer" uuid={"1".repeat(32)} />
+      <SkinAvatar name="TestPlayer" uuid={"1".repeat(32)} className="avatar" />
+    </>,
+  );
   await waitFor(() => expect(screen.getByRole("img").tabIndex).toBe(0));
   expect(screen.queryByText(/Drag to rotate/)).toBeNull();
   expect(screen.queryByRole("button")).toBeNull();
   expect(fetch).toHaveBeenCalledWith(
-    "/api/v1/auth/skin",
+    `/api/v1/party/skin/${"1".repeat(32)}`,
     expect.objectContaining({ credentials: "same-origin" }),
+  );
+  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(view.container.querySelector(".skin-face")?.getAttribute("src")).toBe(
+    "data:image/png;base64,AAAA",
   );
   expect(mocks.construct).toHaveBeenCalledWith(
     expect.objectContaining({ renderPaused: true, height: 250 }),
@@ -107,7 +117,8 @@ it("does not construct a renderer after an unmount while fetching", async () => 
       }),
     ),
   );
-  const view = render(<SkinPreview name="TestPlayer" />);
+  const view = render(<SkinPreview name="TestPlayer" uuid={"2".repeat(32)} />);
+  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
   view.unmount();
   resolve(
     new Response(
@@ -123,7 +134,7 @@ it("shows a fallback on skin failure without constructing WebGL", async () => {
     "fetch",
     vi.fn().mockResolvedValue(new Response("", { status: 503 })),
   );
-  render(<SkinPreview name="TestPlayer" />);
+  render(<SkinPreview name="TestPlayer" uuid={"3".repeat(32)} />);
   expect(await screen.findByText("Skin preview unavailable.")).toBeTruthy();
   expect(mocks.construct).not.toHaveBeenCalled();
 });
@@ -141,7 +152,7 @@ it("rejects remote URLs instead of making third-party browser requests", async (
       ),
     ),
   );
-  render(<SkinPreview name="TestPlayer" />);
+  render(<SkinPreview name="TestPlayer" uuid={"4".repeat(32)} />);
   expect(await screen.findByText("Skin preview unavailable.")).toBeTruthy();
   expect(mocks.construct).not.toHaveBeenCalled();
 });
@@ -151,6 +162,6 @@ it("handles unavailable WebGL without breaking the account panel", async () => {
   mocks.construct.mockImplementationOnce(() => {
     throw new Error("WebGL unavailable");
   });
-  render(<SkinPreview name="TestPlayer" />);
+  render(<SkinPreview name="TestPlayer" uuid={"5".repeat(32)} />);
   expect(await screen.findByText("Skin preview unavailable.")).toBeTruthy();
 });

@@ -356,6 +356,25 @@ code {
   color: var(--text);
   font-size: 14px;
 }
+.skin-avatar {
+  position: relative;
+  overflow: hidden;
+  border-radius: 5px;
+}
+.skin-avatar img {
+  position: absolute;
+  width: 800%;
+  max-width: none;
+  height: auto;
+  top: -100%;
+  image-rendering: pixelated;
+}
+.skin-avatar .skin-face {
+  left: -100%;
+}
+.skin-avatar .skin-hat {
+  left: -500%;
+}
 .account-name:hover {
   background: transparent;
   color: var(--accent);
@@ -639,7 +658,7 @@ input {
     padding-block: 68px 64px;
   }
   .workspace {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     gap: 18px;
   }
   .account-panel {
@@ -764,6 +783,14 @@ input {
   margin-top: 8px;
   color: var(--muted);
 }
+.mod-download {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 20px;
+  font-size: 12px;
+}
 .search-bar {
   display: flex;
   flex-direction: column;
@@ -882,6 +909,9 @@ input[aria-invalid="true"] {
   width: 64px;
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+.inline-field input:focus-visible {
+  outline-offset: 0;
 }
 .sound-toggle {
   margin-left: auto;
@@ -1408,6 +1438,8 @@ input[aria-invalid="true"] {
 .form-section {
   display: flex;
   flex-direction: column;
+  /* Fieldsets otherwise retain a min-content width and defeat the table scroller. */
+  min-inline-size: 0;
   gap: 12px;
   margin: 0;
   padding: 16px 20px;
@@ -1460,6 +1492,10 @@ input[aria-invalid="true"] {
   overflow-x: auto;
   border: 1px solid var(--border);
   border-radius: 8px;
+}
+.matrix-wrap:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 .rule-matrix {
   width: 100%;

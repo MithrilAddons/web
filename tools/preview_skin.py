@@ -50,6 +50,8 @@ class Preview(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         path = urlsplit(self.path).path
+        if path.startswith("/api/v1/party/skin/"):
+            path = "/api/v1/auth/skin"
         routes = {
             "/api/v1/health": {"status": "ok", "service": "mithril-web", "api_version": 1},
             "/api/v1/auth/session": {

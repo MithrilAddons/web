@@ -41,6 +41,19 @@ class StateRequest(Strict):
     state_id: str | None = Field(default=None, max_length=80)
 
 
+class ChatSend(Strict):
+    version: Literal[1]
+    party_id: str = Field(pattern=r"^[A-Za-z0-9_-]{12}$")
+    request_id: str = Field(pattern=r"^[A-Za-z0-9_-]{16,64}$")
+    text: str = Field(min_length=1, max_length=256)
+
+
+class ChatRead(Strict):
+    version: Literal[1]
+    party_id: str = Field(pattern=r"^[A-Za-z0-9_-]{12}$")
+    after: int = Field(default=0, ge=0, le=2**53 - 1)
+
+
 class LookRequest(Strict):
     version: Literal[1]
     floor: Floor
@@ -143,6 +156,8 @@ def mojang_uuid(name):
 
 
 def status(code):
+    if code == "chat_rate_limited":
+        return 429
     if code.startswith("invalid"):
         return 422
     return {"not_found": 404, "capacity": 503, "stats_unavailable": 503}.get(code, 409)
@@ -291,11 +306,21 @@ def register(app, finder, stats, browser, mod, *, wait=WAIT, name_lookup=mojang_
         same_state = body.state_id is None or body.state_id == finder.players[uuid].state_id
         if same_state and body.known is not None and body.known == finder.players[uuid].version:
             await waiters.wait(uuid, wait)
+        session(request)  # A logout/expiry during the held request must revoke chat too.
         player = finder.players.get(uuid)
         if player is None:
             raise HTTPException(409, "unknown_player")
         if same_state and body.known is not None and body.known == player.version:
             return {"version": 1, "state_version": player.version, "unchanged": True}
+        return finder.personal(uuid)
+
+    @app.post("/api/v1/party/chat")
+    async def chat(body: ChatSend, request: Request):
+        browser(request)
+        uuid = session(request)["uuid"]
+        run(
+            lambda: finder.send_chat(uuid, body.party_id, body.request_id, body.text, "web"),
+        )
         return finder.personal(uuid)
 
     @app.post("/api/v1/party/look")
@@ -371,7 +396,7 @@ def register(app, finder, stats, browser, mod, *, wait=WAIT, name_lookup=mojang_
             del fragments[stale]
         rows = []
         for party in finder.parties.values():
-            if party.floor != floor or party.full_since is not None:
+            if party.completed or party.floor != floor or party.full_since is not None:
                 continue
             if party.paused or viewer in party.blocked:
                 continue
@@ -389,7 +414,12 @@ def register(app, finder, stats, browser, mod, *, wait=WAIT, name_lookup=mojang_
     async def detail(party_id: str, request: Request):
         viewer = session(request)["uuid"]
         party = finder.parties.get(party_id)
-        if not party or party.paused or viewer in party.blocked:
+        if (
+            not party
+            or party.paused
+            or viewer in party.blocked
+            or (party.completed and viewer not in party.members())
+        ):
             raise HTTPException(404, "not_found")
         return {"version": 1, **finder.detail(party)}
 
@@ -403,6 +433,25 @@ def register(app, finder, stats, browser, mod, *, wait=WAIT, name_lookup=mojang_
             raise HTTPException(401, "Mod authentication expired")
         return user
 
+    @app.post("/api/v1/party/mod/chat/send")
+    async def mod_chat_send(body: ChatSend, request: Request):
+        user = mod_user(request)
+        message = run(
+            lambda: finder.send_chat(
+                user["uuid"], body.party_id, body.request_id, body.text, "game"
+            )
+        )
+        return {"version": 1, "message": message}
+
+    @app.post("/api/v1/party/mod/chat/state")
+    async def mod_chat_state(body: ChatRead, request: Request):
+        user = mod_user(request)
+        view = run(lambda: finder.chat_view(user["uuid"], body.party_id, body.after))
+        if view["latest"] == body.after:
+            await waiters.wait(user["uuid"], wait)
+        mod_user(request)
+        return run(lambda: finder.chat_view(user["uuid"], body.party_id, body.after))
+
     @app.post("/api/v1/party/mod/presence")
     async def presence(body: ModPresence, request: Request):
         """Online means connected to Hypixel, not simply that Minecraft is running."""
@@ -413,6 +462,7 @@ def register(app, finder, stats, browser, mod, *, wait=WAIT, name_lookup=mojang_
             "version": 1,
             "interval_seconds": TRACKED_INTERVAL if tracked else IDLE_INTERVAL,
             "party": finder.handoff(user["uuid"]),
+            "chat_party_id": finder.players[user["uuid"]].party if tracked else None,
         }
 
     @app.post("/api/v1/party/mod/roster")

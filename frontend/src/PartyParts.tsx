@@ -237,17 +237,21 @@ export function FullPanel({
     >
       <div className="held-heading">
         <h2 id="full-title">
-          {state.you.in_game
-            ? waiting.length
-              ? `You’re in · waiting for ${waiting.join(", ")}`
-              : "Everyone is in game"
-            : "Party full · get in game"}
+          {party.completed
+            ? "Your party"
+            : state.you.in_game
+              ? waiting.length
+                ? `You’re in · waiting for ${waiting.join(", ")}`
+                : "Everyone is in game"
+              : "Party full · get in game"}
         </h2>
         <span className="quiet-label">
           {party.floor} · {party.leader}’s party
         </span>
       </div>
-      {party.invited ? (
+      {party.completed ? (
+        <p>Connected in Minecraft · chat stays open here.</p>
+      ) : party.invited ? (
         <p>
           Invites requested · {party.accepted?.filter(Boolean).length ?? 0} of 5
           in the party
@@ -287,15 +291,19 @@ export function FullPanel({
         })}
       </ul>
       <p>
-        {party.invited
-          ? `Accept ${party.leader}’s invite in Minecraft. The leader can use /mithrilpfreinvite to invite missing players again.`
-          : "Once everyone is on Hypixel, the leader’s mod sends one round of invites. It won’t automatically retry."}
+        {party.completed
+          ? "This private party stays off the finder. Leave here when you’re done."
+          : party.invited
+            ? `Accept ${party.leader}’s invite in Minecraft. The leader can use /mithrilpfreinvite to invite missing players again.`
+            : "Once everyone is on Hypixel, the leader’s mod sends one round of invites. It won’t automatically retry."}
       </p>
       <div className="held-footer">
         <p className="quiet-label">
-          {party.invited
-            ? "This listing stays hidden until everyone has joined the Minecraft party."
-            : "If you’re not in game when the timer ends, you’re removed from the party and can’t reserve or look for parties for an hour."}
+          {party.completed
+            ? "Leaving here does not leave your Minecraft party."
+            : party.invited
+              ? "This listing stays hidden until everyone has joined the Minecraft party."
+              : "If you’re not in game when the timer ends, you’re removed from the party and can’t reserve or look for parties for an hour."}
         </p>
         <button className="secondary" onClick={onLeave} disabled={busy}>
           Leave party

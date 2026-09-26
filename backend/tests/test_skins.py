@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 from mithril_web.app import create_app
 from mithril_web.auth import COOKIE
+from mithril_web.parties import CLASSES, player_stats
 from mithril_web.skins import SkinCache, fetch_skin, get_bytes, texture_details
 
 UUID = "0123456789abcdef0123456789abcdef"
@@ -162,3 +163,51 @@ def test_upstream_limits_close_connections_and_do_not_follow_redirects(monkeypat
     with pytest.raises(ValueError):
         get_bytes("textures.minecraft.net", "/texture/a", 10)
     assert Connection.closed and Connection.limit is None
+
+
+def test_party_skins_require_membership_reuse_cache_and_allow_retained_senders(tmp_path):
+    calls = []
+
+    def loader(uuid):
+        calls.append(uuid)
+        return {"image": "data:image/png;base64,AAAA", "model": "default"}
+
+    app = create_app(database=tmp_path / "auth.db", skin_loader=loader)
+    other = "a" * 32
+    with TestClient(app, base_url="https://mithril.foo") as client:
+        path = f"/api/v1/party/skin/{other}"
+        assert client.get(path).status_code == 401
+        token = app.state.auth.issue("session", UUID, "TestPlayer", 60)
+        client.cookies.set(COOKIE, token)
+        assert client.get(path).status_code == 404
+        assert client.get("/api/v1/party/skin/not-a-uuid").status_code == 404
+        assert calls == []
+        assert client.get("/api/v1/auth/skin").status_code == 200
+        assert client.get(f"/api/v1/party/skin/{UUID}").status_code == 200
+        assert calls == [UUID]
+        finder = app.state.finder
+        for uuid, name in [(UUID, "TestPlayer"), (other, "PartyPlayer")]:
+            finder.seen(uuid, name, "web")
+            finder.set_stats(uuid, player_stats({}, []))
+        party = finder.publish(UUID, "M7", "archer", list(CLASSES), False, {}, {})
+        finder.reserve(other, party, "mage")
+        response = client.get(path)
+        assert response.status_code == 200
+        assert response.headers["cache-control"] == "no-store"
+        assert calls == [UUID, other]
+        finder.send_chat(other, party, "a" * 16, "hello", "web")
+        finder.leave(other)
+        assert client.get(path).status_code == 200
+        assert calls == [UUID, other]
+        finder.leave(UUID)
+        assert client.get(path).status_code == 404
+        app.state.auth.revoke(token)
+        assert client.get(f"/api/v1/party/skin/{UUID}").status_code == 401
+
+
+def test_party_skin_failure_is_graceful(tmp_path):
+    app = create_app(database=tmp_path / "auth.db", skin_loader=lambda _: None)
+    with TestClient(app, base_url="https://mithril.foo") as client:
+        token = app.state.auth.issue("session", UUID, "TestPlayer", 60)
+        client.cookies.set(COOKIE, token)
+        assert client.get(f"/api/v1/party/skin/{UUID}").status_code == 503
