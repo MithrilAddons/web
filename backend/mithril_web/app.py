@@ -18,7 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from starlette.concurrency import run_in_threadpool
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from .auth import COOKIE, DAY, AuthStore, CodeAttempts, digest, mojang_profile
+from .auth import COOKIE, DAY, AuthAttempts, AuthStore, CodeAttempts, digest, mojang_profile
 from .parties import Finder
 from .party_api import WAIT, StatsService, mojang_uuid, register
 from .player_card import PlayerCardCache, fetch_card
@@ -107,7 +107,11 @@ def create_app(
             app.state.records.close()
 
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
-    verification_slots = threading.BoundedSemaphore(4)
+    # Anonymous links cannot occupy the capacity reserved for existing linked users.
+    anonymous_slots = threading.BoundedSemaphore(2)
+    linked_slots = threading.BoundedSemaphore(2)
+    challenge_attempts = AuthAttempts(10, 300, clock=clock or time.monotonic)
+    verification_attempts = AuthAttempts(20, 300, clock=clock or time.monotonic)
     code_attempts = CodeAttempts(clock=clock or time.monotonic)
     skins = SkinCache(**({"loader": skin_loader} if skin_loader else {}))
     cards = PlayerCardCache(**({"loader": card_loader} if card_loader else {}))
@@ -160,6 +164,7 @@ def create_app(
     @app.post("/api/v1/auth/challenge")
     def challenge(body: Challenge, request: Request):
         mod(request)
+        challenge_attempts.check(request.client.host if request.client else "unknown")
         server_id = secrets.token_hex(20)[1:]
         token = request.app.state.auth.issue("challenge", body.uuid, body.name, 60, server_id)
         return {
@@ -171,12 +176,13 @@ def create_app(
 
     def verify_ownership(request, challenge_id, kind):
         store = request.app.state.auth
-        row = store.get(challenge_id, kind, consume=True)
-        if not row:
-            raise HTTPException(410, "Verification expired. Try again.")
-        if not verification_slots.acquire(blocking=False):
-            raise HTTPException(503, "Please try again later")
+        slots = anonymous_slots if kind == "challenge" else linked_slots
+        if not slots.acquire(blocking=False):
+            raise HTTPException(503, "Please try again later", headers={"Retry-After": "1"})
         try:
+            row = store.get(challenge_id, kind, consume=True)
+            if not row:
+                raise HTTPException(410, "Verification expired. Try again.")
             profile = profile_lookup(row["name"], row["server_id"])
             valid = (
                 isinstance(profile, dict)
@@ -188,7 +194,7 @@ def create_app(
         except (OSError, ValueError, TypeError, AttributeError, http.client.HTTPException):
             valid = False
         finally:
-            verification_slots.release()
+            slots.release()
         if not valid:
             raise HTTPException(401, "Minecraft ownership could not be verified. Try again.")
         return {**row, "name": profile["name"]}
@@ -196,6 +202,7 @@ def create_app(
     @app.post("/api/v1/auth/verify")
     def verify(body: Proof, request: Request):
         mod(request)
+        verification_attempts.check(request.client.host if request.client else "unknown")
         store = request.app.state.auth
         row = verify_ownership(request, body.challenge_id, "challenge")
         token = store.issue("link", row["uuid"], row["name"], 300)
@@ -243,6 +250,8 @@ def create_app(
     def scoped_verify(body, request, scope, lifetime):
         mod(request)
         store = request.app.state.auth
+        if not store.linked_receipt(body.receipt_token):
+            raise HTTPException(401, "Link your browser first")
         row = verify_ownership(request, body.challenge_id, f"{scope}_challenge")
         session = store.linked_receipt(body.receipt_token)
         if not session or session["uuid"] != row["uuid"]:
