@@ -45,7 +45,25 @@ and rechecks the receipt after the lookup. Capacity rejection returns 503 with
 still consumes it once. Existing party/record operations do not use the anonymous
 budgets. These safeguards bound work, not guarantee access during a distributed
 attack; global-budget exhaustion can temporarily deny new links. Limits reset on
-process restart; the store's existing row caps remain a final bound.
+process restart; the store's row caps remain a final bound.
+
+Pending challenges (each kind), browser links and unconfirmed receipts each have
+a 1,000-entry cap. Confirmed receipts use a separate 100,000-entry cap, as do
+sessions, sync credentials and party credentials (each kind). Established links
+therefore do not consume the pending-link allowance. These are storage bounds,
+not a guarantee of concurrent-user capacity. Expired entries are reclaimed on
+issuance; startup/hourly cleanup also removes established credentials with no
+valid parent session. Logout/replacement removes that session's credentials immediately.
+
+Link, receipt and short-code issuance is one transaction: a capacity or write
+failure leaves none of the new records behind. The ownership challenge remains
+single-use, so retry verification failures with a fresh challenge. Browser
+completion/resume also runs as one transaction, including link redemption,
+session replacement/renewal and receipt confirmation. Failure preserves the
+unexpired link/code and the previous session for retry. No existing valid
+sessions or receipts are evicted to admit another user; full capacity returns 503.
+Sync tokens keep their existing 15-minute lifetime and are not invalidated by
+another sync authorization; party-token replacement behavior is unchanged.
 
 The mod opens `https://mithril.foo/link#<link_token>`. The browser removes the
 fragment, previews the account with `POST auth/preview {token}`, and explicitly

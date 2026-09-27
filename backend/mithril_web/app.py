@@ -18,7 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from starlette.concurrency import run_in_threadpool
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from .auth import COOKIE, DAY, AuthAttempts, AuthStore, CodeAttempts, digest, mojang_profile
+from .auth import COOKIE, DAY, AuthAttempts, AuthStore, CodeAttempts, mojang_profile
 from .parties import Finder
 from .party_api import WAIT, StatsService, mojang_uuid, register
 from .player_card import PlayerCardCache, fetch_card
@@ -142,10 +142,10 @@ def create_app(
         if "origin" in request.headers:
             raise HTTPException(403, "Use the Minecraft mod")
 
-    def require_link(request, token, consume=False):
+    def require_link(request, token):
         if len(token) != 43:
             code_attempts.check(request.client.host if request.client else "unknown")
-        row = request.app.state.auth.get_link(token, consume)
+        row = request.app.state.auth.get_link(token)
         if not row:
             raise HTTPException(410, "Link expired or already used. Create another in Minecraft.")
         return row
@@ -205,9 +205,7 @@ def create_app(
         verification_attempts.check(request.client.host if request.client else "unknown")
         store = request.app.state.auth
         row = verify_ownership(request, body.challenge_id, "challenge")
-        token = store.issue("link", row["uuid"], row["name"], 300)
-        receipt = store.issue("receipt", row["uuid"], row["name"], 300, server_id=digest(token))
-        code = store.issue_code(token)
+        token, receipt, code = store.issue_link(row["uuid"], row["name"])
         return {
             "version": 1,
             "link_token": token,
@@ -296,30 +294,21 @@ def create_app(
         browser(request)
         store = request.app.state.auth
         token = request.cookies.get(COOKIE, "")
-        session = store.get(token, "session")
-        row = require_link(request, body.token)
-        if not session or session["uuid"] != row["uuid"]:
-            raise HTTPException(409, "Confirm this account before signing in")
-        row = require_link(request, body.token, consume=True)
-        store.renew(token)
-        store.confirm_link_hash(row["token"], token)
-        set_cookie(response, token, bool(session["remembered"]))
+        require_link(request, body.token)
+        row, token, remember = store.finish_link(body.token, token)
+        set_cookie(response, token, remember)
         return {"authenticated": True, "user": identity(row)}
 
     @app.post("/api/v1/auth/complete")
     def complete(body: Complete, request: Request, response: Response):
         browser(request)
-        row = require_link(request, body.token, consume=True)
+        require_link(request, body.token)
         store = request.app.state.auth
-        token = store.issue(
-            "session",
-            row["uuid"],
-            row["name"],
-            30 * DAY if body.remember else DAY,
-            remembered=body.remember,
+        row, token, _ = store.finish_link(
+            body.token,
+            request.cookies.get(COOKIE, ""),
+            remember=body.remember,
         )
-        store.revoke(request.cookies.get(COOKIE, ""))
-        store.confirm_link_hash(row["token"], token)
         set_cookie(response, token, body.remember)
         return {"authenticated": True, "user": identity(row)}
 
