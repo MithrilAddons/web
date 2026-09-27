@@ -54,8 +54,10 @@ Short-code guessing also has bounded per-client and global limits in this proces
 Anonymous linking has separate in-process challenge/verification budgets and
 reserved lookup capacity for already-linked players; see API.md for limits.
 These are single-process admission controls, not distributed DDoS protection.
-Do not add workers without shared rate-limit state. Existing persistent receipt
-and sync-token capacity limits are unchanged by these abuse controls.
+Do not add workers without shared rate-limit state. Pending-link and established
+credential storage budgets are separate; see API.md. Auth startup adds indexes
+idempotently and cleans up expired/orphaned credentials without invalidating
+valid sessions. Existing database columns and token formats remain compatible.
 Deploy the service and nginx config together: nginx overwrites X-Forwarded-For
 with the connection address, and Uvicorn trusts proxy headers only from 127.0.0.1.
 Never bind the backend publicly or broaden that trust to arbitrary senders.

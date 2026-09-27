@@ -18,6 +18,8 @@ from fastapi import HTTPException
 COOKIE = "__Host-mithril_session"
 DAY = 86400
 CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+PENDING_LIMIT = 1000
+CREDENTIAL_LIMIT = 100000
 
 
 class AuthAttempts:
@@ -115,9 +117,12 @@ class AuthStore:
             token TEXT PRIMARY KEY, kind TEXT NOT NULL, uuid TEXT NOT NULL, name TEXT NOT NULL,
             expires REAL NOT NULL, server_id TEXT, remembered INTEGER NOT NULL DEFAULT 0)""")
         self.db.execute("CREATE INDEX IF NOT EXISTS auth_expiry ON auth(expires)")
+        self.db.execute("CREATE INDEX IF NOT EXISTS auth_kind ON auth(kind, remembered)")
+        self.db.execute("CREATE INDEX IF NOT EXISTS auth_parent ON auth(server_id, kind)")
         self.db.execute("""CREATE TABLE IF NOT EXISTS link_codes (
             code TEXT PRIMARY KEY, link TEXT NOT NULL UNIQUE, expires REAL NOT NULL)""")
         self.db.commit()
+        self.cleanup()
 
     def close(self):
         self.db.close()
@@ -125,68 +130,125 @@ class AuthStore:
     def cleanup(self):
         with self.lock, self.db:
             self.db.execute("DELETE FROM auth WHERE expires <= ?", (self.clock(),))
+            # Also reclaim legacy children whose parent was revoked or expired.
+            self.db.execute("""DELETE FROM auth WHERE
+                (kind IN ('sync', 'party') OR (kind='receipt' AND remembered=1))
+                AND NOT EXISTS (SELECT 1 FROM auth AS parent WHERE
+                    parent.token=auth.server_id AND parent.kind='session'
+                    AND parent.uuid=auth.uuid)""")
             self.db.execute("DELETE FROM link_codes WHERE expires <= ?", (self.clock(),))
 
     def issue_code(self, link_token):
         with self.lock, self.db:
-            self.db.execute("DELETE FROM link_codes WHERE expires <= ?", (self.clock(),))
-            row = self.db.execute(
-                "SELECT expires FROM auth WHERE token=? AND kind='link' AND expires>?",
-                (digest(link_token), self.clock()),
-            ).fetchone()
-            if row is None:
-                raise ValueError("Missing link")
-            for _ in range(10):
-                code = "".join(secrets.choice(CODE_ALPHABET) for _ in range(8))
-                if self.db.execute(
-                    "SELECT 1 FROM link_codes WHERE code=?", (digest(code),)
-                ).fetchone():
-                    continue
-                self.db.execute(
-                    "INSERT INTO link_codes VALUES (?,?,?)",
-                    (digest(code), digest(link_token), row["expires"]),
-                )
-                return code[:4] + "-" + code[4:]
-            raise HTTPException(503, "Please try again later")
+            return self._issue_code(link_token)
+
+    # Private write helpers require the caller to own both the lock and transaction.
+    def _issue_code(self, link_token):
+        self.db.execute("DELETE FROM link_codes WHERE expires <= ?", (self.clock(),))
+        row = self.db.execute(
+            "SELECT expires FROM auth WHERE token=? AND kind='link' AND expires>?",
+            (digest(link_token), self.clock()),
+        ).fetchone()
+        if row is None:
+            raise ValueError("Missing link")
+        for _ in range(10):
+            code = "".join(secrets.choice(CODE_ALPHABET) for _ in range(8))
+            if self.db.execute("SELECT 1 FROM link_codes WHERE code=?", (digest(code),)).fetchone():
+                continue
+            self.db.execute(
+                "INSERT INTO link_codes VALUES (?,?,?)",
+                (digest(code), digest(link_token), row["expires"]),
+            )
+            return code[:4] + "-" + code[4:]
+        raise HTTPException(503, "Please try again later")
+
+    def issue_link(self, uuid, name):
+        with self.lock, self.db:
+            token = self._issue("link", uuid, name, 300)
+            receipt = self._issue("receipt", uuid, name, 300, server_id=digest(token))
+            code = self._issue_code(token)
+            return token, receipt, code
 
     def get_link(self, token, consume=False):
         # Both spellings point at one atomic redemption; neither secret is stored raw.
         with self.lock, self.db:
-            key = digest(token)
-            if len(token) != 43:
-                code = token.replace("-", "").upper()
-                alias = self.db.execute(
-                    "SELECT link FROM link_codes WHERE code=? AND expires>?",
-                    (digest(code), self.clock()),
-                ).fetchone()
-                if alias is None:
-                    return None
-                key = alias["link"]
-            row = self.db.execute(
-                "SELECT * FROM auth WHERE token=? AND kind='link'", (key,)
+            return self._get_link(token, consume)
+
+    def _get_link(self, token, consume=False):
+        key = digest(token)
+        if len(token) != 43:
+            code = token.replace("-", "").upper()
+            alias = self.db.execute(
+                "SELECT link FROM link_codes WHERE code=? AND expires>?",
+                (digest(code), self.clock()),
             ).fetchone()
-            if row and (consume or row["expires"] <= self.clock()):
-                self.db.execute("DELETE FROM auth WHERE token=?", (key,))
-                self.db.execute("DELETE FROM link_codes WHERE link=?", (key,))
-            return dict(row) if row and row["expires"] > self.clock() else None
+            if alias is None:
+                return None
+            key = alias["link"]
+        row = self.db.execute("SELECT * FROM auth WHERE token=? AND kind='link'", (key,)).fetchone()
+        if row and (consume or row["expires"] <= self.clock()):
+            self.db.execute("DELETE FROM auth WHERE token=?", (key,))
+            self.db.execute("DELETE FROM link_codes WHERE link=?", (key,))
+        return dict(row) if row and row["expires"] > self.clock() else None
+
+    def finish_link(self, link_token, session_token, remember=None):
+        """Redeem and confirm together; None resumes the existing browser session."""
+        with self.lock, self.db:
+            row = self._get_link(link_token, consume=True)
+            if not row:
+                raise HTTPException(
+                    410, "Link expired or already used. Create another in Minecraft."
+                )
+            if remember is None:
+                session = self.db.execute(
+                    "SELECT * FROM auth WHERE token=? AND kind='session' AND expires>?",
+                    (digest(session_token), self.clock()),
+                ).fetchone()
+                if not session or session["uuid"] != row["uuid"]:
+                    raise HTTPException(409, "Confirm this account before signing in")
+                remember = bool(session["remembered"])
+                self._renew(session_token)
+            else:
+                # Free this browser's slot first, but restore everything if issuance fails.
+                self._revoke(session_token)
+                session_token = self._issue(
+                    "session",
+                    row["uuid"],
+                    row["name"],
+                    30 * DAY if remember else DAY,
+                    remembered=remember,
+                )
+            self._confirm_link_hash(row["token"], session_token)
+            return row, session_token, remember
 
     def issue(self, kind, uuid, name, seconds, server_id=None, remembered=False):
-        token = secrets.token_urlsafe(32)
         with self.lock, self.db:
-            self.db.execute("DELETE FROM auth WHERE expires <= ?", (self.clock(),))
-            if kind == "party":
-                # A fresh ownership proof replaces this browser link's previous credential.
-                self.db.execute(
-                    "DELETE FROM auth WHERE kind='party' AND uuid=? AND server_id=?",
-                    (uuid, server_id),
-                )
-            count = self.db.execute("SELECT COUNT(*) FROM auth WHERE kind=?", (kind,)).fetchone()[0]
-            if count >= (100000 if kind in ("session", "party") else 1000):
-                raise HTTPException(503, "Please try again later")
+            return self._issue(kind, uuid, name, seconds, server_id, remembered)
+
+    def _check_capacity(self, kind, remembered=False, additional=1):
+        query, params = "SELECT COUNT(*) FROM auth WHERE kind=?", [kind]
+        if kind == "receipt":
+            query += " AND remembered=?"
+            params.append(remembered)
+        count = self.db.execute(query, params).fetchone()[0]
+        established = kind in ("session", "party", "sync") or (kind == "receipt" and remembered)
+        if count + additional > (CREDENTIAL_LIMIT if established else PENDING_LIMIT):
+            raise HTTPException(503, "Please try again later")
+
+    def _issue(self, kind, uuid, name, seconds, server_id=None, remembered=False):
+        token = secrets.token_urlsafe(32)
+        self.db.execute("DELETE FROM auth WHERE expires <= ?", (self.clock(),))
+        if kind == "party":
+            # A fresh ownership proof replaces this browser link's previous credential.
             self.db.execute(
-                "INSERT INTO auth VALUES (?,?,?,?,?,?,?)",
-                (digest(token), kind, uuid, name, self.clock() + seconds, server_id, remembered),
+                "DELETE FROM auth WHERE kind='party' AND uuid=? AND server_id=?",
+                (uuid, server_id),
             )
+        self._check_capacity(kind, remembered)
+        self.db.execute(
+            "INSERT INTO auth VALUES (?,?,?,?,?,?,?)",
+            (digest(token), kind, uuid, name, self.clock() + seconds, server_id, remembered),
+        )
         return token
 
     def get(self, token, kind, consume=False):
@@ -202,26 +264,42 @@ class AuthStore:
 
     def revoke(self, token):
         with self.lock, self.db:
-            self.db.execute("DELETE FROM auth WHERE token=? AND kind='session'", (digest(token),))
-            self.db.execute(
-                "DELETE FROM auth WHERE kind='receipt' AND server_id=? AND remembered=1",
-                (digest(token),),
-            )
+            self._revoke(token)
+
+    def _revoke(self, token):
+        self.db.execute("DELETE FROM auth WHERE token=? AND kind='session'", (digest(token),))
+        self.db.execute(
+            "DELETE FROM auth WHERE server_id=? AND "
+            "(kind IN ('sync', 'party') OR (kind='receipt' AND remembered=1))",
+            (digest(token),),
+        )
 
     def confirm_receipts(self, link_token, session_token):
         self.confirm_link_hash(digest(link_token), session_token)
 
     def confirm_link_hash(self, link_hash, session_token):
         with self.lock, self.db:
-            session = self.db.execute(
-                "SELECT expires FROM auth WHERE token=? AND kind='session'",
-                (digest(session_token),),
-            ).fetchone()
-            self.db.execute(
-                "UPDATE auth SET server_id=?, expires=?, remembered=1 "
-                "WHERE kind='receipt' AND server_id=? AND remembered=0 AND expires>?",
-                (digest(session_token), session["expires"], link_hash, self.clock()),
-            )
+            self._confirm_link_hash(link_hash, session_token)
+
+    def _confirm_link_hash(self, link_hash, session_token):
+        session = self.db.execute(
+            "SELECT uuid, expires FROM auth WHERE token=? AND kind='session' AND expires>?",
+            (digest(session_token), self.clock()),
+        ).fetchone()
+        if not session:
+            raise HTTPException(401, "Session expired")
+        self.db.execute("DELETE FROM auth WHERE expires <= ?", (self.clock(),))
+        pending = self.db.execute(
+            "SELECT COUNT(*) FROM auth WHERE kind='receipt' AND server_id=? "
+            "AND remembered=0 AND uuid=?",
+            (link_hash, session["uuid"]),
+        ).fetchone()[0]
+        self._check_capacity("receipt", remembered=True, additional=pending)
+        self.db.execute(
+            "UPDATE auth SET server_id=?, expires=?, remembered=1 "
+            "WHERE kind='receipt' AND server_id=? AND remembered=0 AND uuid=?",
+            (digest(session_token), session["expires"], link_hash, session["uuid"]),
+        )
 
     def receipt_status(self, token):
         row = self.get(token, "receipt")
@@ -269,18 +347,21 @@ class AuthStore:
 
     def renew(self, token):
         with self.lock, self.db:
-            session = self.db.execute(
-                "SELECT remembered FROM auth WHERE token=? AND kind='session' AND expires>?",
-                (digest(token), self.clock()),
-            ).fetchone()
-            if session is None:
-                raise HTTPException(401, "Session expired")
-            expires = self.clock() + (30 * DAY if session["remembered"] else DAY)
-            self.db.execute(
-                "UPDATE auth SET expires=? WHERE token=? AND kind='session'",
-                (expires, digest(token)),
-            )
-            self.db.execute(
-                "UPDATE auth SET expires=? WHERE kind='receipt' AND server_id=? AND remembered=1",
-                (expires, digest(token)),
-            )
+            self._renew(token)
+
+    def _renew(self, token):
+        session = self.db.execute(
+            "SELECT remembered FROM auth WHERE token=? AND kind='session' AND expires>?",
+            (digest(token), self.clock()),
+        ).fetchone()
+        if session is None:
+            raise HTTPException(401, "Session expired")
+        expires = self.clock() + (30 * DAY if session["remembered"] else DAY)
+        self.db.execute(
+            "UPDATE auth SET expires=? WHERE token=? AND kind='session'",
+            (expires, digest(token)),
+        )
+        self.db.execute(
+            "UPDATE auth SET expires=? WHERE kind='receipt' AND server_id=? AND remembered=1",
+            (expires, digest(token)),
+        )
