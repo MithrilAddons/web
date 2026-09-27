@@ -579,6 +579,22 @@ class Finder:
         if changed:
             self._touch_party(party)
 
+    def activity(self, uuid):
+        """Own finder activity for optional Discord presence; no credentials or party ID."""
+        player = self.players.get(uuid)
+        if not player:
+            return None
+        party = self.parties.get(player.party)
+        if party:
+            return {
+                "floor": party.floor,
+                "leader": self.players[party.leader].name,
+                "members": len(party.members()),
+            }
+        if player.looking:
+            return {"floor": player.looking["floor"], "leader": None, "members": 0}
+        return None
+
     def handoff(self, uuid):
         """Small mod view; no requirements, bans, stats or arbitrary commands."""
         player = self.players.get(uuid)

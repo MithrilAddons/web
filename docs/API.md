@@ -191,6 +191,12 @@ only by a member whose website or mod is currently present; otherwise the party 
   Party is null or a compact view with `party_id`, `handoff_id`, `leader`, `you_lead`,
   `full`, `invited`, and members `{name, online, accepted}`. No arbitrary commands.
   Presence only tracks accounts already using the finder.
+  Presence, roster and invite replies also include optional `activity`: null when
+  idle, or `{floor, leader, members}` for the authenticated player's own Discord
+  Rich Presence. A search has `leader:null, members:0`; a held/private party has
+  its leader's username and member count (1–5), including after handoff. No party
+  ID, join secret, requirements or credentials are shared with Discord. Existing
+  clients can ignore this additive field.
 - `POST party/mod/roster {version, party_id, handoff_id, leader, members}`: current
   leader reports a complete `/party list` response. Names must be a subset of the
   expected roster, with the expected game leader. Extra members/different leaders

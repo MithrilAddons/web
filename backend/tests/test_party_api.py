@@ -265,6 +265,7 @@ def test_game_presence_uses_the_scoped_mod_credential(setup):
         "interval_seconds": 120,
         "party": None,
         "chat_party_id": None,
+        "activity": None,
     }
     assert state(client, headers)["you"]["in_game"] is False
     tracked = client.post(url, headers=bearer, json={"version": 1}).json()

@@ -463,6 +463,7 @@ def register(app, finder, stats, browser, mod, *, wait=WAIT, name_lookup=mojang_
             "interval_seconds": TRACKED_INTERVAL if tracked else IDLE_INTERVAL,
             "party": finder.handoff(user["uuid"]),
             "chat_party_id": finder.players[user["uuid"]].party if tracked else None,
+            "activity": finder.activity(user["uuid"]),
         }
 
     @app.post("/api/v1/party/mod/roster")
@@ -473,7 +474,11 @@ def register(app, finder, stats, browser, mod, *, wait=WAIT, name_lookup=mojang_
                 user["uuid"], body.party_id, body.handoff_id, body.leader, body.members
             )
         )
-        return {"version": 1, "party": finder.handoff(user["uuid"])}
+        return {
+            "version": 1,
+            "party": finder.handoff(user["uuid"]),
+            "activity": finder.activity(user["uuid"]),
+        }
 
     @app.post("/api/v1/party/mod/invite")
     async def invite(body: ModInvite, request: Request):
@@ -483,7 +488,12 @@ def register(app, finder, stats, browser, mod, *, wait=WAIT, name_lookup=mojang_
                 user["uuid"], body.party_id, body.handoff_id, body.leader, body.members, body.retry
             )
         )
-        return {"version": 1, "invite": names, "party": finder.handoff(user["uuid"])}
+        return {
+            "version": 1,
+            "invite": names,
+            "party": finder.handoff(user["uuid"]),
+            "activity": finder.activity(user["uuid"]),
+        }
 
     async def sweep_loop():
         while True:
