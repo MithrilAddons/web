@@ -65,6 +65,7 @@ def test_shared_mod_handoff_contract(setup):
     )
     assert response.status_code == 200
     actual = response.json()
+    assert actual.pop("activity") == {"floor": "M7", "leader": "Alpha", "members": 5}
     assert actual.pop("chat_party_id") == actual["party"]["party_id"]
     actual["party"]["party_id"] = "party0000001"
     actual["party"]["handoff_id"] = "batch0000001"
@@ -99,6 +100,35 @@ def test_party_scope_cannot_upload_or_log_in_and_logout_revokes(setup):
         client.post("/api/v1/party/mod/presence", headers=headers, json={"version": 1}).status_code
         == 401
     )
+
+
+def test_presence_activity_tracks_own_search_party_and_departure(setup):
+    client, app, _, _, _, receipt = setup
+    headers = authorize(client, receipt)
+    finder = app.state.finder
+
+    def activity():
+        response = client.post(
+            "/api/v1/party/mod/presence",
+            headers=headers,
+            json={"version": 1, "online": False},
+        )
+        assert response.status_code == 200
+        return response.json()["activity"]
+
+    assert activity() is None
+    finder.seen(UUID, "Alpha", "web")
+    finder.set_stats(UUID, {})
+    finder.look(UUID, "F7", ["archer"], None)
+    assert activity() == {"floor": "F7", "leader": None, "members": 0}
+    finder.stop_looking(UUID)
+    assert activity() is None
+    finder, party, ids, _ = full_party(app)
+    assert activity() == {"floor": "M7", "leader": "Alpha", "members": 5}
+    finder.leave(ids[-1])
+    assert activity()["members"] == 4
+    finder.leave(UUID)
+    assert activity() is None
 
 
 def test_expiry_renewal_and_scoped_proof_replay(setup):
@@ -150,6 +180,7 @@ def test_one_automatic_round_then_explicit_retry_only_and_roster_completion(setu
     )
     assert complete.json()["party"] is None
     assert finder.parties[party.id].completed
+    assert complete.json()["activity"] == {"floor": "M7", "leader": "Alpha", "members": 5}
     assert finder.players[UUID].notices[-1]["kind"] == "party_joined"
 
 
