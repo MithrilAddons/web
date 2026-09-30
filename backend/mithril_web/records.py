@@ -1,10 +1,10 @@
 """Account-wide mod bests, separate from selected-profile Hypixel records."""
 
-import sqlite3
-import threading
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from .record_store import RecordStore as RecordStore
 
 
 class Timing(BaseModel):
@@ -25,41 +25,6 @@ class Submission(BaseModel):
         if len({(r.floor, r.kind) for r in self.records}) != len(self.records):
             raise ValueError("Duplicate record")
         return self
-
-
-class RecordStore:
-    """One lock owns this connection. Writes merge minimums in one transaction."""
-
-    def __init__(self, path):
-        self.lock = threading.Lock()
-        self.db = sqlite3.connect(path, check_same_thread=False)
-        self.db.row_factory = sqlite3.Row
-        self.db.execute("""CREATE TABLE IF NOT EXISTS mod_bests (
-            uuid TEXT NOT NULL, floor TEXT NOT NULL, kind TEXT NOT NULL,
-            real_ms INTEGER NOT NULL, ticks INTEGER NOT NULL,
-            PRIMARY KEY(uuid, floor, kind))""")
-        self.db.commit()
-
-    def merge(self, uuid, records):
-        with self.lock, self.db:
-            self.db.executemany(
-                "INSERT INTO mod_bests VALUES (?, ?, ?, ?, ?) "
-                "ON CONFLICT(uuid, floor, kind) DO UPDATE SET "
-                "real_ms=MIN(real_ms, excluded.real_ms), ticks=MIN(ticks, excluded.ticks)",
-                [(uuid, r.floor, r.kind, r.real_ms, r.ticks) for r in records],
-            )
-
-    def read(self, uuid):
-        with self.lock:
-            return [
-                dict(row)
-                for row in self.db.execute(
-                    "SELECT floor, kind, real_ms, ticks FROM mod_bests WHERE uuid=?", (uuid,)
-                )
-            ]
-
-    def close(self):
-        self.db.close()
 
 
 def with_mod_records(summary, records):

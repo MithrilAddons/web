@@ -191,6 +191,7 @@ class PlayerCardCache:
         self.lock = threading.Lock()
         self.entries = OrderedDict()
         self.pending = set()
+        self.erased_pending = set()
         self.attempts = deque()
 
     def get(self, uuid):
@@ -215,9 +216,20 @@ class PlayerCardCache:
             pass
         finally:
             with self.lock:
-                self.entries[uuid] = (self.clock() + (300 if value else 30), value)
-                self.entries.move_to_end(uuid)
+                if uuid in self.erased_pending:
+                    self.erased_pending.remove(uuid)
+                    value = None
+                else:
+                    self.entries[uuid] = (self.clock() + (300 if value else 30), value)
+                if uuid in self.entries:
+                    self.entries.move_to_end(uuid)
                 while len(self.entries) > 128:
                     self.entries.popitem(last=False)
                 self.pending.remove(uuid)
         return value
+
+    def erase(self, uuid):
+        with self.lock:
+            self.entries.pop(uuid, None)
+            if uuid in self.pending:
+                self.erased_pending.add(uuid)

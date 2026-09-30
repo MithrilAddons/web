@@ -113,6 +113,10 @@ class AuthStore:
         self.lock = threading.Lock()
         self.db = sqlite3.connect(path, check_same_thread=False)
         self.db.row_factory = sqlite3.Row
+        self.db.execute(
+            "CREATE TABLE IF NOT EXISTS auth_epochs "
+            "(uuid TEXT PRIMARY KEY, epoch TEXT NOT NULL, at REAL NOT NULL)"
+        )
         self.db.execute("""CREATE TABLE IF NOT EXISTS auth (
             token TEXT PRIMARY KEY, kind TEXT NOT NULL, uuid TEXT NOT NULL, name TEXT NOT NULL,
             expires REAL NOT NULL, server_id TEXT, remembered INTEGER NOT NULL DEFAULT 0)""")
@@ -129,6 +133,7 @@ class AuthStore:
 
     def cleanup(self):
         with self.lock, self.db:
+            self.db.execute("DELETE FROM auth_epochs WHERE at<?", (self.clock() - 900,))
             self.db.execute("DELETE FROM auth WHERE expires <= ?", (self.clock(),))
             # Also reclaim legacy children whose parent was revoked or expired.
             self.db.execute("""DELETE FROM auth WHERE
@@ -162,8 +167,9 @@ class AuthStore:
             return code[:4] + "-" + code[4:]
         raise HTTPException(503, "Please try again later")
 
-    def issue_link(self, uuid, name):
+    def issue_link(self, uuid, name, expected_epoch=None):
         with self.lock, self.db:
+            self._check_epoch(uuid, expected_epoch)
             token = self._issue("link", uuid, name, 300)
             receipt = self._issue("receipt", uuid, name, 300, server_id=digest(token))
             code = self._issue_code(token)
@@ -221,9 +227,20 @@ class AuthStore:
             self._confirm_link_hash(row["token"], session_token)
             return row, session_token, remember
 
-    def issue(self, kind, uuid, name, seconds, server_id=None, remembered=False):
+    def issue(
+        self, kind, uuid, name, seconds, server_id=None, remembered=False, *, expected_epoch=None
+    ):
         with self.lock, self.db:
+            self._check_epoch(uuid, expected_epoch)
             return self._issue(kind, uuid, name, seconds, server_id, remembered)
+
+    def _epoch(self, uuid):
+        row = self.db.execute("SELECT epoch FROM auth_epochs WHERE uuid=?", (uuid,)).fetchone()
+        return row[0] if row else ""
+
+    def _check_epoch(self, uuid, expected):
+        if expected is not None and expected != self._epoch(uuid):
+            raise HTTPException(401, "Account changed; start a new ownership proof")
 
     def _check_capacity(self, kind, remembered=False, additional=1):
         query, params = "SELECT COUNT(*) FROM auth WHERE kind=?", [kind]
@@ -260,7 +277,12 @@ class AuthStore:
             ).fetchone()
             if row and (consume or row["expires"] <= self.clock()):
                 self.db.execute("DELETE FROM auth WHERE token=?", (digest(token),))
-            return dict(row) if row and row["expires"] > self.clock() else None
+            if not row or row["expires"] <= self.clock():
+                return None
+            result = dict(row)
+            if kind.endswith("challenge"):
+                result["_epoch"] = self._epoch(row["uuid"])
+            return result
 
     def revoke(self, token):
         with self.lock, self.db:

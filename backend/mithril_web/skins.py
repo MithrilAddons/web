@@ -82,6 +82,7 @@ class SkinCache:
         self.slots = threading.BoundedSemaphore(2)
         self.entries = OrderedDict()
         self.pending = set()
+        self.erased_pending = set()
 
     def get(self, uuid):
         with self.lock:
@@ -108,9 +109,19 @@ class SkinCache:
             pass
         finally:
             with self.lock:
-                self.entries[uuid] = (self.clock() + (300 if value else 30), value)
+                if uuid in self.erased_pending:
+                    self.erased_pending.remove(uuid)
+                    value = None
+                else:
+                    self.entries[uuid] = (self.clock() + (300 if value else 30), value)
                 while len(self.entries) > 128:
                     self.entries.popitem(last=False)
                 self.pending.remove(uuid)
             self.slots.release()
         return value
+
+    def erase(self, uuid):
+        with self.lock:
+            self.entries.pop(uuid, None)
+            if uuid in self.pending:
+                self.erased_pending.add(uuid)

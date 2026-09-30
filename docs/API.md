@@ -72,9 +72,22 @@ assumed free. Only Combat pets are considered, matching the existing XP model.
 ## Account linking and scoped mod credentials
 
 The user starts linking in Minecraft. `POST auth/challenge` accepts `{version,
-uuid, name}`: UUID is 32 lowercase hexadecimal characters; name is 1–16 ASCII
-letters, digits or underscores. It returns a 43-character URL-safe `challenge_id`,
-39-hex-character `server_id` and 60-second lifetime. Minecraft proves ownership
+uuid, name, client_nonce}`: UUID is 32 lowercase hexadecimal characters; name is
+1–16 ASCII letters, digits or underscores. Each attempt uses a new cryptographically
+random 32-byte `client_nonce`, encoded as 64 lowercase hexadecimal characters.
+The backend returns a fresh 64-hex `server_nonce`, a 43-character URL-safe
+`challenge_id`, 39-hex `server_id` and 60-second lifetime. `server_id` is the first
+39 lowercase hexadecimal characters of SHA-256 over the UTF-8 string
+`mithrilpf:ownership:v2:<scope>:<uuid>:<client_nonce>:<server_nonce>`, where scope is
+`link`, `sync` or `party`. The mod independently computes this value and rejects
+a missing nonce or mismatched hash before contacting Mojang. It never falls back
+to a server-chosen hash. Binding both nonces prevents a malicious backend from
+substituting a Minecraft server login hash while preserving backend freshness.
+For compatibility the backend still accepts omitted `client_nonce` from old mods;
+those clients need an update to gain this protection. Deploy the backend before
+the updated mod, which intentionally rejects old backends.
+
+Minecraft proves ownership
 through Mojang's `joinServer`. **Only Mojang receives the Minecraft access token.**
 `POST auth/verify` consumes `{challenge_id}` once and checks Mojang `hasJoined`.
 The reply contains `link_token`, `receipt_token`, `user_code` (`ABCD-EFGH` format)
@@ -152,10 +165,10 @@ log in, renew a browser session or authorize uploads/party actions by itself.
 
 Two separate scopes require a linked receipt and another fresh Mojang proof:
 
-| Scope   | Challenge / verification                    | Credential    | Lifetime   | Permitted use       |
-| ------- | ------------------------------------------- | ------------- | ---------- | ------------------- |
-| Records | `auth/sync-challenge`, `auth/sync-verify`   | `sync_token`  | 15 minutes | `auth/sync-records` |
-| Parties | `auth/party-challenge`, `auth/party-verify` | `party_token` | 30 days    | `party/mod/*`       |
+| Scope   | Challenge / verification                    | Credential    | Lifetime   | Permitted use |
+| ------- | ------------------------------------------- | ------------- | ---------- | ------------- |
+| Records | `auth/sync-challenge`, `auth/sync-verify`   | `sync_token`  | 15 minutes | `records/*`   |
+| Parties | `auth/party-challenge`, `auth/party-verify` | `party_token` | 30 days    | `party/mod/*` |
 
 Both challenges accept `{version, uuid, name, receipt_token}`. Both verifications
 accept `{challenge_id, receipt_token}` and return `{version, user, <scope>_token,
@@ -180,12 +193,51 @@ records are shown separately; SS is not collected yet. See `player-card-v1.json`
 Catacombs and all five dungeon class levels include fractional overflow above 50
 at 200,000,000 XP per level.
 
-`POST auth/sync-records` accepts `mod-records-v1.json`: at most four unique `(floor,
-kind)` pairs, F7/M7 and `solo_clear`/`terminals`, positive real milliseconds and ticks,
-bounded at two hours. The backend transaction merges independent minimums; repeated
-or slower uploads cannot overwrite bests. These are client-reported records, not
-proof of gameplay. Room records/full run history are not uploaded. Browser logout
-does not delete records. Records persist in `records.sqlite3` alongside auth storage.
+`POST auth/sync-records` now returns 410 after authentication. Existing bests migrate
+once into individual legacy entries and remain eligible until moderated. Old clients
+cannot introduce new untracked improvements. Real-time and tick bests remain independent.
+
+New submissions use the scoped sync token and `version: 2` bodies:
+
+- `POST records/solo-start {version, floor, elapsed_ms, ticks, paul}` registers a
+  fresh F7/M7 attempt, at most ten seconds after Mort's start. The response includes
+  a random `attempt_id`, `nonce`, `sequence: 0`, and `status: active`.
+- `POST records/solo-progress {version, attempt_id, nonce, sequence, elapsed_ms,
+ticks, roster, dead, valid, evidence, complete}` acknowledges the last nonce and
+  increments sequence by one. `roster` contains observed player UUIDs, cumulatively;
+  only the submitting player is permitted. `evidence` supplies the bounded score
+  inputs in `contracts/solo-score-v2.json`. The backend recomputes the projected
+  score, including Paul, unfinished blood/boss and speed penalties. It must observe
+  a score below 300 before a qualifying finish at 300 or above.
+- `POST records/terminal-report {version, report_id, floor, run_started_ms, roster,
+real_ms, ticks}` accepts a single report as eligible. Reports by different accounts
+  with the same floor, roster and start within ten seconds are compared. A spread
+  greater than one second or twenty ticks is flagged for review; matching reports
+  become corroborated. A conflicting witness cannot automatically erase another
+  player's record. Per-account run reports are unique; identical retries are idempotent.
+
+Live samples are sent every five seconds, with an immediate finish sample. Each
+acknowledgement supplies an unpredictable nonce for the next update. Replays, reordered
+updates, non-solo rosters, deaths, invalidated tracking, gaps over fifteen seconds,
+client/server elapsed disagreement over five seconds, and implausible tick rates
+reject the attempt permanently. At least three progress messages are required.
+Tick counts must fall between elapsed/250 and elapsed/50 + 40. These conservative
+bounds reject extreme clock discrepancies, including genuine extreme lag; local
+PBs are still retained. No record is labelled proof of legitimate gameplay.
+
+The client uses bounded queues and a background worker; it never submits stored
+local minima as fresh evidence. Offline attempts remain local. Queued starts older
+than ten seconds and progress older than five seconds cannot qualify. The server
+bounds active attempts at 1,000, each account at 500 starts/reports per day, each
+attempt at 1,500 updates, and a run at two hours. Terminal start timestamps must be
+within the past day. Client-reported run identity and timings remain forgeable.
+
+Accepted attempt details and terminal report context expire after thirty days;
+rejected/abandoned attempts expire after seven. Eligible record summaries persist
+until deleted. Case-specific holds can extend evidence retention or suspend expiry
+for an open appeal. Cleanup runs hourly in a worker. A restart abandons active
+attempts. Accepted records refresh the party matching cache on the event loop.
+Browser logout revokes submission credentials but does not delete records.
 
 `GET auth/skin` serves a validated Mojang skin for the signed-in UUID; arbitrary
 URLs/redirects are rejected. The lazy skin renderer's licenses ship in
@@ -331,3 +383,66 @@ Run `python tools/check.py`; fixtures/fakes never contact accounts or production
 Before deploying: test full five-client handoff, no-shows, manual reinvites, a roster
 change during an invite round, unrelated existing game parties, browser logout,
 account switch, network loss and backend restart. Automated tests do not replace this.
+
+## Moderation and privacy
+
+All `/api/v1/moderation/` requests require a linked browser session and an active
+moderator grant, or the configured owner UUID. Mutations require the exact web
+Origin and a v1 JSON body with a nonblank reason (500 characters maximum).
+Owner-only `POST access` grants/revokes a UUID; grants survive renames and restarts.
+`GET access`, `GET player/{uuid}`, `GET resolve/{name}`, and paginated `GET audit`
+provide access, records/cases, current Mojang names and attributable history.
+No panel endpoint returns credentials, raw IPs or keyed connection identifiers.
+
+`POST record` accepts a record_id, expected_status and invalidate/restore/correct.
+Corrections require real_ms and ticks; they invalidate the reviewed record and
+create a manual replacement. Changes and before/after audit values commit together.
+Old or duplicate edits fail with 409. Finder PB fields refresh without requiring a
+Hypixel request. Historical legitimate records can still supply the player's best.
+`GET evidence/{record_id}` and `GET case/{case_id}/evidence` show retained evidence;
+case evidence remains accessible after a player deletes their PB summary.
+
+`POST sanction` accepts uuid, kind (ban/network_ban/mute), optional Unix expires
+(null means permanent), record_ids and report_ids. Network bans also restrict the
+account and use its latest authenticated mod connection from the past 24 hours.
+They match exact IPs (IPv4-mapped IPv6 is normalized), can affect shared networks,
+and do not prevent VPN or account evasion. Account bans remove current party/search
+state and apply to browser, mod and record routes. Mutes block both chat send routes.
+Account management remains accessible while banned. No discrepancy automatically bans.
+`POST case` revokes a sanction or opens/closes an externally handled appeal.
+
+`POST /api/v1/party/chat/report` requires current party membership and references a
+server-side message_id; clients cannot submit evidence text or a sender identity.
+Reports are limited to ten per account per day, 10,000 retained globally, and duplicate
+reports from the same account are idempotent. Ordinary chat remains in memory.
+Moderators use GET/POST moderation/chat to inspect, dismiss or remove reported messages.
+Removed text is scrubbed from retained chat and retry receipts; mod history omits it.
+Previously rendered Minecraft chat cannot be recalled. Report text expires after
+30 days unless a case hold applies; audit entries do not copy the message text.
+
+Evidence holds follow temporary restriction expiry, or 30 days after a permanent
+restriction. An open appeal holds evidence until it closes, then the original
+expiry applies. Late appeals cannot recover deleted detail. Unrestricted accepted
+run evidence expires after 30 days and rejected/abandoned evidence after seven.
+Minimal audit history expires 180 days after the account's last case ends; active
+restrictions and open appeals defer that expiry. Standalone actions expire after
+180 days. Cleanup runs hourly. Recent keyed connection associations expire after
+24 hours, and expired/revoked network restrictions drop their connection fingerprint.
+
+`POST /api/v1/auth/erase` takes version:1, scope:records|account and
+confirmation:"DELETE". It requires the browser session and exact Origin. PB deletion
+removes synced summaries and unheld evidence, revokes sync credentials and clears
+cached requirements. Account deletion also removes authentication links, moderator
+grants, recent connections, ordinary chat and player caches. Restrictions, open
+reported-message investigations and required evidence/audit records retain the
+limited lifetimes above. Local Minecraft files are not changed or uploaded again.
+New deliberately recorded runs can create new PBs after reauthentication.
+
+Auth and record deletion commit in one attached SQLite transaction, under the
+records-then-auth lock order. Record writes reauthenticate under that same lock.
+Ownership-proof issuance checks an erasure generation so a proof already in flight
+cannot recreate a deleted link. Pending skin/stat fetches cannot repopulate erased
+caches. A separate seven-day erasure ledger is replayed before serving restored
+records; see DEPLOYMENT.md. GET /api/v1/privacy publishes the operator/contact from
+server configuration. `/account` provides self-service deletion and `/privacy`
+explains purposes, retention, exceptions and contact rights.

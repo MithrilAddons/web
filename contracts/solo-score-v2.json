@@ -1,0 +1,162 @@
+[
+  {
+    "name": "projected",
+    "evidence": {
+      "completed": 18,
+      "cleared": 90,
+      "secrets": 100.0,
+      "crypts": 5,
+      "puzzles": 2,
+      "solved": 2,
+      "deaths": 0,
+      "blood_included": false,
+      "in_boss": false,
+      "mimic": false,
+      "prince": false,
+      "bat": false
+    },
+    "elapsed_ms": 600000,
+    "paul": false,
+    "score": 305
+  },
+  {
+    "name": "boss",
+    "evidence": {
+      "completed": 18,
+      "cleared": 90,
+      "secrets": 100.0,
+      "crypts": 5,
+      "puzzles": 2,
+      "solved": 2,
+      "deaths": 0,
+      "blood_included": false,
+      "in_boss": true,
+      "mimic": false,
+      "prince": false,
+      "bat": false
+    },
+    "elapsed_ms": 600000,
+    "paul": false,
+    "score": 298
+  },
+  {
+    "name": "puzzle",
+    "evidence": {
+      "completed": 18,
+      "cleared": 90,
+      "secrets": 100.0,
+      "crypts": 5,
+      "puzzles": 2,
+      "solved": 1,
+      "deaths": 0,
+      "blood_included": false,
+      "in_boss": false,
+      "mimic": false,
+      "prince": false,
+      "bat": false
+    },
+    "elapsed_ms": 600000,
+    "paul": false,
+    "score": 295
+  },
+  {
+    "name": "secrets",
+    "evidence": {
+      "completed": 18,
+      "cleared": 90,
+      "secrets": 50.0,
+      "crypts": 5,
+      "puzzles": 2,
+      "solved": 2,
+      "deaths": 0,
+      "blood_included": false,
+      "in_boss": false,
+      "mimic": false,
+      "prince": false,
+      "bat": false
+    },
+    "elapsed_ms": 600000,
+    "paul": false,
+    "score": 285
+  },
+  {
+    "name": "speed",
+    "evidence": {
+      "completed": 18,
+      "cleared": 90,
+      "secrets": 100.0,
+      "crypts": 5,
+      "puzzles": 2,
+      "solved": 2,
+      "deaths": 0,
+      "blood_included": false,
+      "in_boss": false,
+      "mimic": false,
+      "prince": false,
+      "bat": false
+    },
+    "elapsed_ms": 1008000,
+    "paul": false,
+    "score": 295
+  },
+  {
+    "name": "paul",
+    "evidence": {
+      "completed": 18,
+      "cleared": 90,
+      "secrets": 100.0,
+      "crypts": 5,
+      "puzzles": 2,
+      "solved": 2,
+      "deaths": 0,
+      "blood_included": false,
+      "in_boss": false,
+      "mimic": false,
+      "prince": false,
+      "bat": false
+    },
+    "elapsed_ms": 600000,
+    "paul": true,
+    "score": 315
+  },
+  {
+    "name": "bonuses",
+    "evidence": {
+      "completed": 18,
+      "cleared": 90,
+      "secrets": 100.0,
+      "crypts": 5,
+      "puzzles": 2,
+      "solved": 2,
+      "deaths": 0,
+      "blood_included": false,
+      "in_boss": false,
+      "mimic": true,
+      "prince": true,
+      "bat": true
+    },
+    "elapsed_ms": 600000,
+    "paul": false,
+    "score": 309
+  },
+  {
+    "name": "unknown",
+    "evidence": {
+      "completed": 18,
+      "cleared": 90,
+      "secrets": null,
+      "crypts": 5,
+      "puzzles": 2,
+      "solved": 2,
+      "deaths": 0,
+      "blood_included": false,
+      "in_boss": false,
+      "mimic": false,
+      "prince": false,
+      "bat": false
+    },
+    "elapsed_ms": 600000,
+    "paul": false,
+    "score": null
+  }
+]

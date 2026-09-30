@@ -9,6 +9,29 @@ import { afterEach, expect, it, vi } from "vitest";
 import { PartyChat, type ChatMessage } from "./PartyChat";
 
 afterEach(cleanup);
+
+it("reports the selected message with a required reason", async () => {
+  const onReport = vi.fn(async () => undefined);
+  render(
+    <PartyChat
+      messages={[message]}
+      connected
+      onSend={vi.fn()}
+      onReport={onReport}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Report" }));
+  expect(
+    (screen.getByRole("button", { name: "Submit report" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  fireEvent.change(screen.getByLabelText("Report reason"), {
+    target: { value: "Harassment" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Submit report" }));
+  expect(await screen.findByText("Reported.")).toBeTruthy();
+  expect(onReport).toHaveBeenCalledExactlyOnceWith(message.id, "Harassment");
+});
 const message: ChatMessage = {
   id: "1",
   text: "I’ll take blood rush.",

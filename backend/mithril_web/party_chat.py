@@ -46,3 +46,12 @@ class ChatLog:
         while len(self.receipts) > 1024:
             self.receipts.popitem(last=False)
         return message
+
+    def hide(self, message_id):
+        # Receipts share these objects: an idempotent retry cannot recover removed text.
+        messages = list(self.messages) + [receipt[1] for receipt in self.receipts.values()]
+        for message in messages:
+            if message["id"] == message_id:
+                message["text"] = "Message removed by a moderator."
+                message.pop("sender", None)
+                message.pop("source", None)
