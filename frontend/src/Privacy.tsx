@@ -22,6 +22,7 @@ export function PrivacyPolicy() {
   }, []);
   return (
     <article>
+      <title>Privacy · Mithril</title>
       <h1>Privacy</h1>
       <p>
         MithrilPF stores your Minecraft UUID and username, browser links,
@@ -154,7 +155,10 @@ export function AccountPrivacy() {
           ? "Account deleted. You are signed out."
           : "Synced PBs deleted.",
       );
-      if (scope === "account") setUser(null);
+      if (scope === "account") {
+        setUser(null);
+        window.dispatchEvent(new Event("mithril-signed-out"));
+      }
       setConfirmation("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Deletion failed.");
@@ -165,6 +169,8 @@ export function AccountPrivacy() {
   }
   return (
     <section className="moderation">
+      <title>Your data · Mithril</title>
+      <a href="/profile">Back to profile</a>
       <h1>Your data</h1>
       {error && <p role="alert">{error}</p>}
       {status && <output>{status}</output>}
@@ -183,7 +189,7 @@ export function AccountPrivacy() {
             void erase();
           }}
         >
-          <h2>{user.name}</h2>
+          <h2>Delete data for {user.name}</h2>
           <label>
             Delete{" "}
             <select
@@ -215,7 +221,11 @@ export function AccountPrivacy() {
             />
           </label>
           <button type="submit" disabled={busy || confirmation !== "DELETE"}>
-            {busy ? "Deleting…" : "Delete selected data"}
+            {busy
+              ? "Deleting…"
+              : scope === "account"
+                ? "Delete account and synced PBs"
+                : "Delete synced PBs"}
           </button>
         </form>
       )}

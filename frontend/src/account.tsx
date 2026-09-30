@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { SkinPreview } from "./SkinPreview";
-import { PlayerCard } from "./PlayerCard";
+import { PlayerStats } from "./PlayerCard";
 import { SkinAvatar } from "./SkinAvatar";
 
 type User = { uuid: string; name: string };
@@ -24,9 +24,8 @@ async function request<T>(path: string, body?: object): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export function Account() {
-  const [cardOpen, setCardOpen] = useState(false);
-  const nameButton = useRef<HTMLButtonElement>(null);
+export function Account({ compact = false }: { compact?: boolean }) {
+  const menu = useRef<HTMLDetailsElement>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [error, setError] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -40,67 +39,108 @@ export function Account() {
         if (active) setError(true);
       },
     );
+    const signedOut = () => {
+      active = false;
+      setSession({ authenticated: false });
+      setError(false);
+    };
+    window.addEventListener("mithril-signed-out", signedOut);
     return () => {
       active = false;
+      window.removeEventListener("mithril-signed-out", signedOut);
     };
   }, []);
+  useEffect(() => {
+    if (!compact) return;
+    const close = (event: PointerEvent) => {
+      if (
+        menu.current &&
+        event.target instanceof Node &&
+        !menu.current.contains(event.target)
+      )
+        menu.current.open = false;
+    };
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, [compact]);
   async function logout() {
     setBusy(true);
     setError(false);
     try {
       setSession(await request<Session>("logout", {}));
+      window.dispatchEvent(new Event("mithril-signed-out"));
+      if (compact) location.replace("/");
     } catch {
       setError(true);
     } finally {
       setBusy(false);
     }
   }
+  if (compact)
+    return (
+      <div className="header-account">
+        {session?.authenticated && session.user ? (
+          <details
+            ref={menu}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.currentTarget.open = false;
+                event.currentTarget.querySelector("summary")?.focus();
+              }
+            }}
+          >
+            <summary>
+              <SkinAvatar
+                className="avatar"
+                name={session.user.name}
+                uuid={session.user.uuid}
+              />{" "}
+              <span>{session.user.name}</span>
+            </summary>
+            <nav aria-label="Account navigation" className="account-menu">
+              <a href="/profile">Your profile</a>
+              <a href="/account">Manage data</a>
+              {session.moderator && <a href="/moderation">Moderation</a>}
+              <button disabled={busy} onClick={() => void logout()}>
+                Log out
+              </button>
+              {error && <p role="alert">Could not log out. Try again.</p>}
+            </nav>
+          </details>
+        ) : session ? (
+          <a href="/link">Link account</a>
+        ) : (
+          <span className="quiet-label">
+            {error ? "Account unavailable" : "Checking account…"}
+          </span>
+        )}
+      </div>
+    );
   return (
     <section aria-label="Account">
       {session?.authenticated && session.user ? (
-        <div className="signed-in">
-          <div className="account-identity">
-            <SkinAvatar
-              className="avatar"
+        <div className="profile-layout">
+          <div className="profile-identity">
+            <div className="account-identity">
+              <SkinAvatar
+                className="avatar"
+                name={session.user.name}
+                uuid={session.user.uuid}
+              />
+              <div>
+                <h2>{session.user.name}</h2>
+                <span className="quiet-label">Minecraft account</span>
+              </div>
+            </div>
+            <SkinPreview
+              key={session.user.uuid}
               name={session.user.name}
               uuid={session.user.uuid}
             />
-            <div>
-              <button
-                ref={nameButton}
-                className="account-name"
-                aria-haspopup="dialog"
-                onClick={() => setCardOpen(true)}
-              >
-                {session.user.name}
-              </button>
-              <span className="quiet-label">Minecraft account</span>
-            </div>
           </div>
-          <SkinPreview
-            key={session.user.uuid}
-            name={session.user.name}
-            uuid={session.user.uuid}
-          />
-          <a href="/account">Manage data</a>
-          {session.moderator && <a href="/moderation">Moderation</a>}
-          {cardOpen && (
-            <PlayerCard
-              key={`card-${session.user.uuid}`}
-              user={session.user}
-              onClose={() => {
-                setCardOpen(false);
-                nameButton.current?.focus();
-              }}
-            />
-          )}
-          <button
-            className="secondary"
-            disabled={busy}
-            onClick={() => void logout()}
-          >
-            Log out
-          </button>
+          <section className="profile-stats" aria-label="Dungeon stats">
+            <PlayerStats key={session.user.uuid} user={session.user} />
+          </section>
         </div>
       ) : session ? (
         <div className="sign-in-help">
@@ -304,10 +344,22 @@ export function CookiePolicy() {
       </p>
       <h2>Removing it</h2>
       <p>
-        Use Log out on the party-finder page to revoke this browser’s session
-        and remove its cookie. You can also clear this site’s cookies in your
+        Use Log out in the account menu to revoke this browser’s session and
+        remove its cookie. You can also clear this site’s cookies in your
         browser; this signs you out locally. Blocking cookies prevents sign-in
         but does not prevent browsing.
+      </p>
+      <h2>Browser preferences</h2>
+      <p>
+        Successfully saved party requirements stay in this browser, separately
+        for each account and floor. Use Reset saved requirements in the party
+        editor or clear this site’s browser storage to remove them.
+      </p>
+      <p>
+        The Slayer calculator remembers your last selected Slayer and its
+        settings separately for each Slayer type in this browser. These
+        preferences are not synced to your account or other browsers. Clear this
+        site’s browser storage to remove them.
       </p>
       <h2>Account data</h2>
       <p>
@@ -333,9 +385,9 @@ export function CookiePolicy() {
         only Mithril for this preview; no extra cookie is used.
       </p>
       <p>
-        Opening your player card fetches your selected SkyBlock profile from
-        Hypixel. Dungeon stats are cached in server memory for up to five
-        minutes; no extra cookie is used.
+        Opening your profile or a player card fetches the selected SkyBlock
+        profile from Hypixel. Dungeon stats are cached in server memory for up
+        to five minutes; no extra cookie is used.
       </p>
       <p>
         A linked MithrilPF mod syncs your account-wide solo-clear and terminal

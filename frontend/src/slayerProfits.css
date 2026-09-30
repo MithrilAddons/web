@@ -336,7 +336,7 @@
   .slayer-panel {
     padding: 18px;
   }
-  .slayer-controls > label:first-child {
+  .slayer-controls > label:nth-child(6) {
     grid-column: 1 / -1;
   }
   .slayer-metric {
@@ -350,4 +350,31 @@
   .slayer-drops td {
     padding: 10px 16px;
   }
+}
+
+.slayer-boosts {
+  grid-column: 1 / -1;
+}
+.slayer-boosts summary {
+  cursor: pointer;
+  color: var(--text);
+  padding-block: 8px;
+}
+.slayer-boosts .slayer-options {
+  margin-top: 12px;
+}
+.slayer-table-scroll details summary,
+.slayer-pets details summary {
+  cursor: pointer;
+}
+.slayer-table-scroll details[open] {
+  white-space: normal;
+}
+.slayer-assumptions .slayer-drops {
+  margin-top: 20px;
+}
+
+.slayer-price-status {
+  display: grid;
+  gap: 6px;
 }

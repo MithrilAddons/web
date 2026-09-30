@@ -6,7 +6,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { SlayerProfits } from "./SlayerProfits";
 
@@ -36,7 +36,10 @@ const market = {
     ]),
   ),
 };
+beforeEach(() => localStorage.clear());
 afterEach(() => {
+  vi.restoreAllMocks();
+  localStorage.clear();
   cleanup();
   vi.unstubAllGlobals();
   window.history.replaceState(null, "", "/");
@@ -44,10 +47,77 @@ afterEach(() => {
 function mockMarket() {
   const fetcher = vi
     .fn()
-    .mockResolvedValue(new Response(JSON.stringify(market)));
+    .mockImplementation(
+      async (...[url]: [string, RequestInit?]) =>
+        new Response(
+          JSON.stringify(
+            url.endsWith("/auth/session") ? { authenticated: false } : market,
+          ),
+        ),
+    );
   vi.stubGlobal("fetch", fetcher);
   return fetcher;
 }
+
+it("remembers separate Slayer settings and the last selection after reopening", async () => {
+  const fetcher = mockMarket();
+  const view = render(<SlayerProfits />);
+  await screen.findByText(/Market prices loaded/);
+  const change = (label: string, value: string) =>
+    fireEvent.change(screen.getByLabelText(label), { target: { value } });
+  const value = (label: string) =>
+    (screen.getByLabelText(label) as HTMLInputElement).value;
+  const toggles = [
+    "+25% RNG meter XP",
+    "Half-price quests",
+    "3 EXP Share slots (+10% rate)",
+    "+35% pet XP",
+    "+10% RNG meter XP",
+    "Pet shard bonuses",
+    "Exclude main pet",
+  ];
+  change("Magic Find", "315");
+  change("Bosses/hr", "75");
+  change("RNG meter", "Warden Heart");
+  change("Bazaar pricing", "offer");
+  for (const label of toggles) fireEvent.click(screen.getByLabelText(label));
+  change("Slayer", "2");
+  expect(value("Magic Find")).toBe("200");
+  expect(value("RNG meter")).toBe("");
+  for (const label of toggles)
+    expect((screen.getByLabelText(label) as HTMLInputElement).checked).toBe(
+      false,
+    );
+  change("Tier", "3");
+  change("Magic Find", "125");
+  change("Bosses/hr", "90");
+  change("Slayer", "0");
+  expect(value("Tier")).toBe("5");
+  expect(value("Magic Find")).toBe("315");
+  expect(value("Bosses/hr")).toBe("75");
+  expect(value("RNG meter")).toBe("Warden Heart");
+  expect(value("Bazaar pricing")).toBe("offer");
+  for (const label of toggles)
+    expect((screen.getByLabelText(label) as HTMLInputElement).checked).toBe(
+      true,
+    );
+  change("Slayer", "2");
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  view.unmount();
+  render(<SlayerProfits />);
+  expect(value("Slayer")).toBe("2");
+  expect(value("Tier")).toBe("3");
+  expect(value("Magic Find")).toBe("125");
+  expect(value("Bosses/hr")).toBe("90");
+  change("Slayer", "0");
+  expect(value("RNG meter")).toBe("Warden Heart");
+  expect(value("Bazaar pricing")).toBe("offer");
+  for (const label of toggles)
+    expect((screen.getByLabelText(label) as HTMLInputElement).checked).toBe(
+      true,
+    );
+  await screen.findByText(/Market prices loaded/);
+});
 
 it("labels provisional history and shows Kat costs without treating Common resale as profit", async () => {
   const value = {
@@ -75,7 +145,7 @@ it("labels provisional history and shows Kat costs without treating Common resal
   );
   render(<SlayerProfits />);
   await screen.findByText(/Common → Legendary · Kat/);
-  expect(screen.getByText("700K upgrades incl. 4 flowers")).toBeTruthy();
+  expect(screen.getByText("700K Kat upgrades")).toBeTruthy();
   expect(
     screen.getByText("Provisional · building 7-day price history"),
   ).toBeTruthy();
@@ -96,9 +166,11 @@ it.each(["/slayer-profits", "/slayer-profits/", "/slayerprofits"])(
         .getAttribute("aria-current"),
     ).toBe("page");
     await screen.findByText(/Market prices loaded/);
-    expect(fetcher).toHaveBeenCalledTimes(1);
-    expect(fetcher.mock.calls[0]?.[0]).toBe("/api/v1/slayer-prices");
-    expect(fetcher.mock.calls[0]?.[1].credentials).toBe("omit");
+    const call = fetcher.mock.calls.find(
+      (call) => call[0] === "/api/v1/slayer-prices",
+    );
+    expect(call).toBeTruthy();
+    expect((call?.[1] as RequestInit).credentials).toBe("omit");
     expect(document.title).toBe("Slayer profits · Mithril");
   },
 );
@@ -132,7 +204,7 @@ it("recalculates pricing and throughput, resets unsupported tiers and meters", a
   expect(
     within(
       screen.getByRole("heading", { name: "Total net/hr" }).parentElement!,
-    ).getByText("+0"),
+    ).getByText("—"),
   ).toBeTruthy();
   fireEvent.change(screen.getByLabelText("Magic Find"), {
     target: { value: "-1" },
@@ -150,7 +222,7 @@ it("shows missing prices on failure and supports retry", async () => {
   vi.stubGlobal("fetch", fetcher);
   render(<SlayerProfits />);
   await screen.findByText(/Prices incomplete or stale/);
-  expect(screen.getByText("Partial estimate")).toBeTruthy();
+  expect(screen.getByText("Estimate unavailable")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Refresh prices" }));
   await screen.findByText(/Market prices loaded/);
   expect(fetcher).toHaveBeenCalledTimes(2);
@@ -204,4 +276,31 @@ it("aborts pending price requests when leaving the page", async () => {
   )[0]![1].signal;
   view.unmount();
   expect(signal.aborted).toBe(true);
+});
+
+it("does not present a net loss while prices are still loading", () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(() => new Promise(() => {})),
+  );
+  render(<SlayerProfits />);
+  const total = screen.getByRole("heading", {
+    name: "Total net/hr",
+  }).parentElement!;
+  expect(within(total).getByText("—")).toBeTruthy();
+  expect(within(total).getByText("Waiting for prices")).toBeTruthy();
+  expect(total.getAttribute("data-state")).toBeNull();
+});
+
+it("applies the recommended meter item explicitly", async () => {
+  mockMarket();
+  render(<SlayerProfits />);
+  await screen.findByText(/Market prices loaded/);
+  const button = screen.getByRole("button", { name: /^Use / });
+  const item = button.textContent!.replace("Use ", "");
+  fireEvent.click(button);
+  expect((screen.getByLabelText("RNG meter") as HTMLSelectElement).value).toBe(
+    item,
+  );
+  expect(screen.queryByRole("button", { name: /^Use / })).toBeNull();
 });

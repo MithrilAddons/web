@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Account } from "./account";
 import { ModDownload } from "./ModDownload";
 import { PartyChat } from "./PartyChat";
 import { LeaderView, PartyForm } from "./PartyLead";
@@ -55,6 +54,20 @@ export function PartyWorkspace() {
   const [error, setError] = useState("");
   const [sound, setSound] = useState(true);
   const seen = useRef<Set<string> | null>(null);
+  const content = useRef<HTMLDivElement>(null);
+  const previousView = useRef(view);
+  useEffect(() => {
+    if (view === "browse" && previousView.current !== "browse") {
+      const target = content.current?.querySelector<HTMLElement>(
+        ".finder-toolbar > button, .lead-heading h2",
+      );
+      target?.setAttribute("tabindex", "-1");
+      target?.focus();
+      if (target instanceof HTMLButtonElement)
+        target.removeAttribute("tabindex");
+    }
+    previousView.current = view;
+  }, [view]);
 
   useEffect(() => {
     document.addEventListener("pointerdown", unlockSound, { once: true });
@@ -110,7 +123,10 @@ export function PartyWorkspace() {
         floor={floor}
         run={run}
         busy={busy}
-        onDone={() => setView("browse")}
+        onDone={(notice) => {
+          setView("browse");
+          if (notice) setError(notice);
+        }}
       />
     );
   else if (state.party?.you_lead)
@@ -137,7 +153,7 @@ export function PartyWorkspace() {
 
   return (
     <div className="workspace">
-      <div className="party-main">
+      <div className="party-main" ref={content}>
         {offline && (
           <p className="party-offline" role="status">
             Reconnecting to the party finder…
@@ -145,6 +161,24 @@ export function PartyWorkspace() {
         )}
         {state && <Notices state={state} />}
         {error && <p role="alert">{error}</p>}
+        {state && view === "browse" && (
+          <div className="finder-toolbar">
+            <details className="finder-records">
+              <summary>
+                Your {floor} records{" "}
+                <span className="quiet-label">
+                  · {state.you.in_game ? "In game" : "Not in game"}
+                </span>
+              </summary>
+              <MatchingRecords state={state} floor={floor} />
+            </details>
+            {!state.party && (
+              <button className="primary" onClick={() => setView("create")}>
+                Create a party
+              </button>
+            )}
+          </div>
+        )}
         {main}
         {!signedOut && state?.party && (
           <PartyChat
@@ -160,21 +194,6 @@ export function PartyWorkspace() {
           />
         )}
       </div>
-      <aside className="account-panel">
-        <h2>Your account</h2>
-        <Account />
-        {state && (
-          <MatchingRecords
-            state={state}
-            floor={floor}
-            onCreate={
-              !state.party && view === "browse"
-                ? () => setView("create")
-                : undefined
-            }
-          />
-        )}
-      </aside>
     </div>
   );
 }
@@ -187,6 +206,13 @@ function SignedOut() {
     >
       <h2 id="parties-heading">Parties</h2>
       <p>Link your Minecraft account to browse and join parties.</p>
+      <p>
+        Open <code>/mithrilpf</code> in Minecraft, select{" "}
+        <strong>Link browser</strong>, then confirm here.
+      </p>
+      <a className="button primary" href="/link">
+        Enter a linking code
+      </a>
       <ModDownload />
     </section>
   );
@@ -781,23 +807,30 @@ function HeldPanel({
         you={state.you.name}
         stats={state.you.stats}
       />
-      <ul className="held-notes">
-        <li>
-          When the last slot fills, everyone has{" "}
-          <strong>5 minutes to get in game</strong>. {party.leader}’s game sends
-          one round of invites once everyone is online.
-        </li>
-        <li>
-          Keep this tab or Minecraft open while you wait. If both are closed for
-          60 seconds, your slot is released (no ban). A sound plays when the
-          party fills.
-        </li>
-        <li>
-          If {party.leader} leaves or disconnects, a random member with the
-          website or mod open becomes leader. If nobody is online, the party
-          disbands.
-        </li>
-      </ul>
+      <p className="panel-message">
+        Keep this tab or Minecraft open. When the party fills, you have 5
+        minutes to get in game.
+      </p>
+      <details className="waiting-details">
+        <summary>Invites, disconnects and leadership</summary>
+        <ul className="held-notes">
+          <li>
+            When the last slot fills, everyone has{" "}
+            <strong>5 minutes to get in game</strong>. {party.leader}’s game
+            sends one round of invites once everyone is online.
+          </li>
+          <li>
+            Keep this tab or Minecraft open while you wait. If both are closed
+            for 60 seconds, your slot is released (no ban). A sound plays when
+            the party fills.
+          </li>
+          <li>
+            If {party.leader} leaves or disconnects, a random member with the
+            website or mod open becomes leader. If nobody is online, the party
+            disbands.
+          </li>
+        </ul>
+      </details>
     </section>
   );
 }
@@ -805,11 +838,9 @@ function HeldPanel({
 function MatchingRecords({
   state,
   floor,
-  onCreate,
 }: {
   state: PartyState;
   floor: Floor;
-  onCreate?: () => void;
 }) {
   const stats = state.you.stats;
   const rows: [string, string][] = stats
@@ -861,11 +892,6 @@ function MatchingRecords({
         </>
       ) : (
         <p className="quiet-label">Loading your Hypixel stats…</p>
-      )}
-      {onCreate && (
-        <button className="secondary create-button" onClick={onCreate}>
-          Create a party
-        </button>
       )}
     </section>
   );

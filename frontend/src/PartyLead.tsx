@@ -1,7 +1,6 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   andList,
-  ClassTile,
   DetailTable,
   FullPanel,
   memberChips,
@@ -19,6 +18,7 @@ import {
   METRICS,
   openRoles,
   parseMetric,
+  requirements,
   partyApi,
   type PartyState,
   type Role,
@@ -26,8 +26,15 @@ import {
   type Thresholds,
 } from "./partyApi";
 
+import {
+  loadPartyRules,
+  savePartyRules,
+  resetPartyRules,
+} from "./partyPreferences";
+
 type Run = (task: () => Promise<PartyState>) => Promise<boolean>;
 const EVERY = "every";
+const DEFAULT_METRICS: Metric[] = ["catacombs", "s_plus_ms", "magical_power"];
 const HINT: Record<Metric, string> = {
   catacombs: "At least",
   class_level: "At least, for the slot’s class",
@@ -168,10 +175,8 @@ export function LeaderView({
             }}
           />
           <p className="panel-message">
-            When every slot is held, everyone has 5 minutes to get in game and
-            your game invites each player as they come online. If you leave or
-            disconnect, a random member with the website or mod open becomes
-            leader. If nobody is online, the party disbands.
+            When the party fills, everyone has 5 minutes to get in game. The mod
+            sends invites once everyone is online.
           </p>
         </section>
         <div className="lead-side">
@@ -328,7 +333,7 @@ export function PartyForm({
   floor: Floor;
   run: Run;
   busy: boolean;
-  onDone: () => void;
+  onDone: (notice?: string) => void;
 }) {
   const party = mode === "edit" ? state.party : null;
   const leaderSlot = party?.members.find(
@@ -342,10 +347,48 @@ export function PartyForm({
   const [roles, setRoles] = useState<Role[]>(
     party ? party.slots.map((slot) => slot.role) : [...CLASSES],
   );
-  const [draft, setDraft] = useState<Draft>(() =>
-    party ? draftFrom(party.rules) : {},
+  const [initialRules] = useState(
+    () => party?.rules ?? loadPartyRules(state.you.uuid, initialFloor),
   );
-  const [exempt, setExempt] = useState<Role[]>(party?.rules.exempt ?? []);
+  const [draft, setDraft] = useState<Draft>(() => draftFrom(initialRules));
+  const [exempt, setExempt] = useState<Role[]>(initialRules.exempt);
+  const drafts = useRef<
+    Partial<Record<Floor, { draft: Draft; exempt: Role[] }>>
+  >({});
+  const heading = useRef<HTMLHeadingElement>(null);
+  const form = useRef<HTMLFormElement>(null);
+  const [memoryNotice, setMemoryNotice] = useState("");
+  const [resetVersion, setResetVersion] = useState(0);
+  useEffect(() => {
+    heading.current?.focus();
+  }, []);
+  function changeFloor(next: Floor) {
+    if (next === floor) return;
+    drafts.current[floor] = { draft, exempt };
+    const stored = loadPartyRules(state.you.uuid, next);
+    const nextDraft = drafts.current[next] ?? {
+      draft: draftFrom(stored),
+      exempt: stored.exempt,
+    };
+    setDraft(nextDraft.draft);
+    setExempt(nextDraft.exempt);
+    setFloor(next);
+    setProblem("");
+    setMemoryNotice("");
+  }
+  function focusInvalid() {
+    requestAnimationFrame(() => {
+      const input = form.current?.querySelector<HTMLInputElement>(
+        '[aria-invalid="true"]',
+      );
+      let parent = input?.parentElement;
+      while (parent) {
+        if (parent instanceof HTMLDetailsElement) parent.open = true;
+        parent = parent.parentElement;
+      }
+      input?.focus();
+    });
+  }
   const [kept, setKept] = useState(party?.blocked ?? []);
   const [names, setNames] = useState("");
   const [problem, setProblem] = useState("");
@@ -368,6 +411,7 @@ export function PartyForm({
       for (const metric of METRIC_ORDER) {
         const value = parsed(`${column}:${metric}`, metric);
         if (value === undefined) {
+          focusInvalid();
           setProblem(
             `Check ${METRICS[metric].label} for ${column === EVERY ? "every slot" : CLASS_NAMES[column as Role]}.`,
           );
@@ -378,6 +422,7 @@ export function PartyForm({
         else (rules.per_class[column as Role] ??= {})[metric] = value;
       }
     if (badName) {
+      focusInvalid();
       setProblem(`“${badName}” isn’t a valid Minecraft name.`);
       return;
     }
@@ -406,11 +451,19 @@ export function PartyForm({
               newNames,
             ),
           );
-    if (done) onDone();
+    if (done) {
+      const remembered = savePartyRules(state.you.uuid, floor, rules);
+      onDone(
+        remembered
+          ? undefined
+          : "Party saved. This browser could not remember your requirements.",
+      );
+    }
   };
 
   return (
     <form
+      ref={form}
       className="party-form"
       aria-labelledby="form-title"
       onSubmit={(event) => {
@@ -419,10 +472,10 @@ export function PartyForm({
       }}
     >
       <div className="form-heading">
-        <h2 id="form-title">
+        <h2 id="form-title" ref={heading} tabIndex={-1}>
           {mode === "create" ? "Create a party" : "Edit requirements"}
         </h2>
-        <button type="button" className="text-button" onClick={onDone}>
+        <button type="button" className="text-button" onClick={() => onDone()}>
           Cancel
         </button>
       </div>
@@ -436,7 +489,7 @@ export function PartyForm({
                 type="button"
                 key={entry}
                 aria-pressed={floor === entry}
-                onClick={() => setFloor(entry)}
+                onClick={() => changeFloor(entry)}
               >
                 {entry}
               </button>
@@ -496,125 +549,163 @@ export function PartyForm({
       )}
 
       <fieldset className="form-section">
-        <legend>Requirements</legend>
+        <legend>Shared requirements</legend>
         <p className="quiet-label">
-          A joiner must meet every rule for their slot. Leave a field empty for
-          no rule.
+          For every open slot. Empty means no requirement.
         </p>
-        <div
-          className="matrix-wrap"
-          role="region"
-          aria-label="Class requirements"
-          tabIndex={0}
-        >
-          <table className="rule-matrix">
-            <thead>
-              <tr>
-                <th scope="col">Rule</th>
-                <th scope="col">Every open slot</th>
-                {columns.map((role) => (
-                  <th scope="col" key={role}>
-                    <span className="slot-name">
-                      <ClassTile role={role} kind="open" />
-                      {CLASS_NAMES[role]}
-                    </span>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {METRIC_ORDER.map((metric) => (
-                <tr key={metric}>
-                  <th scope="row">
-                    {METRICS[metric].label}
-                    <span className="quiet-label">{HINT[metric]}</span>
-                  </th>
-                  {[EVERY, ...columns].map((column) => {
-                    const key = `${column}:${metric}`;
-                    const label = `${METRICS[metric].label}, ${column === EVERY ? "every open slot" : CLASS_NAMES[column as Role]}`;
-                    return (
-                      <td key={column}>
-                        <input
-                          aria-label={label}
-                          value={draft[key] ?? ""}
-                          inputMode="numeric"
-                          placeholder={
-                            METRICS[metric].unit === "time" ? "m:ss" : "—"
-                          }
-                          aria-invalid={parsed(key, metric) === undefined}
-                          onChange={(event) =>
-                            setDraft({ ...draft, [key]: event.target.value })
-                          }
-                        />
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div className="exempt-row" role="group" aria-labelledby="exempt-label">
-          <span id="exempt-label">Skip the Catacombs level for</span>
-          {columns.map((role) => (
-            <button
-              type="button"
-              key={role}
-              className="class-toggle"
-              aria-pressed={exempt.includes(role)}
-              onClick={() =>
-                setExempt(
-                  exempt.includes(role)
-                    ? exempt.filter((entry) => entry !== role)
-                    : [...exempt, role],
-                )
-              }
+        <RequirementFields
+          key={`shared-${floor}-${resetVersion}`}
+          column={EVERY}
+          draft={draft}
+          onChange={setDraft}
+        />
+      </fieldset>
+      <details
+        className="form-disclosure"
+        open={
+          columns.some(
+            (role) =>
+              exempt.includes(role) ||
+              METRIC_ORDER.some((metric) => draft[`${role}:${metric}`]),
+          ) || undefined
+        }
+      >
+        <summary>
+          Class-specific requirements{" "}
+          <span className="quiet-label">
+            {columns.filter(
+              (role) =>
+                exempt.includes(role) ||
+                METRIC_ORDER.some((metric) => draft[`${role}:${metric}`]),
+            ).length || ""}
+          </span>
+        </summary>
+        <p className="quiet-label">
+          Class rules add to shared rules. The stricter value applies.
+        </p>
+        {columns.map((role) => {
+          const current: Rules = {
+            shared: {},
+            per_class: { [role]: {} },
+            exempt,
+          };
+          for (const metric of METRIC_ORDER) {
+            const shared = parsed(`${EVERY}:${metric}`, metric),
+              own = parsed(`${role}:${metric}`, metric);
+            if (shared !== null && shared !== undefined)
+              current.shared[metric] = shared;
+            if (own !== null && own !== undefined)
+              current.per_class[role]![metric] = own;
+          }
+          const active =
+            exempt.includes(role) ||
+            METRIC_ORDER.some((metric) => draft[`${role}:${metric}`]);
+          return (
+            <details
+              key={`${floor}-${role}-${resetVersion}`}
+              className="class-requirements"
+              open={active || undefined}
             >
-              <span className="class-letter" aria-hidden="true">
-                {CLASS_NAMES[role][0]}
-              </span>
-              {CLASS_NAMES[role]}
-            </button>
-          ))}
-          <span className="quiet-label">Their other rules still apply.</span>
-        </div>
-      </fieldset>
-
-      <fieldset className="form-section">
-        <legend>Blocked players</legend>
-        <p className="quiet-label">
-          Private to you. Blocked players never see your party, even after a
-          rename.
-        </p>
-        {kept.length > 0 && (
-          <ul className="blocked-list">
-            {kept.map((entry) => (
-              <li key={entry.uuid}>
-                {entry.name}
-                <button
-                  type="button"
-                  className="text-button"
-                  aria-label={`Unblock ${entry.name}`}
-                  onClick={() =>
-                    setKept(kept.filter((item) => item.uuid !== entry.uuid))
+              <summary>
+                {CLASS_NAMES[role]}{" "}
+                <span className="quiet-label">
+                  {rulesText(Object.fromEntries(requirements(current, role))) ||
+                    "No requirements"}
+                </span>
+              </summary>
+              <label className="check-field">
+                <input
+                  type="checkbox"
+                  checked={exempt.includes(role)}
+                  onChange={(e) =>
+                    setExempt(
+                      e.target.checked
+                        ? [...exempt, role]
+                        : exempt.filter((value) => value !== role),
+                    )
                   }
-                >
-                  ×
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-        <label className="stack-field blocked-names">
-          Add Minecraft names, separated by spaces or commas
-          <input
-            value={names}
-            aria-invalid={Boolean(badName)}
-            onChange={(event) => setNames(event.target.value)}
-          />
-        </label>
-      </fieldset>
-
+                />
+                Skip shared Catacombs requirement for {CLASS_NAMES[role]}
+              </label>
+              <RequirementFields
+                column={role}
+                draft={draft}
+                onChange={setDraft}
+              />
+            </details>
+          );
+        })}
+      </details>
+      <div className="preference-actions">
+        <span className="quiet-label">
+          Remembers {floor} requirements after a successful save.
+        </span>
+        <button
+          type="button"
+          className="text-button"
+          onClick={() => {
+            const removed = resetPartyRules(state.you.uuid, floor);
+            setResetVersion((value) => value + 1);
+            setDraft({});
+            setExempt([]);
+            delete drafts.current[floor];
+            setMemoryNotice(
+              removed
+                ? `Cleared saved ${floor} requirements.`
+                : "Requirements cleared, but browser storage is unavailable.",
+            );
+          }}
+        >
+          Reset saved requirements
+        </button>
+      </div>
+      {memoryNotice && (
+        <p role="status">
+          {memoryNotice}{" "}
+          <button type="button" onClick={() => onDone()}>
+            Done
+          </button>
+        </p>
+      )}
+      <details className="form-disclosure" open={kept.length > 0 || undefined}>
+        <summary>
+          Blocked players {kept.length > 0 ? `(${kept.length})` : ""}
+        </summary>
+        <fieldset className="form-section">
+          <legend>Blocked players</legend>
+          <p className="quiet-label">
+            Private to you. Blocked players never see your party, even after a
+            rename.
+          </p>
+          {kept.length > 0 && (
+            <ul className="blocked-list">
+              {kept.map((entry) => (
+                <li key={entry.uuid}>
+                  {entry.name}
+                  <button
+                    type="button"
+                    className="text-button"
+                    aria-label={`Unblock ${entry.name}`}
+                    onClick={() =>
+                      setKept(kept.filter((item) => item.uuid !== entry.uuid))
+                    }
+                  >
+                    ×
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <label className="stack-field blocked-names">
+            Add Minecraft names, separated by spaces or commas
+            <input
+              value={names}
+              aria-invalid={Boolean(badName)}
+              onChange={(event) => setNames(event.target.value)}
+            />
+          </label>
+        </fieldset>
+      </details>
       {problem && <p role="alert">{problem}</p>}
       <div className="form-footer">
         <button type="submit" className="primary" disabled={busy}>
@@ -627,5 +718,79 @@ export function PartyForm({
         </p>
       </div>
     </form>
+  );
+}
+
+function RequirementFields({
+  column,
+  draft,
+  onChange,
+}: {
+  column: string;
+  draft: Draft;
+  onChange: (value: Draft) => void;
+}) {
+  const [added, setAdded] = useState<Metric[]>([]);
+  const visible = [
+    ...DEFAULT_METRICS,
+    ...METRIC_ORDER.filter(
+      (metric) =>
+        !DEFAULT_METRICS.includes(metric) &&
+        (added.includes(metric) || Boolean(draft[`${column}:${metric}`])),
+    ),
+  ];
+  const label =
+    column === EVERY ? "every open slot" : CLASS_NAMES[column as Role];
+  return (
+    <>
+      <div className="requirement-fields">
+        {visible.map((metric) => {
+          const key = `${column}:${metric}`,
+            invalid = parseMetric(metric, draft[key] ?? "") === undefined;
+          return (
+            <label key={metric} className="stack-field">
+              <span>{METRICS[metric].label}</span>
+              <span className="quiet-label">{HINT[metric]}</span>
+              <input
+                aria-label={`${METRICS[metric].label}, ${label}`}
+                value={draft[key] ?? ""}
+                inputMode={METRICS[metric].unit === "time" ? "text" : "decimal"}
+                placeholder={METRICS[metric].unit === "time" ? "m:ss" : "Any"}
+                aria-invalid={invalid}
+                aria-describedby={invalid ? `error-${key}` : undefined}
+                onChange={(e) => onChange({ ...draft, [key]: e.target.value })}
+              />
+              {invalid && (
+                <span id={`error-${key}`} className="field-error">
+                  {METRICS[metric].unit === "time"
+                    ? "Use m:ss, up to 120:00."
+                    : `Enter a valid value up to ${inputValue(metric, METRICS[metric].max)}.`}
+                </span>
+              )}
+            </label>
+          );
+        })}
+      </div>
+      {visible.length < METRIC_ORDER.length && (
+        <label className="add-requirement">
+          Add requirement for {label}
+          <select
+            value=""
+            onChange={(e) => setAdded([...added, e.target.value as Metric])}
+          >
+            <option value="" disabled>
+              Choose a record…
+            </option>
+            {METRIC_ORDER.filter((metric) => !visible.includes(metric)).map(
+              (metric) => (
+                <option key={metric} value={metric}>
+                  {METRICS[metric].label}
+                </option>
+              ),
+            )}
+          </select>
+        </label>
+      )}
+    </>
   );
 }

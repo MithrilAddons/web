@@ -8,7 +8,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import fixture from "../../contracts/player-card-v1.json";
-import { PlayerCard } from "./PlayerCard";
+import { PartyPlayerName, PlayerCard } from "./PlayerCard";
 import { Account } from "./account";
 import { formatTime, parsePlayerCard } from "./playerCardApi";
 
@@ -26,7 +26,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("only opens and requests the card when clicking the account name, then restores focus", async () => {
+it("only opens and requests the card when clicking a party player, then restores focus", async () => {
   const fetcher = vi.fn((url: string) =>
     Promise.resolve(
       new Response(
@@ -39,7 +39,7 @@ it("only opens and requests the card when clicking the account name, then restor
     ),
   );
   vi.stubGlobal("fetch", fetcher);
-  render(<Account />);
+  render(<PartyPlayerName user={fixture.user} />);
   const name = await screen.findByRole("button", { name: "TestPlayer" });
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(fetcher.mock.calls.some(([url]) => url.endsWith("player-card"))).toBe(
@@ -68,6 +68,32 @@ it("only opens and requests the card when clicking the account name, then restor
   );
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(document.activeElement).toBe(name);
+  expect(document.body.style.overflow).toBe("");
+});
+
+it("shows profile stats immediately without a second dialog or duplicate account actions", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      async (url: string) =>
+        new Response(
+          JSON.stringify(
+            url.endsWith("session")
+              ? { authenticated: true, user: fixture.user }
+              : fixture,
+          ),
+        ),
+    ),
+  );
+  render(<Account />);
+  const stats = await screen.findByRole("region", { name: "Dungeon stats" });
+  expect(await within(stats).findByText("42.50")).toBeTruthy();
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "View dungeon stats" }),
+  ).toBeNull();
+  expect(screen.queryByRole("link", { name: "Manage data" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Log out" })).toBeNull();
   expect(document.body.style.overflow).toBe("");
 });
 

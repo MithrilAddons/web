@@ -3,7 +3,13 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import fixture from "../../contracts/health-v1.json";
 import { App } from "./App";
 
-beforeEach(() => window.history.replaceState(null, "", "/party-finder"));
+beforeEach(() => {
+  window.history.replaceState(null, "", "/party-finder");
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => new Response(JSON.stringify({ authenticated: false }))),
+  );
+});
 
 afterEach(() => {
   cleanup();
@@ -27,7 +33,9 @@ it("links deployed branch builds to their published source revision", () => {
 
 it("keeps the home page separate with a link to party finder", () => {
   window.history.replaceState(null, "", "/");
-  const fetcher = vi.fn();
+  const fetcher = vi.fn<(url: string) => Promise<Response>>(
+    async () => new Response(JSON.stringify({ authenticated: false })),
+  );
   vi.stubGlobal("fetch", fetcher);
   render(<App />);
   expect(
@@ -36,13 +44,21 @@ it("keeps the home page separate with a link to party finder", () => {
   expect(
     screen.queryByRole("heading", { name: "Dungeon party finder" }),
   ).toBeNull();
-  expect(screen.queryByRole("status")).toBeNull();
-  expect(fetcher).not.toHaveBeenCalled();
+  expect(screen.queryByText("Checking service…")).toBeNull();
+  expect(
+    fetcher.mock.calls.some((call) => String(call[0]).includes("/party/")),
+  ).toBe(false);
   expect(document.title).toBe("Mithril");
   expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
-    "Party Finder",
+    "Find your next party.",
   );
   expect(screen.queryByText(/SkyBlock|In Minecraft and on the web/)).toBeNull();
+  expect(screen.getAllByRole("link", { name: "Slayer profits" })).toHaveLength(
+    1,
+  );
+  expect(
+    screen.getByRole("link", { name: "Slayer profits" }).closest("header"),
+  ).toBeTruthy();
 });
 
 it("accepts a direct party-finder URL with a trailing slash", async () => {
@@ -71,11 +87,15 @@ it("accepts a direct party-finder URL with a trailing slash", async () => {
 
 it("does not show party finder at unknown paths", () => {
   window.history.replaceState(null, "", "/not-a-page");
-  const fetcher = vi.fn();
+  const fetcher = vi.fn<(url: string) => Promise<Response>>(
+    async () => new Response(JSON.stringify({ authenticated: false })),
+  );
   vi.stubGlobal("fetch", fetcher);
   render(<App />);
   expect(screen.getByRole("heading", { name: "Page not found" })).toBeTruthy();
-  expect(fetcher).not.toHaveBeenCalled();
+  expect(
+    fetcher.mock.calls.some((call) => String(call[0]).includes("/party/")),
+  ).toBe(false);
 });
 
 it("asks signed-out visitors to link before browsing parties", async () => {
@@ -104,7 +124,7 @@ it("asks signed-out visitors to link before browsing parties", async () => {
     ),
   ).toBeTruthy();
   expect(screen.getByRole("region", { name: "Parties" })).toBeTruthy();
-  expect(screen.getByRole("heading", { name: "Your account" })).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Link account" })).toBeTruthy();
   expect(
     screen
       .getByRole("link", { name: "Party finder" })

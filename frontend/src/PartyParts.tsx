@@ -108,6 +108,13 @@ export function DetailTable({
   openNote?: Extra;
   action?: Extra;
 }) {
+  const metrics = METRIC_ORDER.filter(
+    (metric) =>
+      ["catacombs", "class_level", "s_plus_ms"].includes(metric) ||
+      party.slots.some((slot) =>
+        requirements(party.rules, slot.role).some(([rule]) => rule === metric),
+      ),
+  );
   return (
     <div className="detail-table-wrap">
       <table className="detail-table">
@@ -116,7 +123,7 @@ export function DetailTable({
           <tr>
             <th scope="col">Slot</th>
             <th scope="col">Player</th>
-            {METRIC_ORDER.map((metric) => (
+            {metrics.map((metric) => (
               <th scope="col" key={metric}>
                 {metric === "class_level" ? "Class lvl" : METRICS[metric].short}
               </th>
@@ -159,7 +166,7 @@ export function DetailTable({
                     </span>
                   )}
                 </td>
-                {METRIC_ORDER.map((metric) => {
+                {metrics.map((metric) => {
                   if (member) {
                     const value = member.stats?.[metric] ?? null;
                     return (
@@ -230,13 +237,9 @@ export function FullPanel({
       ? ""
       : `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
   return (
-    <section
-      className="held-panel full-panel"
-      aria-labelledby="full-title"
-      role="status"
-    >
+    <section className="held-panel full-panel" aria-labelledby="full-title">
       <div className="held-heading">
-        <h2 id="full-title">
+        <h2 id="full-title" aria-live="polite">
           {party.completed
             ? "Your party"
             : state.you.in_game

@@ -72,8 +72,16 @@ export function Moderation() {
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const working = useRef(false);
+  const actionFocus = useRef<HTMLElement | null>(null);
   const [audit, setAudit] = useState<Audit[]>([]);
-  const [reason, setReason] = useState("");
+  const [view, setView] = useState<"players" | "reports" | "audit">("players");
+  const [pending, setPending] = useState<{
+    path: string;
+    body: Record<string, unknown>;
+    target: string;
+  } | null>(null);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditError, setAuditError] = useState("");
   const [kind, setKind] = useState("ban");
   const [duration, setDuration] = useState("7");
   const [selected, setSelected] = useState<string[]>([]);
@@ -94,9 +102,35 @@ export function Moderation() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!access || view !== "audit") return;
+    let active = true;
+    setAuditLoading(true);
+    setAuditError("");
+    void request<{ entries: Audit[] }>("audit")
+      .then(
+        (value) => {
+          if (active) setAudit(value.entries);
+        },
+        (err: Error) => {
+          if (active) setAuditError(err.message);
+        },
+      )
+      .finally(() => {
+        if (active) setAuditLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [Boolean(access), view]);
+
   async function perform(action: () => Promise<void>) {
     if (working.current) return;
     working.current = true;
+    actionFocus.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
     setBusy(true);
     setError("");
     setNotice("");
@@ -115,7 +149,6 @@ export function Moderation() {
     setReports([]);
     setSelected([]);
     setEvidence(null);
-    setReason("");
     const value = query.trim().replaceAll("-", "");
     const identity = /^[0-9a-f]{32}$/i.test(value)
       ? { uuid: value.toLowerCase(), name: undefined }
@@ -126,11 +159,19 @@ export function Moderation() {
     setPlayer({ ...data, name: identity.name });
   }
 
-  async function mutate(path: string, body: object) {
-    if (!reason.trim()) throw new Error("Enter a reason.");
-    await request(path, { ...body, reason: reason.trim() });
+  async function mutate(path: string, body: Record<string, unknown>) {
+    setPending({
+      path,
+      body,
+      target: player?.name ?? player?.uuid ?? "Player",
+    });
+  }
+
+  async function confirm(reason: string) {
+    if (!pending) return;
+    await request(pending.path, { ...pending.body, reason: reason.trim() });
+    setPending(null);
     setNotice("Saved.");
-    setReason("");
     setSelected([]);
     setEvidence(null);
     if (player)
@@ -144,350 +185,390 @@ export function Moderation() {
 
   return (
     <section className="moderation" aria-labelledby="moderation-title">
+      <title>Moderation · Mithril</title>
       <header>
         <h1 id="moderation-title">Moderation</h1>
         {access && <span className="quiet-label">{access.role}</span>}
       </header>
-      {error && <p role="alert">{error}</p>}
+      {error && !pending && <p role="alert">{error}</p>}
       {notice && <output>{notice}</output>}
+      {pending && (
+        <ActionReview
+          title={actionTitle(pending.path, pending.body)}
+          target={pending.target}
+          values={pending.body}
+          busy={busy}
+          returnFocus={actionFocus.current}
+          error={error}
+          onCancel={() => {
+            setPending(null);
+            setError("");
+          }}
+          onConfirm={(reason) => void perform(() => confirm(reason))}
+        />
+      )}
       {!access && !error && <output>Checking access…</output>}
       {access && (
         <>
-          <form
-            className="moderation-search"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void perform(findPlayer);
-            }}
-          >
-            <label>
-              Player{" "}
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Minecraft username or UUID"
-                required
-                maxLength={36}
-              />
-            </label>
-            <button type="submit" disabled={busy}>
-              Find player
-            </button>
-          </form>
-          {player && (
-            <>
-              <h2>{player.name ?? "Player"}</h2>
-              <code>{player.uuid}</code>
-              <label>
-                Reason{" "}
-                <textarea
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                  maxLength={500}
-                  rows={2}
-                />
-              </label>
-              <h3>Records</h3>
-              {!player.records.length && <p>No records.</p>}
-              <ul className="moderation-records">
-                {player.records.map((record) => (
-                  <li key={record.id}>
-                    <label className="moderation-check">
-                      <input
-                        type="checkbox"
-                        checked={selected.includes(record.id)}
-                        onChange={(e) =>
-                          setSelected(
-                            e.target.checked
-                              ? [...selected, record.id]
-                              : selected.filter((id) => id !== record.id),
-                          )
-                        }
-                      />
-                      {record.floor}{" "}
-                      {record.kind === "solo_clear" ? "Soloclear" : "Terminals"}{" "}
-                      · {(record.real_ms / 1000).toFixed(3)}s · {record.ticks}{" "}
-                      ticks
-                    </label>
-                    <span className="quiet-label">
-                      {record.status} · {record.source.replaceAll("_", " ")}
-                    </span>
-                    <div className="moderation-actions">
-                      <button
-                        type="button"
-                        className="secondary"
-                        disabled={busy}
-                        onClick={() =>
-                          void perform(async () =>
-                            setEvidence(await request(`evidence/${record.id}`)),
-                          )
-                        }
-                      >
-                        Evidence
-                      </button>
-                      <button
-                        type="button"
-                        className="secondary"
-                        disabled={busy || !reason.trim()}
-                        onClick={() =>
-                          void perform(() =>
-                            mutate("record", {
-                              record_id: record.id,
-                              expected_status: record.status,
-                              action:
-                                record.status === "eligible"
-                                  ? "invalidate"
-                                  : "restore",
-                            }),
-                          )
-                        }
-                      >
-                        {record.status === "eligible"
-                          ? "Invalidate"
-                          : "Restore"}
-                      </button>
-                    </div>
-                    {record.status === "eligible" && (
-                      <Correction
-                        record={record}
-                        disabled={busy || !reason.trim()}
-                        onSave={(values) =>
-                          perform(() =>
-                            mutate("record", {
-                              record_id: record.id,
-                              expected_status: record.status,
-                              action: "correct",
-                              ...values,
-                            }),
-                          )
-                        }
-                      />
-                    )}
-                  </li>
-                ))}
-              </ul>
-              {evidence !== null && (
-                <details open>
-                  <summary>Record evidence</summary>
-                  <pre>{JSON.stringify(evidence, null, 2)}</pre>
-                </details>
-              )}
-              <form
-                className="moderation-sanction"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void perform(() =>
-                    mutate("sanction", {
-                      uuid: player.uuid,
-                      kind,
-                      expires:
-                        duration === "permanent"
-                          ? null
-                          : Math.floor(Date.now() / 1000) +
-                            Number(duration) * 86400,
-                      record_ids: selected,
-                      report_ids: reports,
-                    }),
-                  );
+          <nav className="moderation-tabs" aria-label="Moderation views">
+            {(["players", "reports", "audit"] as const).map((item) => (
+              <button
+                key={item}
+                aria-pressed={view === item}
+                onClick={() => {
+                  setView(item);
+                  setError("");
+                  setNotice("");
                 }}
               >
-                <h3>Restriction</h3>
-                <label>
-                  Action{" "}
-                  <select
-                    value={kind}
-                    onChange={(e) => setKind(e.target.value)}
-                  >
-                    <option value="ban">Account ban</option>
-                    <option value="mute">Chat mute</option>
-                    {access.network_bans_available && (
-                      <option value="network_ban">Account and IP ban</option>
-                    )}
-                  </select>
-                </label>
-                <label>
-                  Duration{" "}
-                  <select
-                    value={duration}
-                    onChange={(e) => setDuration(e.target.value)}
-                  >
-                    <option value="1">1 day</option>
-                    <option value="7">7 days</option>
-                    <option value="30">30 days</option>
-                    <option value="permanent">Permanent</option>
-                  </select>
-                </label>
-                {kind === "network_ban" && (
-                  <p>Also blocks other accounts using the same IP address.</p>
-                )}
-                <p className="quiet-label">
-                  Selected records provide evidence for this case.
-                </p>
-                <button type="submit" disabled={busy || !reason.trim()}>
-                  Apply restriction
-                </button>
-              </form>
-              <h3>Cases</h3>
-              {!player.cases.length && <p>No cases.</p>}
-              <ul className="moderation-records">
-                {player.cases.map((item) => (
-                  <li key={item.id}>
-                    <strong>{item.kind.replaceAll("_", " ")}</strong> ·{" "}
-                    {item.revoked ? "Revoked" : timestamp(item.expires)}
-                    <p>{item.reason}</p>
-                    <div className="moderation-actions">
-                      <button
-                        type="button"
-                        className="secondary"
-                        disabled={busy}
-                        onClick={() =>
-                          void perform(async () =>
-                            setEvidence(
-                              await request(`case/${item.id}/evidence`),
-                            ),
-                          )
-                        }
-                      >
-                        Case evidence
-                      </button>
-                      {!item.revoked && (
+                {item === "players"
+                  ? "Players & cases"
+                  : item === "reports"
+                    ? "Chat reports"
+                    : "Audit log"}
+              </button>
+            ))}
+          </nav>
+          <div hidden={view !== "players"}>
+            <form
+              className="moderation-search"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void perform(findPlayer);
+              }}
+            >
+              <label>
+                Player{" "}
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Minecraft username or UUID"
+                  required
+                  maxLength={36}
+                />
+              </label>
+              <button type="submit" disabled={busy}>
+                Find player
+              </button>
+            </form>
+            {player && (
+              <>
+                <h2>{player.name ?? "Player"}</h2>
+                <code>{player.uuid}</code>
+                <h3>Records</h3>
+                {!player.records.length && <p>No records.</p>}
+                <ul className="moderation-records">
+                  {player.records.map((record) => (
+                    <li key={record.id}>
+                      <label className="moderation-check">
+                        <input
+                          type="checkbox"
+                          checked={selected.includes(record.id)}
+                          onChange={(e) =>
+                            setSelected(
+                              e.target.checked
+                                ? [...selected, record.id]
+                                : selected.filter((id) => id !== record.id),
+                            )
+                          }
+                        />
+                        {record.floor}{" "}
+                        {record.kind === "solo_clear"
+                          ? "Soloclear"
+                          : "Terminals"}{" "}
+                        · {(record.real_ms / 1000).toFixed(3)}s · {record.ticks}{" "}
+                        ticks
+                      </label>
+                      <span className="quiet-label">
+                        {record.status} · {record.source.replaceAll("_", " ")}
+                      </span>
+                      <div className="moderation-actions">
                         <button
                           type="button"
                           className="secondary"
-                          disabled={busy || !reason.trim()}
+                          disabled={busy}
+                          onClick={() =>
+                            void perform(async () =>
+                              setEvidence(
+                                await request(`evidence/${record.id}`),
+                              ),
+                            )
+                          }
+                        >
+                          Evidence
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary"
+                          disabled={busy}
                           onClick={() =>
                             void perform(() =>
-                              mutate("case", {
-                                case_id: item.id,
-                                action: "revoke",
+                              mutate("record", {
+                                record_id: record.id,
+                                expected_status: record.status,
+                                action:
+                                  record.status === "eligible"
+                                    ? "invalidate"
+                                    : "restore",
                               }),
                             )
                           }
                         >
-                          Revoke
+                          {record.status === "eligible"
+                            ? "Invalidate"
+                            : "Restore"}
                         </button>
+                      </div>
+                      {record.status === "eligible" && (
+                        <Correction
+                          record={record}
+                          disabled={busy}
+                          onSave={(values) =>
+                            perform(() =>
+                              mutate("record", {
+                                record_id: record.id,
+                                expected_status: record.status,
+                                action: "correct",
+                                ...values,
+                              }),
+                            )
+                          }
+                        />
                       )}
-                      <button
-                        type="button"
-                        className="secondary"
-                        disabled={busy || !reason.trim()}
-                        onClick={() =>
-                          void perform(() =>
-                            mutate("case", {
-                              case_id: item.id,
-                              action: item.appeal_open
-                                ? "close_appeal"
-                                : "open_appeal",
-                            }),
-                          )
-                        }
-                      >
-                        {item.appeal_open ? "Close appeal" : "Open appeal"}
-                      </button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-              {access.role === "owner" && (
-                <section>
-                  <h3>Moderator access</h3>
-                  <button
-                    type="button"
-                    className="secondary"
-                    disabled={busy || !reason.trim()}
-                    onClick={() =>
-                      void perform(() =>
-                        mutate("access", {
-                          uuid: player.uuid,
-                          enabled: !access.moderators.includes(player.uuid),
-                        }),
-                      )
-                    }
-                  >
-                    {access.moderators.includes(player.uuid)
-                      ? "Revoke moderator"
-                      : "Grant moderator"}
-                  </button>
-                </section>
-              )}
-            </>
-          )}
-          <ChatReview
-            disabled={busy}
-            onSelect={async (uuid, reportId) => {
-              await perform(async () => {
-                setPlayer(await request<Player>(`player/${uuid}`));
-                setQuery(uuid);
-                setReports([reportId]);
-                setSelected([]);
-                setReason("");
-                setEvidence(null);
-              });
-            }}
-          />
-          <section>
-            <h2>Audit log</h2>
-            <button
-              type="button"
-              className="secondary"
-              disabled={busy}
-              onClick={() =>
-                void perform(async () =>
-                  setAudit(
-                    (await request<{ entries: Audit[] }>("audit")).entries,
-                  ),
-                )
-              }
-            >
-              Refresh audit
-            </button>
-            <ol className="moderation-records">
-              {audit.map((entry) => (
-                <li key={entry.id}>
-                  <strong>{entry.action.replaceAll("_", " ")}</strong> ·{" "}
-                  {timestamp(entry.at)}
-                  <p>{entry.reason}</p>
-                  <p>
-                    Moderator: <code>{entry.actor}</code>
-                  </p>
-                  <p>
-                    Player: <code>{entry.subject}</code>
-                  </p>
-                  <details>
-                    <summary>Changes</summary>
-                    <pre>
-                      {JSON.stringify(
-                        {
-                          before: JSON.parse(entry.before_json) as unknown,
-                          after: JSON.parse(entry.after_json) as unknown,
-                        },
-                        null,
-                        2,
-                      )}
-                    </pre>
+                    </li>
+                  ))}
+                </ul>
+                {evidence !== null && (
+                  <details open>
+                    <summary>Record evidence</summary>
+                    <EvidenceView value={evidence} />
                   </details>
-                </li>
-              ))}
-            </ol>
-            {audit.length > 0 && (
+                )}
+                <form
+                  className="moderation-sanction"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void perform(() =>
+                      mutate("sanction", {
+                        uuid: player.uuid,
+                        kind,
+                        expires:
+                          duration === "permanent"
+                            ? null
+                            : Math.floor(Date.now() / 1000) +
+                              Number(duration) * 86400,
+                        record_ids: selected,
+                        report_ids: reports,
+                      }),
+                    );
+                  }}
+                >
+                  <h3>Restriction</h3>
+                  <label>
+                    Action{" "}
+                    <select
+                      value={kind}
+                      onChange={(e) => setKind(e.target.value)}
+                    >
+                      <option value="ban">Account ban</option>
+                      <option value="mute">Chat mute</option>
+                      {access.network_bans_available && (
+                        <option value="network_ban">Account and IP ban</option>
+                      )}
+                    </select>
+                  </label>
+                  <label>
+                    Duration{" "}
+                    <select
+                      value={duration}
+                      onChange={(e) => setDuration(e.target.value)}
+                    >
+                      <option value="1">1 day</option>
+                      <option value="7">7 days</option>
+                      <option value="30">30 days</option>
+                      <option value="permanent">Permanent</option>
+                    </select>
+                  </label>
+                  {kind === "network_ban" && (
+                    <p>Also blocks other accounts using the same IP address.</p>
+                  )}
+                  <p className="quiet-label">
+                    Selected records provide evidence for this case.
+                  </p>
+                  <button type="submit" disabled={busy}>
+                    Apply restriction
+                  </button>
+                </form>
+                <h3>Cases</h3>
+                {!player.cases.length && <p>No cases.</p>}
+                <ul className="moderation-records">
+                  {player.cases.map((item) => (
+                    <li key={item.id}>
+                      <strong>{item.kind.replaceAll("_", " ")}</strong> ·{" "}
+                      {item.revoked ? "Revoked" : timestamp(item.expires)}
+                      <p>{item.reason}</p>
+                      <div className="moderation-actions">
+                        <button
+                          type="button"
+                          className="secondary"
+                          disabled={busy}
+                          onClick={() =>
+                            void perform(async () =>
+                              setEvidence(
+                                await request(`case/${item.id}/evidence`),
+                              ),
+                            )
+                          }
+                        >
+                          Case evidence
+                        </button>
+                        {!item.revoked && (
+                          <button
+                            type="button"
+                            className="secondary"
+                            disabled={busy}
+                            onClick={() =>
+                              void perform(() =>
+                                mutate("case", {
+                                  case_id: item.id,
+                                  action: "revoke",
+                                }),
+                              )
+                            }
+                          >
+                            Revoke
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          className="secondary"
+                          disabled={busy}
+                          onClick={() =>
+                            void perform(() =>
+                              mutate("case", {
+                                case_id: item.id,
+                                action: item.appeal_open
+                                  ? "close_appeal"
+                                  : "open_appeal",
+                              }),
+                            )
+                          }
+                        >
+                          {item.appeal_open ? "Close appeal" : "Open appeal"}
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+                {access.role === "owner" && (
+                  <section>
+                    <h3>Moderator access</h3>
+                    <button
+                      type="button"
+                      className="secondary"
+                      disabled={busy}
+                      onClick={() =>
+                        void perform(() =>
+                          mutate("access", {
+                            uuid: player.uuid,
+                            enabled: !access.moderators.includes(player.uuid),
+                          }),
+                        )
+                      }
+                    >
+                      {access.moderators.includes(player.uuid)
+                        ? "Revoke moderator"
+                        : "Grant moderator"}
+                    </button>
+                  </section>
+                )}
+              </>
+            )}
+          </div>
+          {view === "reports" && (
+            <ChatReview
+              disabled={busy}
+              onSelect={async (uuid, reportId) => {
+                await perform(async () => {
+                  setPlayer(await request<Player>(`player/${uuid}`));
+                  setQuery(uuid);
+                  setReports([reportId]);
+                  setSelected([]);
+                  setView("players");
+                  setEvidence(null);
+                });
+              }}
+            />
+          )}
+          {view === "audit" && (
+            <section>
+              <h2>Audit log</h2>
+              {auditLoading && <p role="status">Loading audit log…</p>}
+              {auditError && <p role="alert">{auditError}</p>}
+              {!auditLoading && !auditError && !audit.length && (
+                <p>No moderator actions recorded.</p>
+              )}
               <button
                 type="button"
                 className="secondary"
                 disabled={busy}
                 onClick={() =>
                   void perform(async () => {
-                    const older = await request<{ entries: Audit[] }>(
-                      `audit?before=${audit.at(-1)!.id}`,
+                    setAuditError("");
+                    setAudit(
+                      (await request<{ entries: Audit[] }>("audit")).entries,
                     );
-                    setAudit([...audit, ...older.entries]);
-                    if (!older.entries.length) setNotice("No older actions.");
                   })
                 }
               >
-                Older actions
+                Refresh audit
               </button>
-            )}
-          </section>
+              <ol className="moderation-records">
+                {audit.map((entry) => (
+                  <li key={entry.id}>
+                    <strong>{entry.action.replaceAll("_", " ")}</strong> ·{" "}
+                    {timestamp(entry.at)}
+                    <p>{entry.reason}</p>
+                    <p>
+                      Moderator: <code>{entry.actor}</code>
+                    </p>
+                    <p>
+                      Player: <code>{entry.subject}</code>
+                    </p>
+                    <details>
+                      <summary>Changes</summary>
+                      <h3>Before</h3>
+                      <EvidenceView
+                        value={JSON.parse(entry.before_json) as unknown}
+                      />
+                      <h3>After</h3>
+                      <EvidenceView
+                        value={JSON.parse(entry.after_json) as unknown}
+                      />
+                    </details>
+                  </li>
+                ))}
+              </ol>
+              {audit.length > 0 && (
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={busy}
+                  onClick={() =>
+                    void perform(async () => {
+                      const older = await request<{ entries: Audit[] }>(
+                        `audit?before=${audit.at(-1)!.id}`,
+                      );
+                      setAudit([...audit, ...older.entries]);
+                      if (!older.entries.length) setNotice("No older actions.");
+                    })
+                  }
+                >
+                  Older actions
+                </button>
+              )}
+            </section>
+          )}
         </>
       )}
     </section>
@@ -562,14 +643,41 @@ function ChatReview({
   onSelect: (uuid: string, report: string) => Promise<void>;
 }>) {
   const [reports, setReports] = useState<ChatReport[]>([]);
-  const [reason, setReason] = useState("");
+  const [review, setReview] = useState<{
+    report_id: string;
+    action: string;
+  } | null>(null);
+  const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const working = useRef(false);
+  useEffect(() => {
+    let active = true;
+    setBusy(true);
+    void request<{ reports: ChatReport[] }>("chat")
+      .then(
+        (value) => {
+          if (active) {
+            setReports(value.reports);
+            setLoaded(true);
+          }
+        },
+        (err: Error) => {
+          if (active) setError(err.message);
+        },
+      )
+      .finally(() => {
+        if (active) setBusy(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
   async function load() {
     setReports((await request<{ reports: ChatReport[] }>("chat")).reports);
+    setLoaded(true);
   }
-  async function act(body?: object) {
+  async function act(body?: object, reason?: string) {
     if (working.current) return;
     working.current = true;
     setBusy(true);
@@ -577,7 +685,7 @@ function ChatReview({
     try {
       if (body) {
         await request("chat", { ...body, reason });
-        setReason("");
+        setReview(null);
       }
       await load();
     } catch (err) {
@@ -598,16 +706,21 @@ function ChatReview({
       >
         Refresh reports
       </button>
-      {error && <p role="alert">{error}</p>}
-      {reports.length > 0 && (
-        <label>
-          Review reason{" "}
-          <input
-            value={reason}
-            maxLength={500}
-            onChange={(e) => setReason(e.target.value)}
-          />
-        </label>
+      {error && !review && <p role="alert">{error}</p>}
+      {busy && !loaded && <p role="status">Loading reports…</p>}
+      {loaded && !busy && !error && !reports.length && (
+        <p>No open chat reports.</p>
+      )}
+      {review && (
+        <ActionReview
+          title={review.action === "hide" ? "Remove message" : "Dismiss report"}
+          target="Selected chat report"
+          values={review}
+          busy={busy}
+          error={error}
+          onCancel={() => setReview(null)}
+          onConfirm={(reason) => void act(review, reason)}
+        />
       )}
       <ul className="moderation-records">
         {reports.map((report) => (
@@ -616,9 +729,7 @@ function ChatReview({
             <p>
               Reported by <code>{report.reporter}</code>
             </p>
-            <pre>
-              {JSON.stringify(JSON.parse(report.evidence) as unknown, null, 2)}
-            </pre>
+            <EvidenceView value={JSON.parse(report.evidence) as unknown} />
             <div className="moderation-actions">
               <button
                 type="button"
@@ -631,9 +742,9 @@ function ChatReview({
               <button
                 type="button"
                 className="secondary"
-                disabled={busy || disabled || !reason.trim()}
+                disabled={busy || disabled}
                 onClick={() =>
-                  void act({ report_id: report.id, action: "hide" })
+                  setReview({ report_id: report.id, action: "hide" })
                 }
               >
                 Remove message
@@ -641,9 +752,9 @@ function ChatReview({
               <button
                 type="button"
                 className="secondary"
-                disabled={busy || disabled || !reason.trim()}
+                disabled={busy || disabled}
                 onClick={() =>
-                  void act({ report_id: report.id, action: "dismiss" })
+                  setReview({ report_id: report.id, action: "dismiss" })
                 }
               >
                 Dismiss report
@@ -653,5 +764,162 @@ function ChatReview({
         ))}
       </ul>
     </section>
+  );
+}
+
+function actionTitle(path: string, body: Record<string, unknown>) {
+  if (path === "sanction")
+    return body.kind === "mute"
+      ? "Mute player"
+      : body.kind === "network_ban"
+        ? "Ban account and IP"
+        : "Ban account";
+  if (path === "access")
+    return body.enabled ? "Grant moderator access" : "Revoke moderator access";
+  return String(body.action ?? path).replaceAll("_", " ");
+}
+
+function ActionReview({
+  title,
+  target,
+  values,
+  busy,
+  error,
+  onCancel,
+  onConfirm,
+  returnFocus,
+}: Readonly<{
+  title: string;
+  target: string;
+  values: Record<string, unknown>;
+  busy: boolean;
+  error: string;
+  onCancel: () => void;
+  onConfirm: (reason: string) => void;
+  returnFocus?: HTMLElement | null;
+}>) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const [reason, setReason] = useState("");
+  useEffect(() => {
+    const previous = returnFocus ?? document.activeElement;
+    const overflow = document.body.style.overflow;
+    const element = dialog.current!;
+    element.showModal();
+    element.querySelector("textarea")?.focus();
+    document.body.style.overflow = "hidden";
+    return () => {
+      element.close();
+      document.body.style.overflow = overflow;
+      if (previous instanceof HTMLElement && previous.isConnected)
+        previous.focus();
+    };
+  }, []);
+  return (
+    <dialog
+      className="action-review"
+      ref={dialog}
+      aria-labelledby="action-review-title"
+      onCancel={(event) => {
+        event.preventDefault();
+        if (!busy) onCancel();
+      }}
+    >
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (reason.trim()) onConfirm(reason);
+        }}
+      >
+        <h2 id="action-review-title">{title}</h2>
+        <p>{target}</p>
+        {values.kind === "network_ban" && (
+          <p>Other accounts using the same IP will also be blocked.</p>
+        )}
+        {"expires" in values && (
+          <p>
+            Ends:{" "}
+            {values.expires === null
+              ? "Permanent"
+              : timestamp(values.expires as number)}
+          </p>
+        )}
+        {Array.isArray(values.record_ids) && (
+          <p>
+            {values.record_ids.length} records and{" "}
+            {Array.isArray(values.report_ids) ? values.report_ids.length : 0}{" "}
+            reports attached as evidence.
+          </p>
+        )}
+        {"real_ms" in values && (
+          <p>
+            Corrected time: {String(values.real_ms)} ms · {String(values.ticks)}{" "}
+            ticks
+          </p>
+        )}
+        <details>
+          <summary>Action details</summary>
+          <EvidenceView value={values} />
+        </details>
+        <label>
+          Reason
+          <textarea
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            required
+            maxLength={500}
+            rows={3}
+            disabled={busy}
+          />
+        </label>
+        {error && <p role="alert">{error}</p>}
+        <div className="moderation-actions">
+          <button
+            className="primary"
+            type="submit"
+            disabled={busy || !reason.trim()}
+          >
+            {busy ? "Saving…" : "Confirm action"}
+          </button>
+          <button type="button" disabled={busy} onClick={onCancel}>
+            Cancel
+          </button>
+        </div>
+      </form>
+    </dialog>
+  );
+}
+
+function EvidenceView({ value }: Readonly<{ value: unknown }>) {
+  if (value === null || value === undefined)
+    return <span className="quiet-label">None</span>;
+  if (Array.isArray(value))
+    return value.length ? (
+      <ul className="evidence-items">
+        {value.map((item, index) => (
+          <li key={index}>
+            <EvidenceView value={item} />
+          </li>
+        ))}
+      </ul>
+    ) : (
+      <span className="quiet-label">None</span>
+    );
+  if (typeof value === "object")
+    return (
+      <dl className="evidence-fields">
+        {Object.entries(value).map(([key, item]) => (
+          <div key={key}>
+            <dt>{key.replaceAll("_", " ")}</dt>
+            <dd>
+              <EvidenceView value={item} />
+            </dd>
+          </div>
+        ))}
+      </dl>
+    );
+  return (
+    <span>
+      {typeof value === "boolean" ? (value ? "Yes" : "No") : String(value)}
+    </span>
   );
 }

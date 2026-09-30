@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { getHealth } from "./api";
-import { CookiePolicy, LinkAccount } from "./account";
+import { Account, CookiePolicy, LinkAccount } from "./account";
 import { PartyWorkspace } from "./PartyFinder";
 import { AccountPrivacy, PrivacyPolicy } from "./Privacy";
 import { Moderation } from "./Moderation";
+import { ModDownload } from "./ModDownload";
 import { SlayerProfits } from "./SlayerProfits";
 
 // Remove the bearer secret before React renders (including StrictMode remounts).
@@ -59,6 +60,7 @@ export function App() {
             Slayer profits
           </a>
         </nav>
+        <Account compact />
       </header>
       <main
         id="main"
@@ -85,7 +87,7 @@ export function App() {
 }
 
 function pageClass(path: string, workspace: boolean) {
-  if (workspace) return "workspace-page";
+  if (workspace || path === "/profile") return "workspace-page";
   return path === "/" ? "home-page" : "content-page";
 }
 
@@ -98,6 +100,16 @@ function PageContent({ path }: Readonly<{ path: string }>) {
       return <SlayerProfits />;
     case "/privacy":
       return <PrivacyPolicy />;
+    case "/profile":
+      return (
+        <>
+          <title>Your profile · Mithril</title>
+          <h1>Your profile</h1>
+          <div className="profile-account">
+            <Account />
+          </div>
+        </>
+      );
     case "/account":
       return <AccountPrivacy />;
     case "/moderation":
@@ -115,15 +127,15 @@ function PageContent({ path }: Readonly<{ path: string }>) {
         <>
           <title>Mithril</title>
           <section className="hero">
-            <h1>Party Finder</h1>
+            <p className="eyebrow">MithrilPF · F7 &amp; M7</p>
+            <h1>Find your next party.</h1>
             <div className="hero-actions">
               <a className="button primary" href="/party-finder">
                 Open party finder <span aria-hidden="true">→</span>
               </a>
-              <span className="quiet-label">In development</span>
-              <a href="/slayer-profits">Calculate Slayer profits</a>
             </div>
           </section>
+          <ModDownload />
           <section className="intro-details" aria-label="Account linking">
             <div>
               <span className="detail-number" aria-hidden="true">
