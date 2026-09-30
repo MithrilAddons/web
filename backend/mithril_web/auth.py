@@ -139,7 +139,7 @@ class AuthStore:
             self.db.execute("""DELETE FROM auth WHERE
                 (kind IN ('sync', 'party') OR (kind='receipt' AND remembered=1))
                 AND NOT EXISTS (SELECT 1 FROM auth AS parent WHERE
-                    parent.token=auth.server_id AND parent.kind='session'
+                    parent.token=auth.server_id AND parent.kind IN ('session','device')
                     AND parent.uuid=auth.uuid)""")
             self.db.execute("DELETE FROM link_codes WHERE expires <= ?", (self.clock(),))
 
@@ -248,7 +248,9 @@ class AuthStore:
             query += " AND remembered=?"
             params.append(remembered)
         count = self.db.execute(query, params).fetchone()[0]
-        established = kind in ("session", "party", "sync") or (kind == "receipt" and remembered)
+        established = kind in ("session", "device", "party", "sync") or (
+            kind == "receipt" and remembered
+        )
         if count + additional > (CREDENTIAL_LIMIT if established else PENDING_LIMIT):
             raise HTTPException(503, "Please try again later")
 
@@ -287,6 +289,66 @@ class AuthStore:
     def revoke(self, token):
         with self.lock, self.db:
             self._revoke(token)
+
+    def issue_device(self, uuid, name, expected_epoch):
+        """A native session and its scoped-proof receipt are committed together."""
+        with self.lock, self.db:
+            self._check_epoch(uuid, expected_epoch)
+            count = self.db.execute(
+                "SELECT COUNT(*) FROM auth WHERE uuid=? AND kind='device' AND expires>?",
+                (uuid, self.clock()),
+            ).fetchone()[0]
+            if count >= 10:
+                raise HTTPException(409, "Remove an old Minecraft session before signing in")
+            token = self._issue("device", uuid, name, 30 * DAY)
+            receipt = self._issue(
+                "receipt", uuid, name, 30 * DAY, server_id=digest(token), remembered=True
+            )
+            return token, receipt
+
+    def devices(self, session_token):
+        with self.lock:
+            owner = self.db.execute(
+                "SELECT uuid FROM auth WHERE token=? AND kind='session' AND expires>?",
+                (digest(session_token), self.clock()),
+            ).fetchone()
+            if not owner:
+                raise HTTPException(401, "Sign in first")
+            return [
+                dict(row)
+                for row in self.db.execute(
+                    "SELECT token AS id, name, expires FROM auth "
+                    "WHERE uuid=? AND kind='device' AND expires>? ORDER BY expires DESC",
+                    (owner["uuid"], self.clock()),
+                )
+            ]
+
+    def revoke_device(self, token, device_id=None):
+        with self.lock, self.db:
+            if device_id is not None:
+                owner = self.db.execute(
+                    "SELECT uuid FROM auth WHERE token=? AND kind='session' AND expires>?",
+                    (digest(token), self.clock()),
+                ).fetchone()
+                if not owner:
+                    raise HTTPException(401, "Sign in first")
+                row = self.db.execute(
+                    "SELECT token FROM auth WHERE token=? AND kind='device' AND uuid=?",
+                    (device_id, owner["uuid"]),
+                ).fetchone()
+                if not row:
+                    raise HTTPException(404, "Minecraft session unavailable")
+            else:
+                device_id = digest(token)
+                if not self.db.execute(
+                    "SELECT 1 FROM auth WHERE token=? AND kind='device'", (device_id,)
+                ).fetchone():
+                    return
+            self.db.execute("DELETE FROM auth WHERE token=? AND kind='device'", (device_id,))
+            self.db.execute(
+                "DELETE FROM auth WHERE server_id=? AND kind IN ('receipt','party','sync')",
+                (device_id,),
+            )
 
     def _revoke(self, token):
         self.db.execute("DELETE FROM auth WHERE token=? AND kind='session'", (digest(token),))
@@ -331,7 +393,8 @@ class AuthStore:
             return {"version": 1, "status": "pending"}
         with self.lock:
             session = self.db.execute(
-                "SELECT uuid, name FROM auth WHERE token=? AND kind='session' AND expires>?",
+                "SELECT uuid, name FROM auth WHERE token=? "
+                "AND kind IN ('session','device') AND expires>?",
                 (row["server_id"], self.clock()),
             ).fetchone()
         if not session:
@@ -344,7 +407,8 @@ class AuthStore:
             return None
         with self.lock:
             session = self.db.execute(
-                "SELECT * FROM auth WHERE token=? AND kind='session' AND uuid=? AND expires>?",
+                "SELECT * FROM auth WHERE token=? "
+                "AND kind IN ('session','device') AND uuid=? AND expires>?",
                 (row["server_id"], row["uuid"], self.clock()),
             ).fetchone()
         return dict(session) if session else None
@@ -361,7 +425,7 @@ class AuthStore:
             return None
         with self.lock:
             session = self.db.execute(
-                "SELECT uuid, name FROM auth WHERE token=? AND kind='session' "
+                "SELECT uuid, name FROM auth WHERE token=? AND kind IN ('session','device') "
                 "AND uuid=? AND expires>?",
                 (row["server_id"], row["uuid"], self.clock()),
             ).fetchone()

@@ -317,21 +317,35 @@ def register(app, finder, stats, browser, mod, *, wait=WAIT, name_lookup=mojang_
             app.state.moderation.check,
             row["uuid"],
             request.client.host if request.client else None,
-            request.url.path in ("/api/v1/party/chat", "/api/v1/party/mod/chat/send"),
+            request.url.path
+            in ("/api/v1/party/chat", "/api/v1/party/mod/chat/send", "/api/v1/party/client/chat"),
             remember,
         )
         return row
 
+    def native(request):
+        return request.url.path.startswith("/api/v1/party/client/")
+
+    def guard(request):
+        (mod if native(request) else browser)(request)
+
+    def auth_row(request):
+        if native(request):
+            mod(request)
+            authorization = request.headers.get("authorization", "")
+            if not re.fullmatch(r"Bearer [A-Za-z0-9_-]{43}", authorization):
+                return None
+            return app.state.auth.get(authorization[7:], "device")
+        return app.state.auth.get(request.cookies.get(COOKIE, ""), "session")
+
     async def session(request):
-        row = await run_in_threadpool(
-            request.app.state.auth.get, request.cookies.get(COOKIE, ""), "session"
-        )
+        row = await run_in_threadpool(auth_row, request)
         if not row:
             raise HTTPException(401, "Sign in first")
         return await allowed(request, row)
 
     async def enter(request, refresh=False):
-        browser(request)
+        guard(request)
         row = await session(request)
         player = run(lambda: finder.seen(row["uuid"], row["name"], "web"))
         if refresh or player.stats is None:
@@ -377,6 +391,7 @@ def register(app, finder, stats, browser, mod, *, wait=WAIT, name_lookup=mojang_
         run(lambda: action(uuid))
         return finder.personal(uuid)
 
+    @app.post("/api/v1/party/client/state")
     @app.post("/api/v1/party/state")
     async def state(body: StateRequest, request: Request):
         uuid = await enter(request)
@@ -391,18 +406,26 @@ def register(app, finder, stats, browser, mod, *, wait=WAIT, name_lookup=mojang_
             return {"version": 1, "state_version": player.version, "unchanged": True}
         return finder.personal(uuid)
 
+    @app.post("/api/v1/party/client/chat")
     @app.post("/api/v1/party/chat")
     async def chat(body: ChatSend, request: Request):
-        browser(request)
+        guard(request)
         uuid = (await session(request))["uuid"]
         run(
-            lambda: finder.send_chat(uuid, body.party_id, body.request_id, body.text, "web"),
+            lambda: finder.send_chat(
+                uuid,
+                body.party_id,
+                body.request_id,
+                body.text,
+                "game" if native(request) else "web",
+            ),
         )
         return finder.personal(uuid)
 
+    @app.post("/api/v1/party/client/chat/report")
     @app.post("/api/v1/party/chat/report")
     async def report_chat(body: ChatReport, request: Request):
-        browser(request)
+        guard(request)
         uuid = (await session(request))["uuid"]
         view = run(lambda: finder.chat_view(uuid, body.party_id))
         message = next((m for m in view["messages"] if m["id"] == body.message_id), None)
@@ -412,7 +435,7 @@ def register(app, finder, stats, browser, mod, *, wait=WAIT, name_lookup=mojang_
 
         def save_report():
             with app.state.records.lock:
-                current = app.state.auth.get(request.cookies.get(COOKIE, ""), "session")
+                current = auth_row(request)
                 if not current or current["uuid"] != uuid:
                     raise HTTPException(401, "Sign in first")
                 return app.state.moderation.chat.submit(uuid, body.party_id, snapshot, body.reason)
@@ -420,6 +443,7 @@ def register(app, finder, stats, browser, mod, *, wait=WAIT, name_lookup=mojang_
         report_id = await run_in_threadpool(save_report)
         return {"version": 1, "report_id": report_id}
 
+    @app.post("/api/v1/party/client/look")
     @app.post("/api/v1/party/look")
     async def look(body: LookRequest, request: Request):
         return await act(
@@ -428,20 +452,24 @@ def register(app, finder, stats, browser, mod, *, wait=WAIT, name_lookup=mojang_
             refresh=True,
         )
 
+    @app.post("/api/v1/party/client/stop-looking")
     @app.post("/api/v1/party/stop-looking")
     async def stop_looking(body: Empty, request: Request):
         return await act(request, finder.stop_looking)
 
+    @app.post("/api/v1/party/client/reserve")
     @app.post("/api/v1/party/reserve")
     async def reserve(body: ReserveRequest, request: Request):
         return await act(
             request, lambda uuid: finder.reserve(uuid, body.party_id, body.role), refresh=True
         )
 
+    @app.post("/api/v1/party/client/leave")
     @app.post("/api/v1/party/leave")
     async def leave(body: Empty, request: Request):
         return await act(request, finder.leave)
 
+    @app.post("/api/v1/party/client/publish")
     @app.post("/api/v1/party/publish")
     async def publish(body: PublishRequest, request: Request):
         uuid = await enter(request, refresh=True)
@@ -462,6 +490,7 @@ def register(app, finder, stats, browser, mod, *, wait=WAIT, name_lookup=mojang_
         )
         return finder.personal(uuid)
 
+    @app.post("/api/v1/party/client/edit")
     @app.post("/api/v1/party/edit")
     async def edit(body: EditRequest, request: Request):
         uuid = await enter(request)
@@ -471,18 +500,22 @@ def register(app, finder, stats, browser, mod, *, wait=WAIT, name_lookup=mojang_
         run(lambda: finder.edit(uuid, body.rules.model_dump(), body.blocked, added))
         return finder.personal(uuid)
 
+    @app.post("/api/v1/party/client/pause")
     @app.post("/api/v1/party/pause")
     async def pause(body: PauseRequest, request: Request):
         return await act(request, lambda uuid: finder.pause(uuid, body.paused))
 
+    @app.post("/api/v1/party/client/unlist")
     @app.post("/api/v1/party/unlist")
     async def unlist(body: Empty, request: Request):
         return await act(request, finder.unlist)
 
+    @app.post("/api/v1/party/client/remove")
     @app.post("/api/v1/party/remove")
     async def remove(body: RemoveRequest, request: Request):
         return await act(request, lambda uuid: finder.remove(uuid, body.member, body.block))
 
+    @app.get("/api/v1/party/client/listings")
     @app.get("/api/v1/party/listings")
     async def listings(floor: Floor, request: Request):
         """Shared compact rows; send the ETag back as If-None-Match to get a 304."""
@@ -509,6 +542,7 @@ def register(app, finder, stats, browser, mod, *, wait=WAIT, name_lookup=mojang_
         body = b'{"version":1,"floor":"%s","parties":[%s]}' % (floor.encode(), b",".join(rows))
         return Response(body, media_type="application/json", headers={"ETag": tag})
 
+    @app.get("/api/v1/party/client/listings/{party_id}")
     @app.get("/api/v1/party/listings/{party_id}")
     async def detail(party_id: str, request: Request):
         viewer = (await session(request))["uuid"]

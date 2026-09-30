@@ -184,6 +184,45 @@ reject Origin headers, but that check is not a substitute for authentication.
 Proofs are serialized inside the mod so concurrent linking/syncing cannot overwrite
 one another's Mojang server proof.
 
+## Native Minecraft sessions
+
+The in-game finder uses an independent session; closing or logging out of a browser
+does not revoke it. `POST auth/device-challenge` requires `{version: 1, uuid, name,
+client_nonce}` and returns the same challenge fields as browser linking. The proof
+scope is `device`; the nonce is mandatory. `POST auth/device-verify {challenge_id}`
+consumes that challenge and returns `{version: 1, user, device_token, receipt_token,
+expires_in_seconds: 2592000}`. The usual anonymous proof budgets and concurrency
+limits apply. Issuance checks account erasure generations and atomically saves the
+session and receipt. At most ten unexpired Minecraft sessions per account are allowed.
+
+Native requests use `Authorization: Bearer <device_token>` and reject Origin headers.
+Browser cookies, presence credentials and upload credentials cannot authorize them.
+The native session cannot authenticate a browser. Tokens are stored hashed on the
+server; the mod saves its credential and receipt per account in instance-local
+`config/mithrilpf/device.json`. Sessions expire after 30 days without sliding renewal.
+
+- `GET auth/device-session`: `{version: 1, user, expires}` or 401.
+- `POST auth/device-logout`: revoke this session and its receipts/scoped credentials.
+- `GET auth/device-player-card`: the account-card response using native authentication.
+- `POST auth/device-erase`: the same explicit erasure body and rules as `auth/erase`.
+  Restricted accounts retain access to erasure.
+- Browser-authenticated `GET auth/devices`: `{version: 1, devices: [{id, name, expires}]}`.
+  IDs are hashes, not usable credentials. Origin-protected `POST auth/devices/revoke
+{id}` revokes only a Minecraft session belonging to that browser's account.
+
+The receipt can obtain separately scoped party and record credentials through the
+existing proof routes. Each scoped request checks its parent session, whether browser
+or native. Account deletion removes both kinds and rejects ownership proofs already
+in flight. Browser logout continues to revoke only that browser's children.
+
+The native finder mirrors the browser finder under `party/client/`: `state`, `look`,
+`stop-looking`, `reserve`, `leave`, `publish`, `edit`, `pause`, `unlist`, `remove`,
+`chat`, `chat/report`, `listings` and `listings/{party_id}`. Methods, request bodies,
+responses and matching rules are unchanged. Listings require authentication and hide
+blocked players' parties. Bans, mutes and post-wait/post-lookup authentication checks
+also apply to native requests. Native UI activity keeps the finder slot alive; only
+the existing `party/mod/presence` heartbeat reports actual Hypixel presence.
+
 ## Account card and records
 
 `GET auth/player-card` derives the UUID from the browser session. It returns selected
