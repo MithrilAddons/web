@@ -34,7 +34,11 @@ import {
 
 type Run = (task: () => Promise<PartyState>) => Promise<boolean>;
 const EVERY = "every";
-const DEFAULT_METRICS: Metric[] = ["catacombs", "s_plus_ms", "magical_power"];
+const DEFAULT_METRICS = new Set<Metric>([
+  "catacombs",
+  "s_plus_ms",
+  "magical_power",
+]);
 const HINT: Record<Metric, string> = {
   catacombs: "At least",
   class_level: "At least, for the slot’s class",
@@ -660,12 +664,12 @@ export function PartyForm({
         </button>
       </div>
       {memoryNotice && (
-        <p role="status">
+        <output>
           {memoryNotice}{" "}
           <button type="button" onClick={() => onDone()}>
             Done
           </button>
-        </p>
+        </output>
       )}
       <details className="form-disclosure" open={kept.length > 0 || undefined}>
         <summary>
@@ -725,17 +729,17 @@ function RequirementFields({
   column,
   draft,
   onChange,
-}: {
+}: Readonly<{
   column: string;
   draft: Draft;
   onChange: (value: Draft) => void;
-}) {
+}>) {
   const [added, setAdded] = useState<Metric[]>([]);
   const visible = [
     ...DEFAULT_METRICS,
     ...METRIC_ORDER.filter(
       (metric) =>
-        !DEFAULT_METRICS.includes(metric) &&
+        !DEFAULT_METRICS.has(metric) &&
         (added.includes(metric) || Boolean(draft[`${column}:${metric}`])),
     ),
   ];

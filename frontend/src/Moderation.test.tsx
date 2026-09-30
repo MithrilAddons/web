@@ -349,7 +349,9 @@ it("loads each queue on entry and distinguishes an empty result", async () => {
   server();
   render(<Moderation />);
   fireEvent.click(await screen.findByRole("button", { name: "Chat reports" }));
-  await screen.findByText("No open chat reports.");
+  expect(await screen.findByText("No open chat reports.")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Audit log" }));
-  await screen.findByText("No moderator actions recorded.");
+  expect(
+    await screen.findByText("No moderator actions recorded."),
+  ).toBeTruthy();
 });

@@ -62,6 +62,7 @@ main,
   margin-inline: auto;
 }
 .site-header {
+  gap: 24px;
   height: 80px;
   flex-shrink: 0;
   display: flex;
@@ -1588,9 +1589,6 @@ summary:focus-visible {
 }
 
 /* Shared navigation and task-focused workspace. */
-.site-header {
-  gap: 24px;
-}
 .site-header > nav {
   margin-right: auto;
 }

@@ -658,6 +658,10 @@ function ProfitMetrics({
 }>) {
   const total = result.net + pets.best;
   const signedTotal = `${total >= 0 ? "+" : "−"}${coins(Math.abs(total))}`;
+  const profitState = total >= 0 ? "positive" : "negative";
+  const unavailableDetail = waiting
+    ? "Waiting for prices"
+    : "Estimate unavailable";
   let detail = "coins";
   if (waiting || stale || result.unpriced > 0 || !pets.pets.length)
     detail = "Partial estimate";
@@ -682,14 +686,8 @@ function ProfitMetrics({
       <Metric
         label="Total net/hr"
         value={valid ? signedTotal : "—"}
-        detail={
-          valid
-            ? detail
-            : waiting
-              ? "Waiting for prices"
-              : "Estimate unavailable"
-        }
-        state={valid ? (total >= 0 ? "positive" : "negative") : undefined}
+        detail={valid ? detail : unavailableDetail}
+        state={valid ? profitState : undefined}
       />
     </section>
   );

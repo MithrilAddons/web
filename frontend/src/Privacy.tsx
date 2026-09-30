@@ -103,6 +103,8 @@ export function AccountPrivacy() {
   const [scope, setScope] = useState("records");
   const [confirmation, setConfirmation] = useState("");
   const [busy, setBusy] = useState(false);
+  const deleteLabel =
+    scope === "account" ? "Delete account and synced PBs" : "Delete synced PBs";
   const working = useRef(false);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
@@ -221,11 +223,7 @@ export function AccountPrivacy() {
             />
           </label>
           <button type="submit" disabled={busy || confirmation !== "DELETE"}>
-            {busy
-              ? "Deleting…"
-              : scope === "account"
-                ? "Delete account and synced PBs"
-                : "Delete synced PBs"}
+            {busy ? "Deleting…" : deleteLabel}
           </button>
         </form>
       )}

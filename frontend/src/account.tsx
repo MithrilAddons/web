@@ -24,7 +24,7 @@ async function request<T>(path: string, body?: object): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export function Account({ compact = false }: { compact?: boolean }) {
+export function Account({ compact = false }: Readonly<{ compact?: boolean }>) {
   const menu = useRef<HTMLDetailsElement>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [error, setError] = useState(false);
@@ -60,8 +60,21 @@ export function Account({ compact = false }: { compact?: boolean }) {
       )
         menu.current.open = false;
     };
+    const escape = (event: KeyboardEvent) => {
+      if (
+        event.key === "Escape" &&
+        menu.current?.contains(event.target as Node)
+      ) {
+        menu.current.open = false;
+        menu.current.querySelector("summary")?.focus();
+      }
+    };
     document.addEventListener("pointerdown", close);
-    return () => document.removeEventListener("pointerdown", close);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", escape);
+    };
   }, [compact]);
   async function logout() {
     setBusy(true);
@@ -76,73 +89,31 @@ export function Account({ compact = false }: { compact?: boolean }) {
       setBusy(false);
     }
   }
-  if (compact)
-    return (
+  if (!session) {
+    const message = error ? "Account unavailable" : "Checking account…";
+    return compact ? (
       <div className="header-account">
-        {session?.authenticated && session.user ? (
-          <details
-            ref={menu}
-            onKeyDown={(event) => {
-              if (event.key === "Escape") {
-                event.currentTarget.open = false;
-                event.currentTarget.querySelector("summary")?.focus();
-              }
-            }}
-          >
-            <summary>
-              <SkinAvatar
-                className="avatar"
-                name={session.user.name}
-                uuid={session.user.uuid}
-              />{" "}
-              <span>{session.user.name}</span>
-            </summary>
-            <nav aria-label="Account navigation" className="account-menu">
-              <a href="/profile">Your profile</a>
-              <a href="/account">Manage data</a>
-              {session.moderator && <a href="/moderation">Moderation</a>}
-              <button disabled={busy} onClick={() => void logout()}>
-                Log out
-              </button>
-              {error && <p role="alert">Could not log out. Try again.</p>}
-            </nav>
-          </details>
-        ) : session ? (
-          <a href="/link">Link account</a>
-        ) : (
-          <span className="quiet-label">
-            {error ? "Account unavailable" : "Checking account…"}
-          </span>
-        )}
+        <span className="quiet-label">{message}</span>
       </div>
+    ) : (
+      <section aria-label="Account">
+        {error ? (
+          <p role="alert">Account service unavailable. Try again.</p>
+        ) : (
+          <p className="quiet-label">{message}</p>
+        )}
+      </section>
     );
-  return (
-    <section aria-label="Account">
-      {session?.authenticated && session.user ? (
-        <div className="profile-layout">
-          <div className="profile-identity">
-            <div className="account-identity">
-              <SkinAvatar
-                className="avatar"
-                name={session.user.name}
-                uuid={session.user.uuid}
-              />
-              <div>
-                <h2>{session.user.name}</h2>
-                <span className="quiet-label">Minecraft account</span>
-              </div>
-            </div>
-            <SkinPreview
-              key={session.user.uuid}
-              name={session.user.name}
-              uuid={session.user.uuid}
-            />
-          </div>
-          <section className="profile-stats" aria-label="Dungeon stats">
-            <PlayerStats key={session.user.uuid} user={session.user} />
-          </section>
+  }
+  if (!session.authenticated || !session.user) {
+    if (compact)
+      return (
+        <div className="header-account">
+          <a href="/link">Link account</a>
         </div>
-      ) : session ? (
+      );
+    return (
+      <section aria-label="Account">
         <div className="sign-in-help">
           <p>Link your Minecraft account to sign in.</p>
           <ol>
@@ -155,10 +126,58 @@ export function Account({ compact = false }: { compact?: boolean }) {
           </ol>
           <a href="/link">Enter a linking code</a>
         </div>
-      ) : !error ? (
-        <p className="quiet-label">Checking account…</p>
-      ) : null}
-      {error && <p role="alert">Account service unavailable. Try again.</p>}
+      </section>
+    );
+  }
+  if (compact)
+    return (
+      <div className="header-account">
+        <details ref={menu}>
+          <summary>
+            <SkinAvatar
+              className="avatar"
+              name={session.user.name}
+              uuid={session.user.uuid}
+            />{" "}
+            <span>{session.user.name}</span>
+          </summary>
+          <nav aria-label="Account navigation" className="account-menu">
+            <a href="/profile">Your profile</a>
+            <a href="/account">Manage data</a>
+            {session.moderator && <a href="/moderation">Moderation</a>}
+            <button disabled={busy} onClick={() => void logout()}>
+              Log out
+            </button>
+            {error && <p role="alert">Could not log out. Try again.</p>}
+          </nav>
+        </details>
+      </div>
+    );
+  return (
+    <section aria-label="Account">
+      <div className="profile-layout">
+        <div className="profile-identity">
+          <div className="account-identity">
+            <SkinAvatar
+              className="avatar"
+              name={session.user.name}
+              uuid={session.user.uuid}
+            />
+            <div>
+              <h2>{session.user.name}</h2>
+              <span className="quiet-label">Minecraft account</span>
+            </div>
+          </div>
+          <SkinPreview
+            key={session.user.uuid}
+            name={session.user.name}
+            uuid={session.user.uuid}
+          />
+        </div>
+        <section className="profile-stats" aria-label="Dungeon stats">
+          <PlayerStats key={session.user.uuid} user={session.user} />
+        </section>
+      </div>
     </section>
   );
 }

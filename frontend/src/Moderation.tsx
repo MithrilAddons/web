@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Children, useEffect, useRef, useState } from "react";
 import "./moderation.css";
 
 type Access = {
@@ -124,7 +124,7 @@ export function Moderation() {
     };
   }, [Boolean(access), view]);
 
-  async function perform(action: () => Promise<void>) {
+  async function perform(action: () => void | Promise<void>) {
     if (working.current) return;
     working.current = true;
     actionFocus.current =
@@ -159,7 +159,7 @@ export function Moderation() {
     setPlayer({ ...data, name: identity.name });
   }
 
-  async function mutate(path: string, body: Record<string, unknown>) {
+  function mutate(path: string, body: Record<string, unknown>) {
     setPending({
       path,
       body,
@@ -221,11 +221,13 @@ export function Moderation() {
                   setNotice("");
                 }}
               >
-                {item === "players"
-                  ? "Players & cases"
-                  : item === "reports"
-                    ? "Chat reports"
-                    : "Audit log"}
+                {
+                  {
+                    players: "Players & cases",
+                    reports: "Chat reports",
+                    audit: "Audit log",
+                  }[item]
+                }
               </button>
             ))}
           </nav>
@@ -503,7 +505,7 @@ export function Moderation() {
           {view === "audit" && (
             <section>
               <h2>Audit log</h2>
-              {auditLoading && <p role="status">Loading audit log…</p>}
+              {auditLoading && <output>Loading audit log…</output>}
               {auditError && <p role="alert">{auditError}</p>}
               {!auditLoading && !auditError && !audit.length && (
                 <p>No moderator actions recorded.</p>
@@ -582,7 +584,7 @@ function Correction({
 }: Readonly<{
   record: RecordRow;
   disabled: boolean;
-  onSave: (value: { real_ms: number; ticks: number }) => Promise<void>;
+  onSave: (value: { real_ms: number; ticks: number }) => void | Promise<void>;
 }>) {
   const [milliseconds, setMilliseconds] = useState(String(record.real_ms));
   const [ticks, setTicks] = useState(String(record.ticks));
@@ -707,7 +709,7 @@ function ChatReview({
         Refresh reports
       </button>
       {error && !review && <p role="alert">{error}</p>}
-      {busy && !loaded && <p role="status">Loading reports…</p>}
+      {busy && !loaded && <output>Loading reports…</output>}
       {loaded && !busy && !error && !reports.length && (
         <p>No open chat reports.</p>
       )}
@@ -768,15 +770,14 @@ function ChatReview({
 }
 
 function actionTitle(path: string, body: Record<string, unknown>) {
-  if (path === "sanction")
-    return body.kind === "mute"
-      ? "Mute player"
-      : body.kind === "network_ban"
-        ? "Ban account and IP"
-        : "Ban account";
+  if (path === "sanction") {
+    if (body.kind === "mute") return "Mute player";
+    return body.kind === "network_ban" ? "Ban account and IP" : "Ban account";
+  }
   if (path === "access")
     return body.enabled ? "Grant moderator access" : "Revoke moderator access";
-  return String(body.action ?? path).replaceAll("_", " ");
+  const action = typeof body.action === "string" ? body.action : path;
+  return action.replaceAll("_", " ");
 }
 
 function ActionReview({
@@ -861,7 +862,7 @@ function ActionReview({
           <EvidenceView value={values} />
         </details>
         <label>
-          Reason
+          <span>Reason</span>
           <textarea
             value={reason}
             onChange={(e) => setReason(e.target.value)}
@@ -895,11 +896,13 @@ function EvidenceView({ value }: Readonly<{ value: unknown }>) {
   if (Array.isArray(value))
     return value.length ? (
       <ul className="evidence-items">
-        {value.map((item, index) => (
-          <li key={index}>
-            <EvidenceView value={item} />
-          </li>
-        ))}
+        {Children.toArray(
+          value.map((item) => (
+            <li>
+              <EvidenceView value={item} />
+            </li>
+          )),
+        )}
       </ul>
     ) : (
       <span className="quiet-label">None</span>
@@ -917,9 +920,8 @@ function EvidenceView({ value }: Readonly<{ value: unknown }>) {
         ))}
       </dl>
     );
-  return (
-    <span>
-      {typeof value === "boolean" ? (value ? "Yes" : "No") : String(value)}
-    </span>
-  );
+  if (typeof value === "boolean") return <span>{value ? "Yes" : "No"}</span>;
+  if (typeof value === "string" || typeof value === "number")
+    return <span>{value}</span>;
+  return null;
 }

@@ -104,10 +104,10 @@ export function PlayerCard({
 export function PlayerStats({
   user,
   partyMember = false,
-}: {
+}: Readonly<{
   user: { uuid: string; name: string };
   partyMember?: boolean;
-}) {
+}>) {
   const [data, setData] = useState<PlayerCardData | null>(null);
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
