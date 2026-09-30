@@ -1,7 +1,7 @@
 """Shared, keyless Hypixel prices for the Slayer calculator; no player lookups.
 
-Pricing rules adapted from the owner's MithrilAddons at 403f0dd. Only aggregate
-quotes leave this service. Drop sales are in memory; aggregate pet prices persist.
+Only aggregate quotes leave this service. Drop sales are in memory;
+aggregate pet prices persist.
 """
 
 import asyncio

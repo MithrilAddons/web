@@ -1,4 +1,3 @@
-// Ported from Mithril64/mithriladdons at 403f0dd (owner-authorized web adaptation).
 import catalogue from "../../backend/mithril_web/slayer_data.json";
 
 export type Drop = {
