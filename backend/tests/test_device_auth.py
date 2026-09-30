@@ -182,7 +182,8 @@ def test_device_management_is_account_bound_and_requires_origin(setup):
     foreign = {"Cookie": f"{COOKIE}={other}", **ORIGIN}
     assert client.get("/api/v1/auth/devices", headers=foreign).json()["devices"] == []
     listed = client.get("/api/v1/auth/devices", headers=own).json()["devices"]
-    assert len(listed) == 1 and listed[0]["id"] == digest(device)
+    assert len(listed) == 1
+    assert listed[0]["id"] == digest(device)
     assert device not in str(listed)
     payload = {"id": digest(device)}
     assert client.post("/api/v1/auth/devices/revoke", headers=own, json=payload).status_code == 403

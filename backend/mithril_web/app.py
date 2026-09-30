@@ -34,6 +34,7 @@ from .skins import SkinCache
 from .slayer_market import SlayerMarket
 from .solo_evidence import SoloProgress, SoloStart, TerminalReport
 
+HEX_64_PATTERN = r"^[0-9a-f]{64}$"
 BEARER_PATTERN = r"Bearer [A-Za-z0-9_-]{43}"
 
 
@@ -45,7 +46,7 @@ class Challenge(StrictModel):
     version: Literal[1]
     uuid: str = Field(pattern=r"^[0-9a-f]{32}$")
     name: str = Field(pattern=r"^[A-Za-z0-9_]{1,16}$")
-    client_nonce: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    client_nonce: str | None = Field(default=None, pattern=HEX_64_PATTERN)
 
 
 class Proof(StrictModel):
@@ -53,11 +54,11 @@ class Proof(StrictModel):
 
 
 class DeviceChallenge(Challenge):
-    client_nonce: str = Field(pattern=r"^[0-9a-f]{64}$")
+    client_nonce: str = Field(pattern=HEX_64_PATTERN)
 
 
 class RevokeDevice(StrictModel):
-    id: str = Field(pattern=r"^[0-9a-f]{64}$")
+    id: str = Field(pattern=HEX_64_PATTERN)
 
 
 class Link(StrictModel):
@@ -332,7 +333,9 @@ def create_app(
             raise HTTPException(401, "Minecraft session expired. Sign in again.")
         return row
 
-    @app.get("/api/v1/auth/device-session")
+    @app.get(
+        "/api/v1/auth/device-session", responses={401: {"description": "Minecraft session expired"}}
+    )
     def device_session(request: Request):
         row = device_user(request)
         return {"version": 1, "user": identity(row), "expires": row["expires"]}
