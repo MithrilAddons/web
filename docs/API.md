@@ -169,7 +169,7 @@ They cannot log into the browser or cross scopes. Every scoped request rechecks
 its parent browser session: logout, replacement or expiry revokes access. Mod routes
 reject Origin headers, but that check is not a substitute for authentication.
 Proofs are serialized inside the mod so concurrent linking/syncing cannot overwrite
-one another's Mojang server proof. No dev-account bypass or custom URI installer exists.
+one another's Mojang server proof.
 
 ## Account card and records
 
@@ -304,19 +304,18 @@ The mod transport is available under the existing scoped party credential:
   than 100 messages receives only retained history. Membership and credentials are
   rechecked after waiting. This read does not replace the presence heartbeat.
 - `party/mod/presence` additionally returns `chat_party_id` (nullable), including
-  after handoff. Old clients can ignore this additive field. A future mod chat
-  reader needs a bounded response limit of 256 KiB, separate from the existing
-  16 KiB handoff limit.
+  after handoff. Old clients can ignore this additive field. The mod chat
+  reader bounds responses at 256 KiB, separate from the 16 KiB handoff limit.
 
 After handoff, `party.completed` is true and the legacy mod handoff `party` is
 null so old clients stop inviting. The private session never relists automatically,
 even when members leave. The existing 60-second absence policy still releases
 members with neither the site nor mod connected; no no-show penalty applies.
 
-This deployment enables website chat; older Minecraft clients do
-not yet display/send relay messages. Nothing is forwarded to Hypixel chat or
-interpreted as commands. History lives only in process memory: leaving/expiry of
-the last member, disbanding or a backend restart deletes it. It is not logged or
+Website members and mod clients using `/mpc` exchange messages in the same party.
+Nothing is forwarded to Hypixel chat or interpreted as commands. History lives
+only in process memory: leaving/expiry of the last member, disbanding or a backend
+restart deletes it. It is not logged or
 saved in the account/record databases. No additional cookies are used.
 
 ## Operations and limits
@@ -324,8 +323,9 @@ saved in the account/record databases. No additional cookies are used.
 Use one backend process: parties/searches/cooldowns/notices are in memory, bounded
 at 4000 players/800 parties, and do not survive restarts. Auth and PBs use locked
 SQLite stores. Mod presence has a 60-second freshness window. HTTP requests are
-bounded at 4 KiB; mod responses at 16 KiB. Reverse-proxy limits and rollback are in
-DEPLOYMENT.md. Restart recovery does not silently restore a closed finder party.
+bounded at 4 KiB; mod handoff responses at 16 KiB and chat responses at 256 KiB.
+Reverse-proxy limits and rollback are in DEPLOYMENT.md. Restart recovery does not
+silently restore a closed finder party.
 
 Run `python tools/check.py`; fixtures/fakes never contact accounts or production.
 Before deploying: test full five-client handoff, no-shows, manual reinvites, a roster

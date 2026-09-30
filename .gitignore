@@ -26,7 +26,6 @@ CLAUDE.md
 .codex/
 .claude/
 .local/
-# Working notes stay local; these three documents are the maintained public reference.
 docs/*.md
 !docs/DEVELOPMENT.md
 !docs/DEPLOYMENT.md

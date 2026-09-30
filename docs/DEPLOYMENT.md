@@ -78,5 +78,4 @@ Never bind the backend publicly or broaden that trust to arbitrary senders.
 Held requests use two nginx connections each; size worker_connections accordingly.
 
 Keep auth/record databases and backups outside releases, source control and test
-fixtures. Account-data retention/deletion policy and multi-account/load testing
-must be completed before broad distribution. See [API.md](API.md).
+fixtures. See [API.md](API.md).
