@@ -208,3 +208,8 @@
 .chat-report input {
   width: 100%;
 }
+
+.chat-history:has(.chat-empty) {
+  min-height: 72px;
+  height: auto;
+}

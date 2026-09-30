@@ -13,6 +13,13 @@ import {
   type Tier,
 } from "./slayerCalculator";
 import "./slayerProfits.css";
+import {
+  loadSelectedSlayer,
+  loadSlayerSettings,
+  saveSelectedSlayer,
+  saveSlayerSettings,
+  type SlayerSettings,
+} from "./slayerPreferences";
 
 const number = (value: number, digits = 0) =>
   value.toLocaleString("en-US", { maximumFractionDigits: digits });
@@ -24,21 +31,39 @@ const coins = (value: number) =>
 const roman = ["", "I", "II", "III", "IV", "V"];
 
 export function SlayerProfits() {
-  const [slayerIndex, setSlayerIndex] = useState(0);
-  const [tierNumber, setTierNumber] = useState(5);
-  const [magicFind, setMagicFind] = useState("200");
-  const [bosses, setBosses] = useState("60");
-  const [meter, setMeter] = useState("");
-  const [boost, setBoost] = useState(false);
-  const [shards, setShards] = useState(false);
-  const [aatroxXp, setAatroxXp] = useState(false);
-  const [halfPrice, setHalfPrice] = useState(false);
-  const [extraSlots, setExtraSlots] = useState(false);
-  const [petXpBoost, setPetXpBoost] = useState(false);
-  const [excludeActive, setExcludeActive] = useState(false);
-  const [mode, setMode] = useState<"instant" | "offer">("instant");
-  const { market, error, loading, refreshPrices } = useSlayerMarket();
+  const [slayerIndex, setSlayerIndex] = useState(loadSelectedSlayer);
+  const [preferences, setPreferences] = useState(() =>
+    Object.fromEntries(
+      slayers.map((slayer) => [slayer.displayName, loadSlayerSettings(slayer)]),
+    ),
+  );
   const slayer = slayers[slayerIndex]!;
+  const settings = preferences[slayer.displayName]!;
+  const {
+    tierNumber,
+    magicFind,
+    bosses,
+    meter,
+    boost,
+    shards,
+    aatroxXp,
+    halfPrice,
+    extraSlots,
+    petXpBoost,
+    excludeActive,
+    mode,
+  } = settings;
+  const updateSettings = (changes: Partial<SlayerSettings>) =>
+    setPreferences((previous) => ({
+      ...previous,
+      [slayer.displayName]: { ...previous[slayer.displayName]!, ...changes },
+    }));
+  const setMeter = (meter: string) => updateSettings({ meter });
+  useEffect(() => {
+    saveSelectedSlayer(slayer);
+    saveSlayerSettings(slayer, settings);
+  }, [slayer, settings]);
+  const { market, error, loading, refreshPrices } = useSlayerMarket();
   const tier =
     slayer.tiers.find((t) => t.number === tierNumber) ?? slayer.tiers[0]!;
   const valid =
@@ -100,10 +125,7 @@ export function SlayerProfits() {
           <select
             value={slayerIndex}
             onChange={(e) => {
-              const index = +e.target.value;
-              setSlayerIndex(index);
-              setTierNumber(Math.min(tierNumber, slayers[index]!.tiers.length));
-              setMeter("");
+              setSlayerIndex(+e.target.value);
             }}
           >
             {slayers.map((s, i) => (
@@ -118,8 +140,7 @@ export function SlayerProfits() {
           <select
             value={tier.number}
             onChange={(e) => {
-              setTierNumber(+e.target.value);
-              setMeter("");
+              updateSettings({ tierNumber: +e.target.value, meter: "" });
             }}
           >
             {slayer.tiers.map((t) => (
@@ -137,7 +158,7 @@ export function SlayerProfits() {
             max="10000"
             step="any"
             value={magicFind}
-            onChange={(e) => setMagicFind(e.target.value)}
+            onChange={(e) => updateSettings({ magicFind: e.target.value })}
           />
         </label>
         <label>
@@ -148,7 +169,7 @@ export function SlayerProfits() {
             max="100000"
             step="any"
             value={bosses}
-            onChange={(e) => setBosses(e.target.value)}
+            onChange={(e) => updateSettings({ bosses: e.target.value })}
           />
         </label>
         <label className="slayer-meter">
@@ -168,79 +189,108 @@ export function SlayerProfits() {
           <span>Bazaar pricing</span>
           <select
             value={mode}
-            onChange={(e) => setMode(e.target.value as "instant" | "offer")}
+            onChange={(e) =>
+              updateSettings({ mode: e.target.value as "instant" | "offer" })
+            }
           >
             <option value="instant">Instant sell</option>
             <option value="offer">Sell offer</option>
           </select>
         </label>
-        <div className="slayer-options">
-          <fieldset>
-            <legend>Aatrox</legend>
-            <label>
-              <input
-                type="checkbox"
-                checked={aatroxXp}
-                onChange={(e) => setAatroxXp(e.target.checked)}
-              />{" "}
-              +25% RNG meter XP
-            </label>
-            <label>
-              <input
-                type="checkbox"
-                checked={halfPrice}
-                onChange={(e) => setHalfPrice(e.target.checked)}
-              />{" "}
-              Half-price quests
-            </label>
-          </fieldset>
-          <fieldset>
-            <legend>Diana</legend>
-            <label>
-              <input
-                type="checkbox"
-                checked={extraSlots}
-                onChange={(e) => setExtraSlots(e.target.checked)}
-              />{" "}
-              3 EXP Share slots (+10% rate)
-            </label>
-            <label>
-              <input
-                type="checkbox"
-                checked={petXpBoost}
-                onChange={(e) => setPetXpBoost(e.target.checked)}
-              />{" "}
-              +35% pet XP
-            </label>
-          </fieldset>
-          <fieldset>
-            <legend>Options</legend>
-            <label>
-              <input
-                type="checkbox"
-                checked={boost}
-                onChange={(e) => setBoost(e.target.checked)}
-              />{" "}
-              +10% RNG meter XP
-            </label>
-            <label>
-              <input
-                type="checkbox"
-                checked={shards}
-                onChange={(e) => setShards(e.target.checked)}
-              />{" "}
-              Pet shard bonuses
-            </label>
-            <label>
-              <input
-                type="checkbox"
-                checked={excludeActive}
-                onChange={(e) => setExcludeActive(e.target.checked)}
-              />{" "}
-              Exclude main pet
-            </label>
-          </fieldset>
-        </div>
+        <details className="slayer-boosts">
+          <summary>
+            Boosts &amp; pet options ·{" "}
+            {
+              [
+                boost,
+                shards,
+                aatroxXp,
+                halfPrice,
+                extraSlots,
+                petXpBoost,
+                excludeActive,
+              ].filter(Boolean).length
+            }{" "}
+            active
+          </summary>
+          <div className="slayer-options">
+            <fieldset>
+              <legend>Aatrox</legend>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={aatroxXp}
+                  onChange={(e) =>
+                    updateSettings({ aatroxXp: e.target.checked })
+                  }
+                />{" "}
+                +25% RNG meter XP
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={halfPrice}
+                  onChange={(e) =>
+                    updateSettings({ halfPrice: e.target.checked })
+                  }
+                />{" "}
+                Half-price quests
+              </label>
+            </fieldset>
+            <fieldset>
+              <legend>Diana</legend>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={extraSlots}
+                  onChange={(e) =>
+                    updateSettings({ extraSlots: e.target.checked })
+                  }
+                />{" "}
+                3 EXP Share slots (+10% rate)
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={petXpBoost}
+                  onChange={(e) =>
+                    updateSettings({ petXpBoost: e.target.checked })
+                  }
+                />{" "}
+                +35% pet XP
+              </label>
+            </fieldset>
+            <fieldset>
+              <legend>Options</legend>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={boost}
+                  onChange={(e) => updateSettings({ boost: e.target.checked })}
+                />{" "}
+                +10% RNG meter XP
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={shards}
+                  onChange={(e) => updateSettings({ shards: e.target.checked })}
+                />{" "}
+                Pet shard bonuses
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={excludeActive}
+                  onChange={(e) =>
+                    updateSettings({ excludeActive: e.target.checked })
+                  }
+                />{" "}
+                Exclude main pet
+              </label>
+            </fieldset>
+          </div>
+        </details>
       </section>
       {!valid && (
         <p role="alert" className="slayer-warning">
@@ -248,30 +298,38 @@ export function SlayerProfits() {
         </p>
       )}
 
-      <MarketStatus
-        waiting={waiting}
-        stale={stale}
-        unpriced={result.unpriced}
-      />
-
+      <div className="slayer-price-status">
+        <MarketStatus
+          waiting={waiting}
+          stale={stale}
+          unpriced={result.unpriced}
+        />
+        {market && (
+          <p className="quiet-label">
+            Bazaar updated{" "}
+            {market.feeds.bazaar.updated
+              ? new Date(market.feeds.bazaar.updated * 1000).toLocaleTimeString(
+                  [],
+                  { hour: "2-digit", minute: "2-digit" },
+                )
+              : "not yet"}{" "}
+            · Auction House updated{" "}
+            {market.feeds.auctions.updated
+              ? new Date(
+                  market.feeds.auctions.updated * 1000,
+                ).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+              : "not yet"}
+          </p>
+        )}
+      </div>
       <ProfitMetrics
         result={result}
         pets={pets}
-        valid={valid}
+        valid={valid && market !== null && result.unpriced < tier.drops.length}
         bph={bph}
         questCost={tier.questCost * (halfPrice ? 0.5 : 1)}
         waiting={waiting}
         stale={stale}
-      />
-
-      <DropBreakdown
-        slayer={slayer}
-        tier={tier}
-        prices={prices}
-        dropRates={result.dropRates}
-        bph={bph}
-        meter={meter}
-        valid={valid}
       />
 
       <div className="slayer-bottom-grid">
@@ -282,11 +340,24 @@ export function SlayerProfits() {
             comparison={result.comparison}
             valid={valid}
             meter={meter}
+            onSelect={setMeter}
           />
         </section>
         <PetPanel pets={pets} excludeActive={excludeActive} />
       </div>
 
+      <details className="slayer-assumptions">
+        <summary>Drop breakdown</summary>{" "}
+        <DropBreakdown
+          slayer={slayer}
+          tier={tier}
+          prices={prices}
+          dropRates={result.dropRates}
+          bph={bph}
+          meter={meter}
+          valid={valid}
+        />
+      </details>
       <CalculationDetails market={market} />
     </div>
   );
@@ -367,13 +438,20 @@ function DropBreakdown({
                     )}
                   </th>
                   <td>{dropRateText(rate, valid)}</td>
-                  <td>{valid ? number(items, 4) : "—"}</td>
+                  <td>
+                    {valid
+                      ? items.toLocaleString("en-US", {
+                          maximumSignificantDigits: 3,
+                        })
+                      : "—"}
+                  </td>
                   <td>
                     {price ? (
                       <>
-                        <span title={`${number(price.price, 2)} coins`}>
-                          {coins(price.price)}
-                        </span>
+                        <details>
+                          <summary>{coins(price.price)}</summary>
+                          {number(price.price, 2)} coins
+                        </details>
                         <small>{price.source}</small>
                       </>
                     ) : (
@@ -382,9 +460,10 @@ function DropBreakdown({
                   </td>
                   <td>
                     {valid && price ? (
-                      <span title={`${number(items * price.price, 2)} coins`}>
-                        {coins(items * price.price)}
-                      </span>
+                      <details>
+                        <summary>{coins(items * price.price)}</summary>
+                        {number(items * price.price, 2)} coins
+                      </details>
                     ) : (
                       "—"
                     )}
@@ -428,12 +507,14 @@ function PetPanel({
                   · {pet.startLevel} → {pet.endLevel}
                 </small>
                 {pet.kat && (
-                  <small
-                    title={`Kat fees ${number(pet.kat.coins)} + materials ${number(pet.kat.materials)} + flowers ${number(pet.kat.flowerCost)} coins`}
-                  >
-                    {coins(pet.kat.total)} upgrades incl. {pet.kat.flowers}{" "}
-                    flowers
-                  </small>
+                  <details>
+                    <summary>{coins(pet.kat.total)} Kat upgrades</summary>
+                    <p>
+                      Fees {number(pet.kat.coins)} · materials{" "}
+                      {number(pet.kat.materials)} · {pet.kat.flowers} flowers (
+                      {number(pet.kat.flowerCost)} coins)
+                    </p>
+                  </details>
                 )}
               </div>
               <div>
@@ -506,11 +587,13 @@ function RngStrategy({
   comparison,
   valid,
   meter,
+  onSelect,
 }: Readonly<{
   tierNumber: number;
   comparison: ReturnType<typeof calculate>["comparison"];
   valid: boolean;
   meter: string;
+  onSelect: (item: string) => void;
 }>) {
   if (tierNumber < 3) return <p>Requires Tier III or higher.</p>;
   if (!comparison || !valid) return <p>No meter prices.</p>;
@@ -548,6 +631,11 @@ function RngStrategy({
         </div>
       </dl>
       {delta > 0.5 && <p>+{coins(delta)}/hr over always selected</p>}
+      {!meter && (
+        <button onClick={() => onSelect(comparison.itemName)}>
+          Use {comparison.itemName}
+        </button>
+      )}
     </>
   );
 }
@@ -570,6 +658,10 @@ function ProfitMetrics({
 }>) {
   const total = result.net + pets.best;
   const signedTotal = `${total >= 0 ? "+" : "−"}${coins(Math.abs(total))}`;
+  const profitState = total >= 0 ? "positive" : "negative";
+  const unavailableDetail = waiting
+    ? "Waiting for prices"
+    : "Estimate unavailable";
   let detail = "coins";
   if (waiting || stale || result.unpriced > 0 || !pets.pets.length)
     detail = "Partial estimate";
@@ -594,8 +686,8 @@ function ProfitMetrics({
       <Metric
         label="Total net/hr"
         value={valid ? signedTotal : "—"}
-        detail={detail}
-        state={total >= 0 ? "positive" : "negative"}
+        detail={valid ? detail : unavailableDetail}
+        state={valid ? profitState : undefined}
       />
     </section>
   );
@@ -701,7 +793,9 @@ function useSlayerMarket() {
 
 function dropRateText(rate: number, valid: boolean) {
   if (!valid) return "—";
-  return rate > 1 ? `${number(rate, 3)} / boss` : `${number(rate * 100, 7)}%`;
+  return rate > 1
+    ? `${number(rate, 3)} / boss`
+    : `${(rate * 100).toLocaleString("en-US", { maximumSignificantDigits: 3 })}%`;
 }
 const feedNames = {
   npc: "NPC",

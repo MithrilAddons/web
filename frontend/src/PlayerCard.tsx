@@ -47,10 +47,6 @@ export function PlayerCard({
   partyMember?: boolean;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
-  const [data, setData] = useState<PlayerCardData | null>(null);
-  const [error, setError] = useState("");
-  const [attempt, setAttempt] = useState(0);
-  const [mode, setMode] = useState("M7");
   const close = () => {
     dialog.current?.close();
     onClose();
@@ -65,6 +61,57 @@ export function PlayerCard({
       document.body.style.overflow = previous;
     };
   }, []);
+  return createPortal(
+    <dialog
+      ref={dialog}
+      className="player-card"
+      aria-labelledby="player-card-title"
+      onCancel={(event) => {
+        event.preventDefault();
+        close();
+      }}
+      onClick={(event) => {
+        if (event.target !== event.currentTarget) return;
+        const box = event.currentTarget.getBoundingClientRect();
+        if (
+          event.clientX < box.left ||
+          event.clientX > box.right ||
+          event.clientY < box.top ||
+          event.clientY > box.bottom
+        )
+          close();
+      }}
+    >
+      <header className="player-card-heading">
+        <div>
+          <p className="quiet-label">Player card</p>
+          <h2 id="player-card-title">{user.name}</h2>
+        </div>
+        <button
+          className="card-close"
+          onClick={close}
+          aria-label="Close player card"
+        >
+          ×
+        </button>
+      </header>
+      <PlayerStats user={user} partyMember={partyMember} />
+    </dialog>,
+    document.body,
+  );
+}
+
+export function PlayerStats({
+  user,
+  partyMember = false,
+}: Readonly<{
+  user: { uuid: string; name: string };
+  partyMember?: boolean;
+}>) {
+  const [data, setData] = useState<PlayerCardData | null>(null);
+  const [error, setError] = useState("");
+  const [attempt, setAttempt] = useState(0);
+  const [mode, setMode] = useState("M7");
   useEffect(() => {
     const controller = new AbortController();
     let active = true;
@@ -94,41 +141,9 @@ export function PlayerCard({
   const record = data?.floors.find((row) => row.floor === mode);
   const count = (value: number | null) =>
     value === null ? "—" : value.toLocaleString();
-  return createPortal(
-    <dialog
-      ref={dialog}
-      className="player-card"
-      aria-labelledby="player-card-title"
-      onCancel={(event) => {
-        event.preventDefault();
-        close();
-      }}
-      onClick={(event) => {
-        if (event.target !== event.currentTarget) return;
-        const box = event.currentTarget.getBoundingClientRect();
-        if (
-          event.clientX < box.left ||
-          event.clientX > box.right ||
-          event.clientY < box.top ||
-          event.clientY > box.bottom
-        )
-          close();
-      }}
-    >
-      <header className="player-card-heading">
-        <div>
-          <p className="quiet-label">Player card</p>
-          <h2 id="player-card-title">{user.name}</h2>
-          {data?.profile && <p className="quiet-label">{data.profile.name}</p>}
-        </div>
-        <button
-          className="card-close"
-          onClick={close}
-          aria-label="Close player card"
-        >
-          ×
-        </button>
-      </header>
+  return (
+    <>
+      {data?.profile && <p className="quiet-label">{data.profile.name}</p>}
       {!data && !error && (
         <p className="card-status" role="status">
           Loading stats…
@@ -247,7 +262,6 @@ export function PlayerCard({
           </footer>
         </>
       )}
-    </dialog>,
-    document.body,
+    </>
   );
 }

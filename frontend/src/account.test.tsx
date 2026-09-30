@@ -224,6 +224,7 @@ it("failed confirmation does not claim success", async () => {
 });
 
 it("logs out the browser session", async () => {
+  vi.stubGlobal("location", { replace: vi.fn() });
   const fetcher = vi
     .fn()
     .mockImplementation((url: string) =>
@@ -238,7 +239,8 @@ it("logs out the browser session", async () => {
       ),
     );
   vi.stubGlobal("fetch", fetcher);
-  render(<Account />);
+  render(<Account compact />);
+  fireEvent.click(await screen.findByText("TestPlayer"));
   fireEvent.click(await screen.findByRole("button", { name: "Log out" }));
   await waitFor(() =>
     expect(screen.queryByRole("button", { name: "Log out" })).toBeNull(),
@@ -257,4 +259,34 @@ it("policy names the actual cookie, duration and removal method without a networ
   expect(screen.getByText(/30 days/)).toBeTruthy();
   expect(screen.getByText(/Use Log out/)).toBeTruthy();
   expect(fetcher).not.toHaveBeenCalled();
+});
+
+it("offers compact account navigation without mounting the skin preview", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({ authenticated: true, user, moderator: true }),
+        ),
+    ),
+  );
+  render(<Account compact />);
+  const summary = await screen.findByText("TestPlayer");
+  const menu = summary.closest("details")!;
+  fireEvent.click(summary);
+  expect(
+    screen.getByRole("link", { name: "Your profile" }).getAttribute("href"),
+  ).toBe("/profile");
+  expect(
+    screen.getByRole("link", { name: "Moderation" }).getAttribute("href"),
+  ).toBe("/moderation");
+  expect(document.querySelector("canvas")).toBeNull();
+  fireEvent.keyDown(menu, { key: "Escape" });
+  expect(menu.open).toBe(false);
+  fireEvent.click(summary);
+  fireEvent.pointerDown(document.body);
+  expect(menu.open).toBe(false);
+  window.dispatchEvent(new Event("mithril-signed-out"));
+  await screen.findByRole("link", { name: "Link account" });
 });

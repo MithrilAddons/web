@@ -5,8 +5,17 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Moderation } from "./Moderation";
+
+beforeEach(() => {
+  HTMLDialogElement.prototype.showModal = function () {
+    this.setAttribute("open", "");
+  };
+  HTMLDialogElement.prototype.close = function () {
+    this.removeAttribute("open");
+  };
+});
 
 afterEach(() => {
   cleanup();
@@ -32,6 +41,7 @@ function server(role = "owner", data: Record<string, object> = {}) {
       if (path.startsWith("resolve/")) body = { uuid, name: "SyntheticPlayer" };
       if (path.startsWith("player/"))
         body = { uuid, records: [record], cases: [] };
+      if (path === "chat") body = { reports: [] };
       if (path === "audit") body = { entries: [] };
       body = data[path] ?? body;
     }
@@ -76,13 +86,11 @@ it.each(["7", "permanent"])(
     fireEvent.click(checkbox);
     fireEvent.click(checkbox);
     fireEvent.click(checkbox);
-    fireEvent.change(screen.getByLabelText("Reason"), {
-      target: { value: "Confirmed abuse" },
-    });
     fireEvent.change(screen.getByLabelText("Duration"), {
       target: { value: duration },
     });
     fireEvent.click(screen.getByRole("button", { name: "Apply restriction" }));
+    await confirmAction("Confirmed abuse");
     await screen.findByText("Saved.");
     const options = fetcher.mock.calls.find(([url]) =>
       url.endsWith("/sanction"),
@@ -118,14 +126,13 @@ it.each([false, true])(
     expect(screen.getByText("No records.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Case evidence" }));
     await screen.findByText("Record evidence");
-    fireEvent.change(screen.getByLabelText("Reason"), {
-      target: { value: "Appeal reviewed" },
-    });
+
     fireEvent.click(
       screen.getByRole("button", {
         name: open ? "Close appeal" : "Open appeal",
       }),
     );
+    await confirmAction("Appeal reviewed");
     await screen.findByText("Saved.");
     expect(fetcher).toHaveBeenCalledWith(
       "/api/v1/moderation/case",
@@ -163,10 +170,11 @@ it("allows the owner to revoke moderator access and paginate attributed audit ac
   });
   render(<Moderation />);
   await find();
-  fireEvent.change(screen.getByLabelText("Reason"), {
-    target: { value: "Role no longer needed" },
-  });
+
   fireEvent.click(screen.getByRole("button", { name: "Revoke moderator" }));
+  await confirmAction("Role no longer needed");
+  await screen.findByText("Saved.");
+  fireEvent.click(screen.getByRole("button", { name: "Audit log" }));
   await screen.findByText("Access review");
   expect(fetcher).toHaveBeenCalledWith(
     "/api/v1/moderation/access",
@@ -185,7 +193,7 @@ it("allows the owner to revoke moderator access and paginate attributed audit ac
   await waitFor(() =>
     expect(
       fetcher.mock.calls.filter(([url]) => url.endsWith("/audit")),
-    ).toHaveLength(2),
+    ).toHaveLength(3),
   );
 });
 
@@ -202,15 +210,15 @@ it.each(["Remove message", "Dismiss report"])(
     const fetcher = server("moderator", { chat: { reports: [report] } });
     render(<Moderation />);
     fireEvent.click(
-      await screen.findByRole("button", { name: "Refresh reports" }),
+      await screen.findByRole("button", { name: "Chat reports" }),
     );
     await screen.findByText("Harassment");
     fireEvent.click(screen.getByRole("button", { name: "Review player" }));
-    await screen.findByLabelText("Reason");
-    fireEvent.change(screen.getByLabelText("Review reason"), {
-      target: { value: "Message reviewed" },
-    });
+    await screen.findByText("Records");
+    fireEvent.click(screen.getByRole("button", { name: "Chat reports" }));
+    await screen.findByText("Harassment");
     fireEvent.click(screen.getByRole("button", { name: action }));
+    await confirmAction("Message reviewed");
     await waitFor(() =>
       expect(fetcher).toHaveBeenCalledWith(
         "/api/v1/moderation/chat",
@@ -232,7 +240,7 @@ it("reports a failed chat review without retrying the mutation", async () => {
   render(<Moderation />);
   await screen.findByLabelText("Player");
   fetcher.mockRejectedValueOnce(new Error("Reports unavailable"));
-  fireEvent.click(screen.getByRole("button", { name: "Refresh reports" }));
+  fireEvent.click(screen.getByRole("button", { name: "Chat reports" }));
   expect((await screen.findByRole("alert")).textContent).toContain(
     "Reports unavailable",
   );
@@ -245,16 +253,6 @@ it("requires a reason and sends the reviewed state with a correction", async () 
   const fetcher = server();
   render(<Moderation />);
   await find();
-  expect(
-    (
-      screen.getByRole("button", {
-        name: "Save correction",
-      }) as HTMLButtonElement
-    ).disabled,
-  ).toBe(true);
-  fireEvent.change(screen.getByLabelText("Reason"), {
-    target: { value: "Corrected from run evidence" },
-  });
   fireEvent.change(screen.getByLabelText("Time (ms)"), {
     target: { value: "150000" },
   });
@@ -262,6 +260,7 @@ it("requires a reason and sends the reviewed state with a correction", async () 
     target: { value: "3000" },
   });
   fireEvent.submit(screen.getByLabelText("Time (ms)").closest("form")!);
+  await confirmAction("Corrected from run evidence");
   await waitFor(() =>
     expect(fetcher).toHaveBeenCalledWith(
       "/api/v1/moderation/record",
@@ -297,9 +296,7 @@ it("does not silently retry a failed write and retains the reason", async () => 
   const fetcher = server();
   render(<Moderation />);
   await find();
-  fireEvent.change(screen.getByLabelText("Reason"), {
-    target: { value: "Review" },
-  });
+
   fetcher.mockResolvedValueOnce(
     new Response(
       JSON.stringify({ detail: "Record changed; reload before editing" }),
@@ -307,6 +304,7 @@ it("does not silently retry a failed write and retains the reason", async () => 
     ),
   );
   fireEvent.click(screen.getByRole("button", { name: "Invalidate" }));
+  await confirmAction("Review");
   expect((await screen.findByRole("alert")).textContent).toContain(
     "Record changed",
   );
@@ -316,4 +314,44 @@ it("does not silently retry a failed write and retains the reason", async () => 
   expect(
     fetcher.mock.calls.filter(([url]) => url.endsWith("/record")),
   ).toHaveLength(1);
+});
+
+async function confirmAction(reason: string) {
+  const input = await screen.findByLabelText("Reason");
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Confirm action",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  fireEvent.change(input, { target: { value: reason } });
+  fireEvent.click(screen.getByRole("button", { name: "Confirm action" }));
+}
+
+it("cancels a reviewed restriction without sending a mutation", async () => {
+  const fetcher = server();
+  render(<Moderation />);
+  await find();
+  fireEvent.click(screen.getByRole("button", { name: "Apply restriction" }));
+  await screen.findByRole("dialog", { name: "Ban account" });
+  expect(
+    screen.getByText("0 records and 0 reports attached as evidence."),
+  ).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(
+    fetcher.mock.calls.some(([, options]) => options?.method === "POST"),
+  ).toBe(false);
+});
+
+it("loads each queue on entry and distinguishes an empty result", async () => {
+  server();
+  render(<Moderation />);
+  fireEvent.click(await screen.findByRole("button", { name: "Chat reports" }));
+  expect(await screen.findByText("No open chat reports.")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Audit log" }));
+  expect(
+    await screen.findByText("No moderator actions recorded."),
+  ).toBeTruthy();
 });

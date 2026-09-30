@@ -58,9 +58,9 @@ it("requires explicit confirmation and clears it when deletion scope changes", a
   );
   vi.stubGlobal("fetch", fetcher);
   render(<AccountPrivacy />);
-  await screen.findByText("Synthetic");
+  await screen.findByText("Delete data for Synthetic");
   const button = screen.getByRole("button", {
-    name: "Delete selected data",
+    name: "Delete synced PBs",
   }) as HTMLButtonElement;
   expect(button.disabled).toBe(true);
   fireEvent.change(screen.getByLabelText("Type DELETE to confirm"), {
@@ -122,7 +122,7 @@ it("does not automatically retry an uncertain deletion", async () => {
   fireEvent.change(await screen.findByLabelText("Type DELETE to confirm"), {
     target: { value: "DELETE" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Delete selected data" }));
+  fireEvent.click(screen.getByRole("button", { name: "Delete synced PBs" }));
   expect(await screen.findByRole("alert")).toBeTruthy();
   await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
 });

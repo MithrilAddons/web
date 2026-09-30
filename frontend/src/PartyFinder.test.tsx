@@ -9,6 +9,7 @@ import {
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import contract from "../../contracts/party-v1.json";
 import { PartyWorkspace } from "./PartyFinder";
+import { loadPartyRules, savePartyRules } from "./partyPreferences";
 import { PartyForm } from "./PartyLead";
 import type { Listing, PartyState } from "./partyApi";
 import { chime } from "./sound";
@@ -45,6 +46,7 @@ function listings(parties: Listing[]) {
 }
 
 beforeEach(() => {
+  localStorage.clear();
   vi.mocked(chime).mockClear();
   HTMLDialogElement.prototype.showModal = function () {
     this.setAttribute("open", "");
@@ -301,7 +303,7 @@ it("lets the leader remove and block a member", async () => {
 });
 
 it.each(["create", "edit"] as const)(
-  "keeps %s requirements in a keyboard-accessible scroll region",
+  "uses shared fields and optional class requirements in %s",
   (mode) => {
     render(
       <PartyForm
@@ -313,12 +315,41 @@ it.each(["create", "edit"] as const)(
         onDone={vi.fn()}
       />,
     );
-    const region = screen.getByRole("region", { name: "Class requirements" });
-    expect(region.tabIndex).toBe(0);
-    expect(within(region).getByRole("table")).toBeTruthy();
-    const field = within(region).getByRole("textbox", {
-      name: "SS average, Tank",
-    });
+    expect(screen.queryByRole("table")).toBeNull();
+    const shared = within(
+      screen.getByRole("group", { name: "Shared requirements" }),
+    );
+    expect(
+      shared
+        .getAllByRole("textbox")
+        .map((input) => input.getAttribute("aria-label")),
+    ).toEqual([
+      "Catacombs, every open slot",
+      "S+ PB, every open slot",
+      "Magical Power, every open slot",
+    ]);
+    fireEvent.change(
+      shared.getByLabelText("Add requirement for every open slot"),
+      { target: { value: "class_level" } },
+    );
+    expect(
+      shared.getByRole("textbox", { name: "Class level, every open slot" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("textbox", { name: "Catacombs, every open slot" }),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByText(/Class-specific requirements/));
+    const classSection = screen
+      .getByText("Tank", { selector: "summary" })
+      .closest("details")!;
+    fireEvent.click(
+      within(classSection).getByText("Tank", { selector: "summary" }),
+    );
+    fireEvent.change(
+      within(classSection).getByLabelText("Add requirement for Tank"),
+      { target: { value: "ss_ms" } },
+    );
+    const field = screen.getByRole("textbox", { name: "SS average, Tank" });
     fireEvent.change(field, { target: { value: "14.0" } });
     expect((field as HTMLInputElement).value).toBe("14.0");
   },
@@ -338,6 +369,11 @@ it("publishes a party with shared and class rules and names to block", async () 
     screen.getByRole("textbox", { name: "Catacombs, every open slot" }),
     { target: { value: "50" } },
   );
+  fireEvent.click(screen.getByText(/Class-specific requirements/));
+  fireEvent.click(screen.getByText("Healer", { selector: "summary" }));
+  fireEvent.change(screen.getByLabelText("Add requirement for Healer"), {
+    target: { value: "ss_ms" },
+  });
   fireEvent.change(
     screen.getByRole("textbox", { name: "SS average, Healer" }),
     {
@@ -442,4 +478,115 @@ it("preserves Archer rules when editing a Mage plus four Archers party", async (
       calls.find((call) => call.path === "party/edit")?.body?.rules,
     ).toEqual(duplicate.party!.rules),
   );
+});
+
+it("keeps drafts separate by floor and only remembers successful saves", async () => {
+  savePartyRules(idle.you.uuid, "M7", {
+    shared: { catacombs: 45 },
+    per_class: {},
+    exempt: [],
+  });
+  savePartyRules(idle.you.uuid, "F7", {
+    shared: { catacombs: 30 },
+    per_class: {},
+    exempt: [],
+  });
+  const run = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+  const done = vi.fn();
+  render(
+    <PartyForm
+      mode="create"
+      state={idle}
+      floor="M7"
+      run={run}
+      busy={false}
+      onDone={done}
+    />,
+  );
+  const field = () =>
+    screen.getByRole("textbox", {
+      name: "Catacombs, every open slot",
+    }) as HTMLInputElement;
+  expect(field().value).toBe("45");
+  fireEvent.change(field(), { target: { value: "48" } });
+  fireEvent.click(screen.getByRole("button", { name: "F7" }));
+  expect(field().value).toBe("30");
+  fireEvent.change(field(), { target: { value: "35" } });
+  fireEvent.click(screen.getByRole("button", { name: "M7" }));
+  expect(field().value).toBe("48");
+  fireEvent.click(screen.getByRole("button", { name: "Publish party" }));
+  await waitFor(() => expect(run).toHaveBeenCalledTimes(1));
+  expect(loadPartyRules(idle.you.uuid, "M7").shared.catacombs).toBe(45);
+  expect(done).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Publish party" }));
+  await waitFor(() => expect(done).toHaveBeenCalled());
+  expect(loadPartyRules(idle.you.uuid, "M7").shared.catacombs).toBe(48);
+  expect(loadPartyRules(idle.you.uuid, "F7").shared.catacombs).toBe(30);
+});
+
+it("cancel preserves saved rules and editing starts from the actual party", () => {
+  const rules = { shared: { catacombs: 32 }, per_class: {}, exempt: [] };
+  savePartyRules(leading.you.uuid, "M7", rules);
+  const done = vi.fn();
+  render(
+    <PartyForm
+      mode="edit"
+      state={leading}
+      floor="M7"
+      run={vi.fn()}
+      busy={false}
+      onDone={done}
+    />,
+  );
+  const input = screen.getByRole("textbox", {
+    name: "Catacombs, every open slot",
+  }) as HTMLInputElement;
+  expect(input.value).toBe(String(leading.party!.rules.shared.catacombs));
+  fireEvent.change(input, { target: { value: "44" } });
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(done).toHaveBeenCalled();
+  expect(loadPartyRules(leading.you.uuid, "M7")).toEqual(rules);
+});
+
+it("restores advanced rules visibly and resets only the chosen floor", () => {
+  const rules = {
+    shared: { solo_ms: 120000, class_level: 35 },
+    per_class: { healer: { ss_ms: 14000 } },
+    exempt: ["tank" as const],
+  };
+  savePartyRules(idle.you.uuid, "M7", rules);
+  savePartyRules(idle.you.uuid, "F7", rules);
+  render(
+    <PartyForm
+      mode="create"
+      state={idle}
+      floor="M7"
+      run={vi.fn()}
+      busy={false}
+      onDone={vi.fn()}
+    />,
+  );
+  expect(
+    (
+      screen.getByLabelText(
+        "Solo clear PB, every open slot",
+      ) as HTMLInputElement
+    ).value,
+  ).toBe("2:00");
+  expect(
+    (screen.getByLabelText("SS average, Healer") as HTMLInputElement).value,
+  ).toBe("14.0");
+  expect(
+    (screen.getByLabelText("Class level, every open slot") as HTMLInputElement)
+      .value,
+  ).toBe("35");
+  expect(
+    screen.getByText(/Class-specific requirements/).closest("details")!.open,
+  ).toBe(true);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Reset saved requirements" }),
+  );
+  expect(screen.queryByLabelText("Solo clear PB, every open slot")).toBeNull();
+  expect(loadPartyRules(idle.you.uuid, "M7").shared).toEqual({});
+  expect(loadPartyRules(idle.you.uuid, "F7")).toEqual(rules);
 });

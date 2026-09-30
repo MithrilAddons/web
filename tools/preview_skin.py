@@ -68,7 +68,15 @@ class Preview(SimpleHTTPRequestHandler):
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)
-        elif path in ("/", "/party-finder", "/cookies", "/link"):
+        elif path in (
+            "/",
+            "/party-finder",
+            "/cookies",
+            "/link",
+            "/profile",
+            "/account",
+            "/slayer-profits",
+        ):
             self.path = "/index.html"
             super().do_GET()
         else:
