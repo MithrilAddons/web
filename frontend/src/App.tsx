@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { getHealth } from "./api";
 import { CookiePolicy, LinkAccount } from "./account";
 import { PartyWorkspace } from "./PartyFinder";
+import { SlayerProfits } from "./SlayerProfits";
 
 // Remove the bearer secret before React renders (including StrictMode remounts).
 const linkToken =
@@ -11,8 +12,14 @@ const linkToken =
 if (linkToken) window.history.replaceState(null, "", "/link");
 
 export function App() {
+  const revision = import.meta.env.VITE_SOURCE_REVISION as string | undefined;
+  const sourceRef =
+    revision && /^[0-9a-f]{40}$/.test(revision) ? revision : "main";
+  const sourceUrl = "https://github.com/MithrilAddons/web";
   const path = window.location.pathname.replace(/\/+$/, "") || "/";
   const isPartyFinder = path === "/party-finder";
+  const isSlayerProfits =
+    path === "/slayer-profits" || path === "/slayerprofits";
 
   return (
     <>
@@ -43,76 +50,100 @@ export function App() {
           >
             Party finder
           </a>
+          <a
+            href="/slayer-profits"
+            aria-current={isSlayerProfits ? "page" : undefined}
+          >
+            Slayer profits
+          </a>
         </nav>
       </header>
       <main
         id="main"
         tabIndex={-1}
-        className={
-          isPartyFinder
-            ? "workspace-page"
-            : path === "/"
-              ? "home-page"
-              : "content-page"
-        }
+        className={pageClass(path, isPartyFinder || isSlayerProfits)}
       >
-        {isPartyFinder ? (
-          <PartyFinder />
-        ) : path === "/link" ? (
-          <div className="link-panel">
-            <LinkAccount token={linkToken} />
-          </div>
-        ) : path === "/cookies" ? (
-          <CookiePolicy />
-        ) : path === "/" ? (
-          <>
-            <title>Mithril</title>
-            <section className="hero">
-              <h1>Party Finder</h1>
-              <div className="hero-actions">
-                <a className="button primary" href="/party-finder">
-                  Open party finder <span aria-hidden="true">→</span>
-                </a>
-                <span className="quiet-label">In development</span>
-              </div>
-            </section>
-            <section className="intro-details" aria-label="Account linking">
-              <div>
-                <span className="detail-number" aria-hidden="true">
-                  01
-                </span>
-                <h2>Start in Minecraft</h2>
-                <p>
-                  Open <code>/mithrilpf</code> and link your account.
-                </p>
-              </div>
-              <div>
-                <span className="detail-number" aria-hidden="true">
-                  02
-                </span>
-                <h2>Continue in your browser</h2>
-                <p>Confirm once. Choose to stay signed in.</p>
-              </div>
-            </section>
-          </>
-        ) : (
-          <>
-            <title>Page not found · Mithril</title>
-            <h1>Page not found</h1>
-            <a href="/">Home</a>
-          </>
-        )}
+        <PageContent path={path} />
       </main>
       <footer className="site-footer">
         <p>Not affiliated with Hypixel or Mojang.</p>
         <a href="/cookies">Cookies</a>
-        <a href="https://github.com/MithrilAddons/web">Source code</a>
-        <a href="https://github.com/MithrilAddons/web/blob/main/LICENSE">
-          AGPL-3.0
+        <a
+          href={
+            sourceRef === "main" ? sourceUrl : `${sourceUrl}/tree/${sourceRef}`
+          }
+        >
+          Source code
         </a>
+        <a href={`${sourceUrl}/blob/${sourceRef}/LICENSE`}>AGPL-3.0</a>
       </footer>
     </>
   );
+}
+
+function pageClass(path: string, workspace: boolean) {
+  if (workspace) return "workspace-page";
+  return path === "/" ? "home-page" : "content-page";
+}
+
+function PageContent({ path }: Readonly<{ path: string }>) {
+  switch (path) {
+    case "/party-finder":
+      return <PartyFinder />;
+    case "/slayer-profits":
+    case "/slayerprofits":
+      return <SlayerProfits />;
+    case "/link":
+      return (
+        <div className="link-panel">
+          <LinkAccount token={linkToken} />
+        </div>
+      );
+    case "/cookies":
+      return <CookiePolicy />;
+    case "/":
+      return (
+        <>
+          <title>Mithril</title>
+          <section className="hero">
+            <h1>Party Finder</h1>
+            <div className="hero-actions">
+              <a className="button primary" href="/party-finder">
+                Open party finder <span aria-hidden="true">→</span>
+              </a>
+              <span className="quiet-label">In development</span>
+              <a href="/slayer-profits">Calculate Slayer profits</a>
+            </div>
+          </section>
+          <section className="intro-details" aria-label="Account linking">
+            <div>
+              <span className="detail-number" aria-hidden="true">
+                01
+              </span>
+              <h2>Start in Minecraft</h2>
+              <p>
+                Open <code>/mithrilpf</code> and link your account.
+              </p>
+            </div>
+            <div>
+              <span className="detail-number" aria-hidden="true">
+                02
+              </span>
+              <h2>Continue in your browser</h2>
+              <p>Confirm once. Choose to stay signed in.</p>
+            </div>
+          </section>
+        </>
+      );
+    default:
+      return (
+        <>
+          <title>Page not found · Mithril</title>
+          <h1>Page not found</h1>
+          <a href="/">Home</a>
+        </>
+      );
+  }
 }
 
 function PartyFinder() {

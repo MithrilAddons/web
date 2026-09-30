@@ -8,7 +8,21 @@ beforeEach(() => window.history.replaceState(null, "", "/party-finder"));
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
   window.history.replaceState(null, "", "/");
+});
+
+it("links deployed branch builds to their published source revision", () => {
+  window.history.replaceState(null, "", "/");
+  const revision = "1234567890abcdef1234567890abcdef12345678";
+  vi.stubEnv("VITE_SOURCE_REVISION", revision);
+  render(<App />);
+  expect(
+    screen.getByRole("link", { name: "Source code" }).getAttribute("href"),
+  ).toBe(`https://github.com/MithrilAddons/web/tree/${revision}`);
+  expect(
+    screen.getByRole("link", { name: "AGPL-3.0" }).getAttribute("href"),
+  ).toBe(`https://github.com/MithrilAddons/web/blob/${revision}/LICENSE`);
 });
 
 it("keeps the home page separate with a link to party finder", () => {
@@ -67,19 +81,17 @@ it("does not show party finder at unknown paths", () => {
 it("asks signed-out visitors to link before browsing parties", async () => {
   vi.stubGlobal(
     "fetch",
-    vi.fn().mockImplementation((url: string) =>
-      Promise.resolve(
-        url.endsWith("/party/state")
-          ? new Response(JSON.stringify({ detail: "Sign in first" }), {
-              status: 401,
-            })
-          : new Response(
-              JSON.stringify(
-                url.endsWith("/health") ? fixture : { authenticated: false },
-              ),
-            ),
-      ),
-    ),
+    vi.fn().mockImplementation((url: string) => {
+      if (url.endsWith("/party/state")) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ detail: "Sign in first" }), {
+            status: 401,
+          }),
+        );
+      }
+      const body = url.endsWith("/health") ? fixture : { authenticated: false };
+      return Promise.resolve(new Response(JSON.stringify(body)));
+    }),
   );
   render(<App />);
   expect(

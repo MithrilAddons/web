@@ -25,6 +25,7 @@ from .player_card import PlayerCardCache, fetch_card
 from .records import RecordStore, Submission, with_mod_records
 from .releases import ReleaseCache
 from .skins import SkinCache
+from .slayer_market import SlayerMarket
 
 
 class StrictModel(BaseModel):
@@ -83,19 +84,25 @@ def create_app(
     party_wait=WAIT,
     name_lookup=mojang_uuid,
     release_loader=None,
+    slayer_loader=None,
 ) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app):
         path = database or Path(os.environ.get("MITHRIL_AUTH_DB", ".local/auth.sqlite3"))
         app.state.auth = AuthStore(Path(path), **({"clock": clock} if clock else {}))
         app.state.records = RecordStore(Path(path).with_name("records.sqlite3"))
+        slayer_market.history_path = Path(path).with_name("pet-prices.sqlite3")
 
         async def cleanup():
             while True:
                 await asyncio.sleep(3600)
                 app.state.auth.cleanup()
 
-        tasks = [asyncio.create_task(cleanup()), asyncio.create_task(sweep_parties())]
+        tasks = [
+            asyncio.create_task(cleanup()),
+            asyncio.create_task(sweep_parties()),
+            asyncio.create_task(slayer_market.run()),
+        ]
         try:
             yield
         finally:
@@ -116,6 +123,7 @@ def create_app(
     skins = SkinCache(**({"loader": skin_loader} if skin_loader else {}))
     cards = PlayerCardCache(**({"loader": card_loader} if card_loader else {}))
     releases = ReleaseCache(**({"loader": release_loader} if release_loader else {}))
+    slayer_market = SlayerMarket(**({"loader": slayer_loader} if slayer_loader else {}))
 
     @app.middleware("http")
     async def limits(request, call_next):
@@ -414,6 +422,10 @@ def create_app(
         TrustedHostMiddleware,
         allowed_hosts=["mithril.foo", "www.mithril.foo", "localhost", "127.0.0.1"],
     )
+
+    @app.get("/api/v1/slayer-prices")
+    def slayer_prices():
+        return slayer_market.get()
 
     @app.get("/api/v1/mod-release")
     def mod_release():

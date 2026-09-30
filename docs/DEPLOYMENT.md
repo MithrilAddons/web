@@ -9,7 +9,7 @@ with the backend bound to loopback behind nginx. Keep other hosted services unch
 - `/opt/mithril-web/releases/<release>/`: root-owned source, frontend build and venv.
 - `/opt/mithril-web/current`: active release symlink.
 - `deploy/mithril-web.service`: unprivileged mithril-web service, loopback port 8780.
-- `/var/lib/mithril-web/`: private persistent auth.sqlite3 and records.sqlite3.
+- `/var/lib/mithril-web/`: persistent auth.sqlite3, records.sqlite3 and pet-prices.sqlite3.
 - `/etc/nginx/sites-available/mithril.foo`: installed deploy/nginx.conf.
 - `/var/www/mithril-web-acme`: certificate challenge webroot.
 
@@ -26,6 +26,9 @@ approved application key. API credentials never reach browsers or mods.
    source link accurate (forks must update it). Do not deploy unpublished changes.
    Run all checks and build the frontend. Export production dependencies with
    `uv export --locked --no-dev --no-emit-project`.
+   For a branch deployment, set `VITE_SOURCE_REVISION` to the published full
+   commit SHA when running `npm run build` in `frontend`. This pins the footer's
+   source and license links to the deployed revision without merging the branch.
 2. Package only backend source, built frontend and deployment files. Exclude
    local environments, Git, credentials, databases, node_modules and user records.
 3. Create a new release and venv; install the export using pip `--require-hashes`.
@@ -43,6 +46,17 @@ Certificates cover root/www; renewal must validate and reload nginx. Use the
 bootstrap config only for initial certificate issuance.
 
 ## Operational boundaries
+
+Deploy the Slayer feature's `backend/mithril_web/slayer_data.json` with the Python
+source and install the updated nginx config for `/api/v1/slayer-prices` and the
+`/slayerprofits` to `/slayer-profits` redirect. After deployment, verify both routes,
+the public price response, and eventual feed readiness. A cold Auction House scan
+may take up to roughly two minutes; failure must leave a partial/stale indicator.
+Pet-price history creates its own `pet-prices.sqlite3` beside the auth database;
+include it in SQLite backups once present. Preserve it across releases and code
+rollbacks. Existing auth/record schemas, credentials and dependencies are unchanged.
+After deployment, verify that aggregate history is collected without page visits,
+survives a service restart and returns provisional quotes while the week builds.
 
 API responses are not publicly cached. Authentication has an nginx limit of
 30 requests/minute/IP (burst 15), party routes 60/minute/IP (burst 30).
