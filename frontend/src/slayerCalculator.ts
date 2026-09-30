@@ -193,12 +193,8 @@ export function calculate(
   const fees = tier.questCost * bosses * (halfPrice ? 0.5 : 1);
   const targets = tier.drops
     .filter(eligible)
-    .filter((d) => prices[d.name])
-    .sort(
-      (a, b) =>
-        prices[b.name]!.price * amount(b) - prices[a.name]!.price * amount(a),
-    );
-  const target = meter ? targets.find((d) => d.name === meter) : targets[0];
+    .filter((d) => prices[d.name] && (!meter || d.name === meter));
+  let bestTargetValue = -Infinity;
   let comparison: {
     itemName: string;
     alwaysSelectedCoinsPerHour: number;
@@ -207,7 +203,7 @@ export function calculate(
     switchXp: number;
     requirement: number;
   } | null = null;
-  if (tier.number >= 3 && target) {
+  for (const target of tier.number >= 3 ? targets : []) {
     const requirement = meterRequirement(slayer, target.name);
     const xpPerBoss = tier.slayerXp * meterXpMultiplier;
     const fillKills = Math.max(1, Math.ceil(requirement / xpPerBoss));
@@ -253,20 +249,23 @@ export function calculate(
       expectedKills += survival;
       survival *= 1 - chances[selectedIndex]!;
     }
-    comparison = {
-      itemName: target.name,
-      alwaysSelectedCoinsPerHour:
-        grossFor(
-          rates(slayer, tier, magicFind, target.name, meterXpMultiplier),
-        ) - fees,
-      fillUnselectedCoinsPerHour: grossFor(unselected) - fees,
-      optimizedCoinsPerHour: grossFor(optimizedRates) - fees,
-      switchXp,
-      requirement,
-    };
-    if (meter) {
-      dropRates = optimizedRates;
-      gross = grossFor(dropRates);
+    if (bestValue > bestTargetValue) {
+      bestTargetValue = bestValue;
+      comparison = {
+        itemName: target.name,
+        alwaysSelectedCoinsPerHour:
+          grossFor(
+            rates(slayer, tier, magicFind, target.name, meterXpMultiplier),
+          ) - fees,
+        fillUnselectedCoinsPerHour: grossFor(unselected) - fees,
+        optimizedCoinsPerHour: grossFor(optimizedRates) - fees,
+        switchXp,
+        requirement,
+      };
+      if (meter) {
+        dropRates = optimizedRates;
+        gross = grossFor(dropRates);
+      }
     }
   }
   return {

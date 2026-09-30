@@ -72,7 +72,9 @@ in one forward pass over an RNG cycle. A natural selected drop ends the cycle;
 surviving to the cutoff leads to unselected kills followed by the full-meter
 guarantee. The chosen item's optimal cutoff supplies the main drop rates and
 profit total. The strategy panel compares this with always selecting and filling
-unselected. A small exact-rational fixture verifies an interior optimum.
+unselected. Without a chosen item, it compares every priced eligible item by
+optimized profit per boss; it does not use unit price as a proxy for profit.
+A small exact-rational fixture verifies an interior optimum.
 
 Aatrox's meter XP (+25%) and half-price quests are independent controls; meter XP
 stacks multiplicatively with the existing +10% boost. Diana's +35% pet XP is

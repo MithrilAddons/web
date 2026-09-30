@@ -458,6 +458,7 @@ export function SlayerProfits() {
                     : `Unselect at ${number((comparison.switchXp / comparison.requirement) * 100, 2)}%`}
               </h3>
               <p>
+                {!meter && "Best item: "}
                 {comparison.itemName} · {number(comparison.switchXp, 2)} /{" "}
                 {number(comparison.requirement)} XP
               </p>

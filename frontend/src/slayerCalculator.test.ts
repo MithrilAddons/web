@@ -35,9 +35,17 @@ it.each(parity)(
       },
       "instant",
     );
-    const result = calculate(slayer, tier, test.magicFind, 60, null, prices, {
-      meterXpMultiplier: 1.1,
-    });
+    const result = calculate(
+      slayer,
+      tier,
+      test.magicFind,
+      60,
+      test.comparison?.itemName ?? null,
+      prices,
+      {
+        meterXpMultiplier: 1.1,
+      },
+    );
     const originalRates = rates(slayer, tier, test.magicFind, test.meter, 1.1);
     originalRates.forEach((rate, i) =>
       expect(rate).toBeCloseTo(test.rates[i]!, 11),
@@ -260,4 +268,37 @@ it("finds an interior meter cutoff and uses its expected drops in the profit tot
   const unpriced = calculate(slayer, tier, 0, 60, "Synthetic drop", {});
   expect(unpriced.comparison).toBeNull();
   expect(unpriced.unpriced).toBe(1);
+});
+
+it("recommends Spider's more profitable mosquito instead of its more expensive eye", () => {
+  const slayer = slayers[1]!;
+  const tier = slayer.tiers[4]!;
+  const prices = {
+    "Digested Mosquito": { price: 33000000, source: "Synthetic" },
+    "Primordial Eye": { price: 110000000, source: "Synthetic" },
+  };
+  const auto = calculate(slayer, tier, 200, 60, null, prices);
+  const mosquito = calculate(
+    slayer,
+    tier,
+    200,
+    60,
+    "Digested Mosquito",
+    prices,
+  );
+  const eye = calculate(slayer, tier, 200, 60, "Primordial Eye", prices);
+  expect(mosquito.net).toBeGreaterThan(eye.net);
+  expect(auto.comparison!.itemName).toBe("Digested Mosquito");
+  expect(auto.comparison!.optimizedCoinsPerHour).toBe(mosquito.net);
+  expect(eye.comparison!.itemName).toBe("Primordial Eye");
+  expect(
+    calculate(slayer, tier, 200, 0, null, prices).comparison!.itemName,
+  ).toBe("Digested Mosquito");
+  const changed = {
+    ...prices,
+    "Primordial Eye": { price: 1000000000, source: "Synthetic" },
+  };
+  expect(
+    calculate(slayer, tier, 200, 60, null, changed).comparison!.itemName,
+  ).toBe("Primordial Eye");
 });
