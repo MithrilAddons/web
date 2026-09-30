@@ -105,6 +105,21 @@ def test_invalid_or_oversized_item_rejected(encoded):
         decode_item(encoded)
 
 
+@pytest.mark.parametrize(
+    "payload,message",
+    [
+        (b"\x0a\x00\x00" * 34 + b"\x00" * 34, "NBT too complex"),
+        (b"\x0a\x00\x00\x09\x00\x01i\x0a" + struct.pack(">i", 50000), "NBT list too large"),
+        (b"\x0a\x00\x00\x09\x00\x01i\x0a" + struct.pack(">i", -1), "NBT list too large"),
+        (b"\x0a\x00\x00\x08\x00\x01x\x00\x04ab", "Truncated NBT"),
+    ],
+)
+def test_nbt_structure_limits_are_preserved(payload, message):
+    encoded = base64.b64encode(gzip.compress(payload)).decode()
+    with pytest.raises(ValueError, match=message):
+        decode_item(encoded)
+
+
 def test_pet_pairs_use_lowest_three_and_reject_losses():
     pets = [
         {"name": "Synthetic Pet", "rarity": "LEGENDARY", "level": level, "price": price, "xp": 0}

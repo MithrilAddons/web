@@ -31,6 +31,7 @@ FORMATTING = re.compile(r"§[0-9A-FK-OR]", re.I)
 PET_NAME = re.compile(r"^\[Lvl (\d+)] (.+)$")
 PERIODS = {"bazaar": 300, "npc": 3600, "auctions": 900, "sales": 60}
 MAX_BODY = 16 * 1024 * 1024
+KAT_FLOWER = "Kat Flower"
 
 
 def positive(value):
@@ -89,54 +90,63 @@ def decode_item(encoded, *, with_count=False):
         data = zipped.read(2 * 1024 * 1024 + 1)
     if len(data) > 2 * 1024 * 1024:
         raise ValueError("Item too large")
-    stream = io.BytesIO(data)
-    budget = 50000
+    reader = _NbtReader(data)
+    if reader.number(">B") != 10:
+        raise ValueError("Expected NBT compound")
+    reader.string()
+    item = reader.tag(10)["i"][0]
+    return (item["tag"], item["Count"]) if with_count else item["tag"]
 
-    def read(size):
-        if size < 0 or size > len(data):
+
+class _NbtReader:
+    def __init__(self, data):
+        self.stream = io.BytesIO(data)
+        self.size = len(data)
+        self.budget = 50000
+
+    def read(self, size):
+        if size < 0 or size > self.size:
             raise ValueError("Invalid NBT length")
-        value = stream.read(size)
+        value = self.stream.read(size)
         if len(value) != size:
             raise ValueError("Truncated NBT")
         return value
 
-    def number(fmt):
-        return struct.unpack(fmt, read(struct.calcsize(fmt)))[0]
+    def number(self, fmt):
+        return struct.unpack(fmt, self.read(struct.calcsize(fmt)))[0]
 
-    def string():
-        return read(number(">H")).decode("utf-8", errors="replace")
+    def string(self):
+        return self.read(self.number(">H")).decode("utf-8", errors="replace")
 
-    def tag(kind, depth=0):
-        nonlocal budget
-        budget -= 1
-        if depth > 32 or budget < 0:
+    def tag(self, kind, depth=0):
+        self.budget -= 1
+        if depth > 32 or self.budget < 0:
             raise ValueError("NBT too complex")
         if kind in (1, 2, 3, 4, 5, 6):
-            return number({1: ">b", 2: ">h", 3: ">i", 4: ">q", 5: ">f", 6: ">d"}[kind])
+            return self.number({1: ">b", 2: ">h", 3: ">i", 4: ">q", 5: ">f", 6: ">d"}[kind])
         if kind == 8:
-            return string()
+            return self.string()
         if kind in (7, 11, 12):
-            read(number(">i") * {7: 1, 11: 4, 12: 8}[kind])
+            self.read(self.number(">i") * {7: 1, 11: 4, 12: 8}[kind])
             return None
         if kind == 9:
-            child, count = number(">B"), number(">i")
-            if not 0 <= count <= budget:
-                raise ValueError("NBT list too large")
-            return [tag(child, depth + 1) for _ in range(count)]
+            return self.sequence(depth)
         if kind == 10:
-            result = {}
-            while (child := number(">B")) != 0:
-                name = string()
-                result[name] = tag(child, depth + 1)
-            return result
+            return self.compound(depth)
         raise ValueError("Invalid NBT tag")
 
-    if number(">B") != 10:
-        raise ValueError("Expected NBT compound")
-    string()
-    root = tag(10)
-    item = root["i"][0]
-    return (item["tag"], item["Count"]) if with_count else item["tag"]
+    def sequence(self, depth):
+        child, count = self.number(">B"), self.number(">i")
+        if not 0 <= count <= self.budget:
+            raise ValueError("NBT list too large")
+        return [self.tag(child, depth + 1) for _ in range(count)]
+
+    def compound(self, depth):
+        result = {}
+        while (child := self.number(">B")) != 0:
+            name = self.string()
+            result[name] = self.tag(child, depth + 1)
+        return result
 
 
 def choose_quote(bins, sales):
@@ -201,6 +211,42 @@ def pet_listing(auction):
         return None
 
 
+def auction_unit_price(auction):
+    name = clean(auction.get("item_name"))
+    price = auction["starting_bid"]
+    if name != KAT_FLOWER:
+        return target_name(name), price
+    try:
+        _, count = decode_item(auction.get("item_bytes"), with_count=True)
+        if not isinstance(count, int) or not 1 <= count <= 64:
+            return None, price
+        return name, price / count
+    except (ValueError, OSError, EOFError, zlib.error, KeyError, IndexError, TypeError):
+        return None, price
+
+
+def collect_auction_page(page, expected, first, bins, pets):
+    if (
+        page["page"] != expected
+        or page["totalPages"] != first["totalPages"]
+        or page["lastUpdated"] != first["lastUpdated"]
+    ):
+        raise ValueError("Auction snapshot changed; retry later")
+    auctions = page["auctions"]
+    if not isinstance(auctions, list) or len(auctions) > 1000:
+        raise ValueError("Invalid auction page")
+    for auction in auctions:
+        price = auction.get("starting_bid")
+        if auction.get("bin") is not True or not positive(price):
+            continue
+        name, price = auction_unit_price(auction)
+        if name:
+            bins[name] = sorted([*bins.get(name, []), price])[:3]
+        pet = pet_listing(auction)
+        if pet:
+            pets.append(pet)
+
+
 class SlayerMarket:
     def __init__(self, loader=None, clock=time.time):
         self.loader, self.clock = loader or fetch_json, clock
@@ -217,12 +263,7 @@ class SlayerMarket:
         with self.lock:
             now = self.clock()
             self.active_until = now + 900
-            feeds = {name: dict(feed) for name, feed in self.feeds.items()}
-            for name, feed in feeds.items():
-                if feed["updated"] is not None and now - feed["updated"] > PERIODS[name]:
-                    feed["status"] = "stale"
-                if feed["updated"] is not None and now - feed["updated"] > 86400:
-                    feed["status"] = "unavailable"
+            feeds = self.feed_snapshot(now)
 
             def available(name):
                 return feeds[name]["status"] != "unavailable"
@@ -247,6 +288,15 @@ class SlayerMarket:
                 "pets": self.pets if available("auctions") else [],
                 "feeds": feeds,
             }
+
+    def feed_snapshot(self, now):
+        feeds = {name: dict(feed) for name, feed in self.feeds.items()}
+        for name, feed in feeds.items():
+            if feed["updated"] is not None and now - feed["updated"] > PERIODS[name]:
+                feed["status"] = "stale"
+            if feed["updated"] is not None and now - feed["updated"] > 86400:
+                feed["status"] = "unavailable"
+        return feeds
 
     async def run(self):
         try:
@@ -320,54 +370,13 @@ class SlayerMarket:
 
     def load_auctions(self):
         first = self.loader("skyblock/auctions?page=0")
-        pages, generation = first["totalPages"], first["lastUpdated"]
+        pages = first["totalPages"]
         if not isinstance(pages, int) or not 1 <= pages <= 200:
             raise ValueError("Invalid auction page count")
         bins, pets = {}, []
         started = time.monotonic()
 
-        def consume(page, expected):
-            if (
-                page["page"] != expected
-                or page["totalPages"] != pages
-                or page["lastUpdated"] != generation
-            ):
-                raise ValueError("Auction snapshot changed; retry later")
-            auctions = page["auctions"]
-            if not isinstance(auctions, list) or len(auctions) > 1000:
-                raise ValueError("Invalid auction page")
-            for auction in auctions:
-                price = auction.get("starting_bid")
-                if auction.get("bin") is not True or not positive(price):
-                    continue
-                name = (
-                    "Kat Flower"
-                    if clean(auction.get("item_name")) == "Kat Flower"
-                    else target_name(auction.get("item_name"))
-                )
-                if name == "Kat Flower":
-                    try:
-                        _, count = decode_item(auction.get("item_bytes"), with_count=True)
-                        if not isinstance(count, int) or not 1 <= count <= 64:
-                            continue
-                        price /= count
-                    except (
-                        ValueError,
-                        OSError,
-                        EOFError,
-                        zlib.error,
-                        KeyError,
-                        IndexError,
-                        TypeError,
-                    ):
-                        continue
-                if name:
-                    bins[name] = sorted([*bins.get(name, []), price])[:3]
-                pet = pet_listing(auction)
-                if pet:
-                    pets.append(pet)
-
-        consume(first, 0)
+        collect_auction_page(first, 0, first, bins, pets)
         with ThreadPoolExecutor(max_workers=4) as pool:
             for batch in range(1, pages, 4):
                 if self.stopped.is_set() or time.monotonic() - started > 90:
@@ -375,12 +384,12 @@ class SlayerMarket:
                 numbers = list(range(batch, min(batch + 4, pages)))
                 futures = [pool.submit(self.loader, f"skyblock/auctions?page={n}") for n in numbers]
                 for n, future in zip(numbers, futures, strict=True):
-                    consume(future.result(), n)
+                    collect_auction_page(future.result(), n, first, bins, pets)
         updated = self.feeds["bazaar"]["updated"]
         bazaar = self.bazaar if updated is not None and self.clock() - updated <= 86400 else {}
         flower = bazaar.get("KAT_FLOWER", {}).get("offer", 0)
-        if not flower and bins.get("Kat Flower"):
-            flower = sum(bins["Kat Flower"]) / len(bins["Kat Flower"])
+        if not flower and bins.get(KAT_FLOWER):
+            flower = sum(bins[KAT_FLOWER]) / len(bins[KAT_FLOWER])
         return bins, pet_quotes(
             pets,
             bazaar=bazaar,

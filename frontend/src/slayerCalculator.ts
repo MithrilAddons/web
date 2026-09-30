@@ -204,6 +204,7 @@ export function calculate(
     .filter(eligible)
     .filter((d) => prices[d.name] && (!meter || d.name === meter));
   let bestTargetValue = -Infinity;
+  let bestRates = dropRates;
   let comparison: {
     itemName: string;
     alwaysSelectedCoinsPerHour: number;
@@ -271,11 +272,12 @@ export function calculate(
         switchXp,
         requirement,
       };
-      if (meter) {
-        dropRates = optimizedRates;
-        gross = grossFor(dropRates);
-      }
+      bestRates = optimizedRates;
     }
+  }
+  if (meter) {
+    dropRates = bestRates;
+    gross = grossFor(dropRates);
   }
   return {
     dropRates,

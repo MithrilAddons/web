@@ -91,7 +91,7 @@ def kat_cost(kind, bazaar, flower_price):
     }
 
 
-def pet_quotes(listings, *, bazaar=None, flower_price=None, history_path=None, now=0):
+def pet_price_points(listings):
     groups = {}
     for item in listings:
         groups.setdefault((item["name"], item["rarity"], item["level"]), []).append(item)
@@ -108,47 +108,61 @@ def pet_quotes(listings, *, bazaar=None, flower_price=None, history_path=None, n
             "kind": lowest[0].get("kind", ""),
             "samples": len(lowest),
         }
-    stable = price_history(points, history_path, now)
+    return points
+
+
+def leveling_xp(start, rarity, end_rarity, level, golden):
+    if not golden:
+        return XP_100[end_rarity]
+    if start["xp"] is None and level != 100:
+        return 0
+    return 214023230 - (start["xp"] if start["xp"] is not None else XP_100[rarity])
+
+
+def leveling_quote(key, start, stable, bazaar, flower_price):
+    name, rarity, level = key
+    golden = name.lower() == "golden dragon"
+    if (golden and not 100 <= level < 200) or (not golden and level != 1):
+        return None
+    end_rarity = "LEGENDARY" if rarity == "COMMON" else rarity
+    end_level = 200 if golden else 100
+    end = stable.get((name, end_rarity, end_level))
+    if not end:
+        return None
+    kat = None
+    if rarity == "COMMON":
+        kat = kat_cost(start["kind"], bazaar or {}, flower_price)
+        if kat is None:
+            return None
+    xp = leveling_xp(start, rarity, end_rarity, level, golden)
+    # Historical cheap buys/high sales must not hide today's worse prices.
+    start_price = max(start["price"], start["average"])
+    end_price = min(end["price"], end["average"])
+    cost = kat["total"] if kat else 0
+    if xp <= 0 or end_price <= start_price + cost:
+        return None
+    return {
+        "name": name,
+        "rarity": rarity,
+        "endRarity": end_rarity,
+        "startLevel": level,
+        "endLevel": end_level,
+        "startPrice": start_price,
+        "endPrice": end_price,
+        "requiredXp": xp,
+        "samples": start["samples"] + end["samples"],
+        "historyHours": min(start["historyHours"], end["historyHours"]),
+        "kat": kat,
+    }
+
+
+def pet_quotes(listings, *, bazaar=None, flower_price=None, history_path=None, now=0):
+    stable = price_history(pet_price_points(listings), history_path, now)
     result = []
-    for (name, rarity, level), start in stable.items():
-        golden = name.lower() == "golden dragon"
-        if (golden and not 100 <= level < 200) or (not golden and level != 1):
-            continue
-        end_rarity = "LEGENDARY" if rarity == "COMMON" else rarity
-        end_level = 200 if golden else 100
-        end = stable.get((name, end_rarity, end_level))
-        if not end:
-            continue
-        kat = None
-        if rarity == "COMMON":
-            kat = kat_cost(start["kind"], bazaar or {}, flower_price)
-            if kat is None:
-                continue
-        xp = XP_100[end_rarity]
-        if golden:
-            if start["xp"] is None and level != 100:
-                continue
-            xp = 214023230 - (start["xp"] if start["xp"] is not None else XP_100[rarity])
-        # Historical cheap buys/high sales must not hide today's worse prices.
-        start_price = max(start["price"], start["average"])
-        end_price = min(end["price"], end["average"])
-        cost = kat["total"] if kat else 0
-        if xp > 0 and end_price > start_price + cost:
-            result.append(
-                {
-                    "name": name,
-                    "rarity": rarity,
-                    "endRarity": end_rarity,
-                    "startLevel": level,
-                    "endLevel": end_level,
-                    "startPrice": start_price,
-                    "endPrice": end_price,
-                    "requiredXp": xp,
-                    "samples": start["samples"] + end["samples"],
-                    "historyHours": min(start["historyHours"], end["historyHours"]),
-                    "kat": kat,
-                }
-            )
+    for key, start in stable.items():
+        quote = leveling_quote(key, start, stable, bazaar or {}, flower_price)
+        if quote:
+            result.append(quote)
     ranked = sorted(
         result,
         key=lambda p: (
