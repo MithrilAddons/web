@@ -17,7 +17,18 @@ const market = {
   auctions: {
     "Warden Heart": { price: 100000000, source: "BIN", samples: 3, spread: 0 },
   },
-  pets: [],
+  pets: [
+    {
+      name: "Synthetic pet",
+      rarity: "LEGENDARY",
+      startLevel: 1,
+      endLevel: 100,
+      startPrice: 1000000,
+      endPrice: 3000000,
+      requiredXp: 1000000,
+      samples: 6,
+    },
+  ],
   feeds: Object.fromEntries(
     ["bazaar", "npc", "auctions", "sales"].map((k) => [
       k,
@@ -83,10 +94,14 @@ it("recalculates pricing and throughput, resets unsupported tiers and meters", a
   expect(
     (screen.getByLabelText("RNG meter") as HTMLSelectElement).disabled,
   ).toBe(true);
-  fireEvent.change(screen.getByLabelText("Bosses per hour"), {
+  fireEvent.change(screen.getByLabelText("Bosses/hr"), {
     target: { value: "0" },
   });
-  expect(screen.getByText("+0")).toBeTruthy();
+  expect(
+    within(
+      screen.getByRole("heading", { name: "Total net/hr" }).parentElement!,
+    ).getByText("+0"),
+  ).toBeTruthy();
   fireEvent.change(screen.getByLabelText("Magic Find"), {
     target: { value: "-1" },
   });
@@ -102,11 +117,49 @@ it("shows missing prices on failure and supports retry", async () => {
     );
   vi.stubGlobal("fetch", fetcher);
   render(<SlayerProfits />);
-  await screen.findByText(/Some market prices are unavailable/);
-  expect(screen.getByText("Partial estimate · coins")).toBeTruthy();
+  await screen.findByText(/Prices incomplete or stale/);
+  expect(screen.getByText("Partial estimate")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Refresh prices" }));
   await screen.findByText(/Market prices loaded/);
   expect(fetcher).toHaveBeenCalledTimes(2);
+});
+
+it("updates independent mayor perks and EXP Share-only totals without refetching prices", async () => {
+  const fetcher = mockMarket();
+  render(<SlayerProfits />);
+  await screen.findByText(/Market prices loaded/);
+  const fees = screen.getByRole("heading", {
+    name: "Quest fees/hr",
+  }).parentElement!;
+  expect(within(fees).getByText("−6M")).toBeTruthy();
+  fireEvent.change(screen.getByLabelText("RNG meter"), {
+    target: { value: "Warden Heart" },
+  });
+  const strategy = screen.getByRole("region", { name: "RNG strategy" });
+  expect(within(strategy).getByText("Cutoff strategy")).toBeTruthy();
+  const before = strategy.textContent;
+  fireEvent.click(screen.getByLabelText("+25% RNG meter XP"));
+  expect(strategy.textContent).not.toBe(before);
+  expect(within(fees).getByText("−6M")).toBeTruthy();
+  expect(
+    (screen.getByLabelText("Half-price quests") as HTMLInputElement).checked,
+  ).toBe(false);
+  fireEvent.click(screen.getByLabelText("Half-price quests"));
+  expect(within(fees).getByText("−3M")).toBeTruthy();
+  expect(within(fees).getByText("60 bosses/hr · 50K/boss")).toBeTruthy();
+  fireEvent.click(screen.getByLabelText("3 EXP Share slots (+10% rate)"));
+  expect(screen.getByText("1,914,192 XP/hr")).toBeTruthy();
+  expect(
+    (screen.getByLabelText("+35% pet XP") as HTMLInputElement).checked,
+  ).toBe(false);
+  fireEvent.click(screen.getByLabelText("+35% pet XP"));
+  expect(screen.getByText("2,584,159 XP/hr")).toBeTruthy();
+  fireEvent.click(screen.getByLabelText("Exclude main pet"));
+  expect(screen.getByText("1,359,439 XP/hr")).toBeTruthy();
+  expect(screen.getByText(/EXP Share only · 3 slots/)).toBeTruthy();
+  fireEvent.click(screen.getByLabelText("Exclude main pet"));
+  expect(screen.getByText("2,584,159 XP/hr")).toBeTruthy();
+  expect(fetcher).toHaveBeenCalledTimes(1);
 });
 
 it("aborts pending price requests when leaving the page", async () => {

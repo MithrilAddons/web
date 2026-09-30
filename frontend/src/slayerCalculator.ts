@@ -150,7 +150,7 @@ export function rates(
   tier: Tier,
   magicFind: number,
   meter: string | null,
-  boost: boolean,
+  meterXpMultiplier: number,
 ): number[] {
   const selected = tier.drops.findIndex((d) => d.name === meter && eligible(d));
   if (tier.number < 3 || selected < 0)
@@ -167,7 +167,7 @@ export function rates(
       counts[i]! += survival * chance;
     });
     survival *= 1 - Math.min(1, chances[selected]!);
-    xp += tier.slayerXp * (boost ? 1.1 : 1);
+    xp += tier.slayerXp * meterXpMultiplier;
   }
   return counts.map((count) => count / kills);
 }
@@ -179,48 +179,95 @@ export function calculate(
   bosses: number,
   meter: string | null,
   prices: Prices,
-  boost: boolean,
+  { meterXpMultiplier = 1, halfPrice = false } = {},
 ) {
-  const dropRates = rates(slayer, tier, magicFind, meter, boost);
-  const grossFor = (values: number[]) =>
+  let dropRates = rates(slayer, tier, magicFind, meter, meterXpMultiplier);
+  const valuePerBoss = (values: number[]) =>
     tier.drops.reduce(
       (total, d, i) =>
-        total + values[i]! * amount(d) * bosses * (prices[d.name]?.price ?? 0),
+        total + values[i]! * amount(d) * (prices[d.name]?.price ?? 0),
       0,
     );
-  const gross = grossFor(dropRates),
-    fees = tier.questCost * bosses;
-  const target = tier.drops
+  const grossFor = (values: number[]) => valuePerBoss(values) * bosses;
+  let gross = grossFor(dropRates);
+  const fees = tier.questCost * bosses * (halfPrice ? 0.5 : 1);
+  const targets = tier.drops
     .filter(eligible)
     .filter((d) => prices[d.name])
     .sort(
       (a, b) =>
         prices[b.name]!.price * amount(b) - prices[a.name]!.price * amount(a),
-    )[0];
+    );
+  const target = meter ? targets.find((d) => d.name === meter) : targets[0];
   let comparison: {
     itemName: string;
     alwaysSelectedCoinsPerHour: number;
     fillUnselectedCoinsPerHour: number;
+    optimizedCoinsPerHour: number;
+    switchXp: number;
+    requirement: number;
   } | null = null;
   if (tier.number >= 3 && target) {
-    const fillKills = Math.max(
-      1,
-      Math.ceil(
-        meterRequirement(slayer, target.name) /
-          (tier.slayerXp * (boost ? 1.1 : 1)),
-      ),
-    );
+    const requirement = meterRequirement(slayer, target.name);
+    const xpPerBoss = tier.slayerXp * meterXpMultiplier;
+    const fillKills = Math.max(1, Math.ceil(requirement / xpPerBoss));
     const base = probabilities(tier, magicFind, null);
     const guarantee = probabilities(tier, magicFind, target.name, 1);
     const unselected = base.map(
       (chance, i) => (chance * fillKills + guarantee[i]!) / (fillKills + 1),
     );
+    const selectedIndex = tier.drops.indexOf(target);
+    const prefix = tier.drops.map(() => 0);
+    let survival = 1;
+    let expectedKills = 0;
+    let bestValue = -Infinity;
+    let switchXp = 0;
+    let optimizedRates = unselected;
+    // Each selected drop ends a cycle. Surviving to the cutoff leads to an
+    // uninterrupted unselected stretch, then one guaranteed selected kill.
+    // Prefix expectations let us compare every cutoff in one forward pass.
+    for (let cutoff = 0; cutoff <= fillKills; cutoff++) {
+      const remaining = fillKills - cutoff;
+      const cycleKills = expectedKills + survival * (remaining + 1);
+      const switched = prefix.map(
+        (count, i) =>
+          (count + survival * (base[i]! * remaining + guarantee[i]!)) /
+          cycleKills,
+      );
+      const value = valuePerBoss(switched);
+      if (value > bestValue) {
+        bestValue = value;
+        switchXp = Math.min(requirement, cutoff * xpPerBoss);
+        optimizedRates = switched;
+      }
+      if (cutoff === fillKills || survival <= 1e-12) break;
+      const chances = probabilities(
+        tier,
+        magicFind,
+        target.name,
+        (cutoff * xpPerBoss) / requirement,
+      );
+      chances.forEach((chance, i) => {
+        prefix[i]! += survival * chance;
+      });
+      expectedKills += survival;
+      survival *= 1 - chances[selectedIndex]!;
+    }
     comparison = {
       itemName: target.name,
       alwaysSelectedCoinsPerHour:
-        grossFor(rates(slayer, tier, magicFind, target.name, boost)) - fees,
+        grossFor(
+          rates(slayer, tier, magicFind, target.name, meterXpMultiplier),
+        ) - fees,
       fillUnselectedCoinsPerHour: grossFor(unselected) - fees,
+      optimizedCoinsPerHour: grossFor(optimizedRates) - fees,
+      switchXp,
+      requirement,
     };
+    if (meter) {
+      dropRates = optimizedRates;
+      gross = grossFor(dropRates);
+    }
   }
   return {
     dropRates,
@@ -236,11 +283,27 @@ export function petLeveling(
   tier: Tier,
   bosses: number,
   quotes: PetQuote[],
-  shards: boolean,
+  {
+    shards = false,
+    extraSlots = false,
+    petXpBoost = false,
+    excludeActive = false,
+  } = {},
 ) {
   const active =
-    tier.spawnCombatXp * bosses * 1.6 * 1.5 * 1.05 * (shards ? 1.1 : 1);
-  const shared = active * (0.12 + 0.15 + (shards ? 0.1 : 0));
+    tier.spawnCombatXp *
+    bosses *
+    1.6 *
+    1.5 *
+    1.05 *
+    (shards ? 1.1 : 1) *
+    (petXpBoost ? 1.35 : 1);
+  const slots = extraSlots ? 3 : 1;
+  const shared =
+    active *
+    (0.12 + 0.15 + (shards ? 0.1 : 0) + (extraSlots ? 0.1 : 0)) *
+    slots;
+  const profitXp = (excludeActive ? 0 : active) + shared;
   const pets = quotes
     .map((quote) => ({
       ...quote,
@@ -249,6 +312,13 @@ export function petLeveling(
     .filter((q) => q.coinsPerXp > 0 && Number.isFinite(q.coinsPerXp))
     .sort((a, b) => b.coinsPerXp - a.coinsPerXp)
     .slice(0, 3)
-    .map((q) => ({ ...q, coinsPerHour: q.coinsPerXp * (active + shared) }));
-  return { active, shared, pets, best: pets[0]?.coinsPerHour ?? 0 };
+    .map((q) => ({ ...q, coinsPerHour: q.coinsPerXp * profitXp }));
+  return {
+    active,
+    shared,
+    profitXp,
+    slots,
+    pets,
+    best: pets[0]?.coinsPerHour ?? 0,
+  };
 }

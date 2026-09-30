@@ -28,6 +28,11 @@ export function SlayerProfits() {
   const [meter, setMeter] = useState("");
   const [boost, setBoost] = useState(false);
   const [shards, setShards] = useState(false);
+  const [aatroxXp, setAatroxXp] = useState(false);
+  const [halfPrice, setHalfPrice] = useState(false);
+  const [extraSlots, setExtraSlots] = useState(false);
+  const [petXpBoost, setPetXpBoost] = useState(false);
+  const [excludeActive, setExcludeActive] = useState(false);
   const [mode, setMode] = useState<"instant" | "offer">("instant");
   const [market, setMarket] = useState<Market | null>(null);
   const [error, setError] = useState(false);
@@ -52,12 +57,22 @@ export function SlayerProfits() {
     [tier, market, mode],
   );
   const result = useMemo(
-    () => calculate(slayer, tier, mf, bph, meter || null, prices, boost),
-    [slayer, tier, mf, bph, meter, prices, boost],
+    () =>
+      calculate(slayer, tier, mf, bph, meter || null, prices, {
+        meterXpMultiplier: (boost ? 1.1 : 1) * (aatroxXp ? 1.25 : 1),
+        halfPrice,
+      }),
+    [slayer, tier, mf, bph, meter, prices, boost, aatroxXp, halfPrice],
   );
   const pets = useMemo(
-    () => petLeveling(tier, bph, market?.pets ?? [], shards),
-    [tier, bph, market, shards],
+    () =>
+      petLeveling(tier, bph, market?.pets ?? [], {
+        shards,
+        extraSlots,
+        petXpBoost,
+        excludeActive,
+      }),
+    [tier, bph, market, shards, extraSlots, petXpBoost, excludeActive],
   );
   const total = result.net + pets.best;
 
@@ -131,21 +146,14 @@ export function SlayerProfits() {
     );
   const comparison = result.comparison;
   const delta = comparison
-    ? comparison.fillUnselectedCoinsPerHour -
-      comparison.alwaysSelectedCoinsPerHour
+    ? comparison.optimizedCoinsPerHour - comparison.alwaysSelectedCoinsPerHour
     : 0;
 
   return (
     <div className="slayer-page">
       <title>Slayer profits · Mithril</title>
       <div className="page-heading slayer-heading">
-        <div>
-          <p className="slayer-eyebrow">SkyBlock calculator</p>
-          <h1>Slayer profits</h1>
-          <p className="slayer-subtitle">
-            Plan your next grind with expected drops, market prices, and pet XP.
-          </p>
-        </div>
+        <h1>Slayer profits</h1>
         <button
           type="button"
           onClick={() => setRefresh((value) => value + 1)}
@@ -202,7 +210,7 @@ export function SlayerProfits() {
           />
         </label>
         <label>
-          Bosses per hour
+          Bosses/hr
           <input
             type="number"
             min="0"
@@ -236,29 +244,76 @@ export function SlayerProfits() {
           </select>
         </label>
         <div className="slayer-options">
-          <label>
-            <input
-              type="checkbox"
-              checked={boost}
-              onChange={(e) => setBoost(e.target.checked)}
-            />{" "}
-            +10% RNG meter XP
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              checked={shards}
-              onChange={(e) => setShards(e.target.checked)}
-            />{" "}
-            Pet shard bonuses
-          </label>
-          <span>{number(tier.questCost)} coins / quest</span>
+          <fieldset>
+            <legend>Aatrox</legend>
+            <label>
+              <input
+                type="checkbox"
+                checked={aatroxXp}
+                onChange={(e) => setAatroxXp(e.target.checked)}
+              />
+              +25% RNG meter XP
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={halfPrice}
+                onChange={(e) => setHalfPrice(e.target.checked)}
+              />
+              Half-price quests
+            </label>
+          </fieldset>
+          <fieldset>
+            <legend>Diana</legend>
+            <label>
+              <input
+                type="checkbox"
+                checked={extraSlots}
+                onChange={(e) => setExtraSlots(e.target.checked)}
+              />
+              3 EXP Share slots (+10% rate)
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={petXpBoost}
+                onChange={(e) => setPetXpBoost(e.target.checked)}
+              />
+              +35% pet XP
+            </label>
+          </fieldset>
+          <fieldset>
+            <legend>Options</legend>
+            <label>
+              <input
+                type="checkbox"
+                checked={boost}
+                onChange={(e) => setBoost(e.target.checked)}
+              />{" "}
+              +10% RNG meter XP
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={shards}
+                onChange={(e) => setShards(e.target.checked)}
+              />{" "}
+              Pet shard bonuses
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={excludeActive}
+                onChange={(e) => setExcludeActive(e.target.checked)}
+              />
+              Exclude main pet
+            </label>
+          </fieldset>
         </div>
       </section>
       {!valid && (
         <p role="alert" className="slayer-warning">
-          Enter Magic Find from 0 to 10,000 and bosses per hour from 0 to
-          100,000.
+          Enter Magic Find from 0 to 10,000 and bosses/hr from 0 to 100,000.
         </p>
       )}
 
@@ -269,9 +324,9 @@ export function SlayerProfits() {
         />
         <span>
           {waiting
-            ? "Loading market prices. Auction House scanning may take a minute."
+            ? "Loading prices…"
             : stale
-              ? "Some market prices are unavailable or stale. Available prices are shown below."
+              ? "Prices incomplete or stale"
               : "Market prices loaded"}
           {result.unpriced > 0 &&
             ` · ${result.unpriced} unpriced ${result.unpriced === 1 ? "drop" : "drops"} excluded`}
@@ -283,33 +338,28 @@ export function SlayerProfits() {
         aria-label="Estimated profit per hour"
       >
         <Metric
-          label="Drop revenue / h"
+          label="Drop revenue/hr"
           value={valid ? coins(result.gross) : "—"}
-          detail="At the best available sale price"
         />
         <Metric
-          label="Quest fees / h"
+          label="Quest fees/hr"
           value={valid ? `−${coins(result.fees)}` : "—"}
-          detail={`${number(bph)} quests per hour`}
+          detail={`${number(bph)} bosses/hr · ${coins(tier.questCost * (halfPrice ? 0.5 : 1))}/boss`}
         />
         <Metric
-          label="Pet leveling / h"
+          label="Pet leveling/hr"
           value={valid && pets.pets.length ? `+${coins(pets.best)}` : "—"}
-          detail={
-            pets.pets[0]
-              ? pets.pets[0].name
-              : "Waiting for a profitable pet pair"
-          }
+          detail={pets.pets[0] ? pets.pets[0].name : "No pet prices"}
         />
         <Metric
-          label="Total net / h"
+          label="Total net/hr"
           value={
             valid ? `${total >= 0 ? "+" : "−"}${coins(Math.abs(total))}` : "—"
           }
           detail={
             waiting || stale || result.unpriced > 0
-              ? "Partial estimate · coins"
-              : "Expected profit · coins"
+              ? "Partial estimate"
+              : "coins"
           }
           state={total >= 0 ? "positive" : "negative"}
         />
@@ -333,9 +383,9 @@ export function SlayerProfits() {
               <tr>
                 <th scope="col">Drop</th>
                 <th scope="col">Drop rate</th>
-                <th scope="col">Items / h</th>
+                <th scope="col">Items/hr</th>
                 <th scope="col">Unit price</th>
-                <th scope="col">Coins / h</th>
+                <th scope="col">Coins/hr</th>
               </tr>
             </thead>
             <tbody>
@@ -386,64 +436,64 @@ export function SlayerProfits() {
             </tbody>
           </table>
         </div>
-        <p className="slayer-note">
-          Rates are long-run averages.{" "}
-          {meter && tier.number >= 3
-            ? `${meter}: ${number(meterRequirement(slayer, meter))} XP guarantee, modeled from an empty meter.`
-            : "Select an RNG meter item to include its bonus and guarantee."}
-        </p>
+        {meter && tier.number >= 3 && (
+          <p className="slayer-note">
+            {meter}: {number(meterRequirement(slayer, meter))} XP guarantee
+          </p>
+        )}
       </section>
 
       <div className="slayer-bottom-grid">
         <section className="slayer-panel" aria-labelledby="strategy-title">
-          <p className="slayer-eyebrow">RNG meter</p>
-          <h2 id="strategy-title">Compare strategies</h2>
+          <h2 id="strategy-title">RNG strategy</h2>
           {tier.number < 3 ? (
-            <p>Meter XP only accumulates from Tier III bosses and above.</p>
+            <p>Requires Tier III or higher.</p>
           ) : comparison && valid ? (
             <>
               <h3>
-                {Math.abs(delta) <= 0.5
-                  ? "Both approaches are effectively equal"
-                  : delta > 0
-                    ? "Fill unselected, then claim the guarantee"
-                    : "Keep the item selected"}
+                {comparison.switchXp >= comparison.requirement
+                  ? "Keep selected until full"
+                  : comparison.switchXp === 0
+                    ? "Leave unselected until full"
+                    : `Unselect at ${number((comparison.switchXp / comparison.requirement) * 100, 2)}%`}
               </h3>
               <p>
-                {comparison.itemName}
-                {Math.abs(delta) > 0.5 && (
-                  <>
-                    {" "}
-                    · <strong>+{coins(Math.abs(delta))} coins / h</strong>{" "}
-                    compared with the other approach
-                  </>
-                )}
+                {comparison.itemName} · {number(comparison.switchXp, 2)} /{" "}
+                {number(comparison.requirement)} XP
               </p>
+              {comparison.switchXp < comparison.requirement && (
+                <p>Reselect at 100% to claim.</p>
+              )}
               <dl className="slayer-comparison">
                 <div>
-                  <dt>Always selected</dt>
-                  <dd>{coins(comparison.alwaysSelectedCoinsPerHour)} / h</dd>
+                  <dt>Cutoff strategy</dt>
+                  <dd>
+                    <strong>
+                      {coins(comparison.optimizedCoinsPerHour)}/hr
+                    </strong>
+                  </dd>
                 </div>
                 <div>
-                  <dt>Fill unselected</dt>
-                  <dd>{coins(comparison.fillUnselectedCoinsPerHour)} / h</dd>
+                  <dt>Always selected</dt>
+                  <dd>{coins(comparison.alwaysSelectedCoinsPerHour)}/hr</dd>
+                </div>
+                <div>
+                  <dt>Unselected until full</dt>
+                  <dd>{coins(comparison.fillUnselectedCoinsPerHour)}/hr</dd>
                 </div>
               </dl>
-              <p className="slayer-note">
-                Compares the highest-value priced meter drop. These totals
-                exclude pet leveling.
-              </p>
+              {delta > 0.5 && <p>+{coins(delta)}/hr over always selected</p>}
             </>
           ) : (
-            <p>Waiting for a price for an eligible meter item.</p>
+            <p>No meter prices.</p>
           )}
         </section>
         <section className="slayer-panel" aria-labelledby="pets-title">
-          <p className="slayer-eyebrow">Combat pets</p>
           <h2 id="pets-title">Pet leveling</h2>
           <p>
-            <strong>{number(pets.active + pets.shared)} XP / h</strong> ·{" "}
-            {number(pets.active)} active + {number(pets.shared)} EXP Share
+            <strong>{number(pets.profitXp)} XP/hr</strong> ·{" "}
+            {excludeActive ? "EXP Share only" : "Main + EXP Share"} ·{" "}
+            {pets.slots} {pets.slots === 1 ? "slot" : "slots"}
           </p>
           {pets.pets.length ? (
             <ol className="slayer-pets">
@@ -457,48 +507,33 @@ export function SlayerProfits() {
                     </small>
                   </div>
                   <div>
-                    +{coins(pet.coinsPerHour)} / h
+                    +{coins(pet.coinsPerHour)}/hr
                     <small>{number(pet.coinsPerXp, 2)} coins / XP</small>
                   </div>
                 </li>
               ))}
             </ol>
           ) : (
-            <p className="slayer-note">
-              No profitable pet pairs are available yet. Pet profit is excluded
-              until prices load.
-            </p>
+            <p className="slayer-note">No pet prices.</p>
           )}
         </section>
       </div>
 
       <details className="slayer-assumptions">
-        <summary>Prices & calculation assumptions</summary>
+        <summary>Calculation details</summary>
         <p>
-          Uses the original MithrilAddons calculator’s five non-Vampire Slayer
-          tables. Assumes all listed drops are unlocked. Expected drops use
-          separate Main and Extra pools, Magic Find, and RNG-meter cycles;
-          individual sessions can vary substantially.
+          Long-run averages with all drops unlocked. A chosen meter item uses
+          the best select→unselect cutoff, reselecting at full. Strategy totals
+          exclude pets. Taxes and gear costs are excluded.
         </p>
         <p>
-          Prices choose the highest of Bazaar, Auction House, and NPC value.
-          Bazaar uses instant-sell or sell-offer estimates. Stable Auction House
-          quotes average the three lowest BINs within 5%; otherwise recent sales
-          are preferred, with sparse or widely spread listings marked “Unstable
-          BIN”. Taxes, gear costs, and other expenses are not deducted.
+          Uses the best Bazaar, AH or NPC price. AH averages three low BINs
+          within 5%, falling back to recent sales or unstable BINs.
         </p>
         <p>
-          Pet estimates assume Taming 60, a 50% Combat XP Boost, max
-          Beastmaster, and one EXP Share pet with the EXP Share item. Shard
-          bonuses add 10% Combat pet XP and 10 percentage points to EXP Share.
-          The best pet margin is applied to active and shared XP; auction
-          margins are estimates, not completed sales. Wisp pets are excluded.
-        </p>
-        <p>
-          Bazaar refreshes every 5 minutes, auctions every 15 minutes, and NPC
-          values hourly. Recent sales cover at most 24 hours collected while the
-          calculator is in use and reset on service restart. Refresh checks the
-          shared cache; it does not force another full scan.
+          Pets: Taming 60, 50% Combat XP Boost, max Beastmaster and EXP Share
+          items. Shards add 10% pet XP and 10 points of EXP Share. Applies the
+          best pet margin to counted XP. Wisp resale profit is excluded.
         </p>
         {market && (
           <dl className="slayer-feed-times">
@@ -536,14 +571,14 @@ function Metric({
 }: {
   label: string;
   value: string;
-  detail: string;
+  detail?: string;
   state?: string;
 }) {
   return (
     <div className="slayer-metric" data-state={state}>
       <h2>{label}</h2>
       <strong>{value}</strong>
-      <p>{detail}</p>
+      {detail && <p>{detail}</p>}
     </div>
   );
 }
