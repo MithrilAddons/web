@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { getHealth } from "./api";
 import { CookiePolicy, LinkAccount } from "./account";
 import { PartyWorkspace } from "./PartyFinder";
+import { SlayerProfits } from "./SlayerProfits";
 
 // Remove the bearer secret before React renders (including StrictMode remounts).
 const linkToken =
@@ -11,8 +12,14 @@ const linkToken =
 if (linkToken) window.history.replaceState(null, "", "/link");
 
 export function App() {
+  const revision = import.meta.env.VITE_SOURCE_REVISION as string | undefined;
+  const sourceRef =
+    revision && /^[0-9a-f]{40}$/.test(revision) ? revision : "main";
+  const sourceUrl = "https://github.com/MithrilAddons/web";
   const path = window.location.pathname.replace(/\/+$/, "") || "/";
   const isPartyFinder = path === "/party-finder";
+  const isSlayerProfits =
+    path === "/slayer-profits" || path === "/slayerprofits";
 
   return (
     <>
@@ -43,13 +50,19 @@ export function App() {
           >
             Party finder
           </a>
+          <a
+            href="/slayer-profits"
+            aria-current={isSlayerProfits ? "page" : undefined}
+          >
+            Slayer profits
+          </a>
         </nav>
       </header>
       <main
         id="main"
         tabIndex={-1}
         className={
-          isPartyFinder
+          isPartyFinder || isSlayerProfits
             ? "workspace-page"
             : path === "/"
               ? "home-page"
@@ -58,6 +71,8 @@ export function App() {
       >
         {isPartyFinder ? (
           <PartyFinder />
+        ) : isSlayerProfits ? (
+          <SlayerProfits />
         ) : path === "/link" ? (
           <div className="link-panel">
             <LinkAccount token={linkToken} />
@@ -74,6 +89,7 @@ export function App() {
                   Open party finder <span aria-hidden="true">→</span>
                 </a>
                 <span className="quiet-label">In development</span>
+                <a href="/slayer-profits">Calculate Slayer profits</a>
               </div>
             </section>
             <section className="intro-details" aria-label="Account linking">
@@ -106,10 +122,14 @@ export function App() {
       <footer className="site-footer">
         <p>Not affiliated with Hypixel or Mojang.</p>
         <a href="/cookies">Cookies</a>
-        <a href="https://github.com/MithrilAddons/web">Source code</a>
-        <a href="https://github.com/MithrilAddons/web/blob/main/LICENSE">
-          AGPL-3.0
+        <a
+          href={
+            sourceRef === "main" ? sourceUrl : `${sourceUrl}/tree/${sourceRef}`
+          }
+        >
+          Source code
         </a>
+        <a href={`${sourceUrl}/blob/${sourceRef}/LICENSE`}>AGPL-3.0</a>
       </footer>
     </>
   );

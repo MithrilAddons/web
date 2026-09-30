@@ -16,6 +16,34 @@ over prereleases of the same version. Failed refreshes retain a known good link
 and retry after one minute.
 No GitHub credentials or proxying of JAR contents are involved.
 
+## Slayer prices
+
+`GET slayer-prices` is public, sets no cookie, and returns
+`{version:1, bazaar, npc, auctions, pets, feeds}` for `/slayer-profits`.
+`bazaar` maps item IDs to `{instant, offer}`; `npc` maps item IDs/names to sell values.
+`auctions` maps drop names to `{price, source, samples, spread}`; source is `BIN`,
+`Recent sales`, or `Unstable BIN`. `pets` contains profitable Combat pet pairs with
+`{name, rarity, startLevel, endLevel, startPrice, endPrice, requiredXp, samples}`.
+`feeds` contains `bazaar`, `npc`, `auctions`, and `sales`, each with
+`{status, updated}` (epoch seconds or null). Status is `loading`, `ready`, `stale`,
+or `unavailable`. Missing prices are omitted rather than invented. The calculator
+ships its factual drop catalogue and performs expected-value calculations locally.
+
+The server fetches only fixed, public Hypixel endpoints without an API key or
+player lookup. One background refresh loop runs while the page has been used
+within 15 minutes. Bazaar refreshes every five minutes, NPC data hourly, Auction
+House every 15 minutes, and recently ended auctions every minute. Requests return
+the current snapshot immediately. Failed feeds back off for one minute, retaining
+last-known values for at most 24 hours. Browser refresh does not bypass these limits.
+An auction scan uses at most four concurrent requests, 200 pages, and a 90-second
+budget checked between batches. All pages must share the same snapshot timestamp.
+Responses and decompressed JSON are limited to 16 MiB; item NBT to 2 MiB with
+depth/element bounds. Network operations run off the application event loop.
+
+Recent sale history is process-local, deduplicated, and limited to 20 samples per
+eligible item over 24 hours; it resets on restart. No player or auction identifiers
+are returned to the browser. The endpoint uses the existing public nginx rate limit.
+
 ## Account linking and scoped mod credentials
 
 The user starts linking in Minecraft. `POST auth/challenge` accepts `{version,

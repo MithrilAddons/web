@@ -26,6 +26,9 @@ approved application key. API credentials never reach browsers or mods.
    source link accurate (forks must update it). Do not deploy unpublished changes.
    Run all checks and build the frontend. Export production dependencies with
    `uv export --locked --no-dev --no-emit-project`.
+   For a branch deployment, set `VITE_SOURCE_REVISION` to the published full
+   commit SHA when running `npm run build` in `frontend`. This pins the footer's
+   source and license links to the deployed revision without merging the branch.
 2. Package only backend source, built frontend and deployment files. Exclude
    local environments, Git, credentials, databases, node_modules and user records.
 3. Create a new release and venv; install the export using pip `--require-hashes`.
@@ -43,6 +46,13 @@ Certificates cover root/www; renewal must validate and reload nginx. Use the
 bootstrap config only for initial certificate issuance.
 
 ## Operational boundaries
+
+Deploy the Slayer feature's `backend/mithril_web/slayer_data.json` with the Python
+source and install the updated nginx config for `/api/v1/slayer-prices` and the
+`/slayerprofits` to `/slayer-profits` redirect. After deployment, verify both routes,
+the public price response, and eventual feed readiness. A cold Auction House scan
+may take up to roughly two minutes; failure must leave a partial/stale indicator.
+This feature introduces no database migration, credentials, or dependency changes.
 
 API responses are not publicly cached. Authentication has an nginx limit of
 30 requests/minute/IP (burst 15), party routes 60/minute/IP (burst 30).
