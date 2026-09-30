@@ -71,11 +71,11 @@ class Privacy:
                     with self.db:
                         self._erase(event)
 
-    def erase(self, token, scope):
+    def erase(self, token, scope, kind="session"):
         with self.records.lock, self.auth.lock:
             row = self.db.execute(
-                "SELECT uuid FROM accounts.auth WHERE token=? AND kind='session' AND expires>?",
-                (digest(token), self.clock()),
+                "SELECT uuid FROM accounts.auth WHERE token=? AND kind=? AND expires>?",
+                (digest(token), kind, self.clock()),
             ).fetchone()
             if not row:
                 raise HTTPException(401, "Sign in first")

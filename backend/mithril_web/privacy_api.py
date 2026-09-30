@@ -17,7 +17,7 @@ class Erase(BaseModel):
     confirmation: Literal["DELETE"]
 
 
-def register_privacy(app, browser, skins, cards):
+def register_privacy(app, browser, skins, cards, device_user):
     @app.get("/api/v1/privacy")
     def contact():
         operator, email = (
@@ -28,11 +28,17 @@ def register_privacy(app, browser, skins, cards):
             raise HTTPException(503, "Privacy contact is not configured")
         return {"version": 1, "operator": operator, "email": email}
 
+    @app.post("/api/v1/auth/device-erase")
     @app.post("/api/v1/auth/erase")
     async def erase(body: Erase, request: Request, response: Response):
-        browser(request)
+        native = request.url.path.endswith("device-erase")
+        if native:
+            await run_in_threadpool(device_user, request)
+        else:
+            browser(request)
+        token = request.headers["authorization"][7:] if native else request.cookies.get(COOKIE, "")
         uuid = await run_in_threadpool(
-            app.state.privacy.erase, request.cookies.get(COOKIE, ""), body.scope
+            app.state.privacy.erase, token, body.scope, "device" if native else "session"
         )
         await app.state.records_changed(uuid)
         if body.scope == "account":

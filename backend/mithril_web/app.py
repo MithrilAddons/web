@@ -34,6 +34,7 @@ from .skins import SkinCache
 from .slayer_market import SlayerMarket
 from .solo_evidence import SoloProgress, SoloStart, TerminalReport
 
+HEX_64_PATTERN = r"^[0-9a-f]{64}$"
 BEARER_PATTERN = r"Bearer [A-Za-z0-9_-]{43}"
 
 
@@ -45,11 +46,19 @@ class Challenge(StrictModel):
     version: Literal[1]
     uuid: str = Field(pattern=r"^[0-9a-f]{32}$")
     name: str = Field(pattern=r"^[A-Za-z0-9_]{1,16}$")
-    client_nonce: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    client_nonce: str | None = Field(default=None, pattern=HEX_64_PATTERN)
 
 
 class Proof(StrictModel):
     challenge_id: str = Field(pattern=r"^[A-Za-z0-9_-]{43}$")
+
+
+class DeviceChallenge(Challenge):
+    client_nonce: str = Field(pattern=HEX_64_PATTERN)
+
+
+class RevokeDevice(StrictModel):
+    id: str = Field(pattern=HEX_64_PATTERN)
 
 
 class Link(StrictModel):
@@ -188,6 +197,10 @@ def create_app(
 
     def party_access(request):
         authorization = request.headers.get("authorization", "")
+        if request.url.path.startswith("/api/v1/party/client/"):
+            row = device_user(request)
+            app.state.moderation.check(row["uuid"], request.client.host if request.client else None)
+            return
         is_mod = request.url.path.startswith("/api/v1/party/mod/")
         row = (
             app.state.auth.party_identity(authorization[7:])
@@ -240,7 +253,7 @@ def create_app(
 
     def verify_ownership(request, challenge_id, kind):
         store = request.app.state.auth
-        slots = anonymous_slots if kind == "challenge" else linked_slots
+        slots = anonymous_slots if kind in ("challenge", "device_challenge") else linked_slots
         if not slots.acquire(blocking=False):
             raise HTTPException(503, "Please try again later", headers={"Retry-After": "1"})
         try:
@@ -279,6 +292,71 @@ def create_app(
             "user_code": code,
             "expires_in_seconds": 300,
         }
+
+    @app.post("/api/v1/auth/device-challenge")
+    def device_challenge(body: DeviceChallenge, request: Request):
+        mod(request)
+        challenge_attempts.check(request.client.host if request.client else "unknown")
+        server_id, nonce = ownership_challenge(body, "device")
+        token = app.state.auth.issue("device_challenge", body.uuid, body.name, 60, server_id)
+        return {
+            "version": 1,
+            "challenge_id": token,
+            "server_id": server_id,
+            "server_nonce": nonce,
+            "expires_in_seconds": 60,
+        }
+
+    @app.post("/api/v1/auth/device-verify")
+    def device_verify(body: Proof, request: Request):
+        mod(request)
+        verification_attempts.check(request.client.host if request.client else "unknown")
+        row = verify_ownership(request, body.challenge_id, "device_challenge")
+        token, receipt = app.state.auth.issue_device(row["uuid"], row["name"], row["_epoch"])
+        return {
+            "version": 1,
+            "device_token": token,
+            "receipt_token": receipt,
+            "user": identity(row),
+            "expires_in_seconds": 30 * DAY,
+        }
+
+    def device_user(request):
+        mod(request)
+        authorization = request.headers.get("authorization", "")
+        row = (
+            app.state.auth.get(authorization[7:], "device")
+            if re.fullmatch(BEARER_PATTERN, authorization)
+            else None
+        )
+        if not row:
+            raise HTTPException(401, "Minecraft session expired. Sign in again.")
+        return row
+
+    @app.get(
+        "/api/v1/auth/device-session", responses={401: {"description": "Minecraft session expired"}}
+    )
+    def device_session(request: Request):
+        row = device_user(request)
+        return {"version": 1, "user": identity(row), "expires": row["expires"]}
+
+    @app.post("/api/v1/auth/device-logout")
+    def device_logout(request: Request):
+        mod(request)
+        authorization = request.headers.get("authorization", "")
+        if re.fullmatch(BEARER_PATTERN, authorization):
+            app.state.auth.revoke_device(authorization[7:])
+        return {"version": 1, "authenticated": False}
+
+    @app.get("/api/v1/auth/devices")
+    def devices(request: Request):
+        return {"version": 1, "devices": app.state.auth.devices(request.cookies.get(COOKIE, ""))}
+
+    @app.post("/api/v1/auth/devices/revoke")
+    def revoke_device(body: RevokeDevice, request: Request):
+        browser(request)
+        app.state.auth.revoke_device(request.cookies.get(COOKIE, ""), body.id)
+        return {"version": 1, "revoked": True}
 
     @app.post("/api/v1/auth/sync-challenge")
     def sync_challenge(body: SyncChallenge, request: Request):
@@ -490,13 +568,23 @@ def create_app(
             raise HTTPException(503, "Skin unavailable. Try again later.")
         return result
 
+    @app.get("/api/v1/auth/device-player-card")
     @app.get("/api/v1/auth/player-card", responses={401: {"description": "Session revoked"}})
     def player_card(request: Request):
-        row = request.app.state.auth.get(request.cookies.get(COOKIE, ""), "session")
+        native = request.url.path.endswith("device-player-card")
+        row = (
+            device_user(request)
+            if native
+            else request.app.state.auth.get(request.cookies.get(COOKIE, ""), "session")
+        )
         if not row:
             raise HTTPException(401, "Sign in first")
         summary = cards.get(row["uuid"])
-        if not request.app.state.auth.get(request.cookies.get(COOKIE, ""), "session"):
+        if not (
+            device_user(request)
+            if native
+            else request.app.state.auth.get(request.cookies.get(COOKIE, ""), "session")
+        ):
             cards.erase(row["uuid"])
             raise HTTPException(401, "Sign in first")
         if summary is None:
@@ -535,7 +623,7 @@ def create_app(
     )
 
     register_moderation(app, browser, name_lookup)
-    register_privacy(app, browser, skins, cards)
+    register_privacy(app, browser, skins, cards, device_user)
 
     app.add_middleware(
         TrustedHostMiddleware,

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { MinecraftSessions } from "./MinecraftSessions";
 
 export function PrivacyPolicy() {
   const [contact, setContact] = useState<{
@@ -26,9 +27,10 @@ export function PrivacyPolicy() {
       <h1>Privacy</h1>
       <p>
         MithrilPF stores your Minecraft UUID and username, browser links,
-        submitted records and the evidence needed to validate them. Party
-        members can see party chat and player stats. Trusted moderators can
-        review reported messages, records and restrictions.
+        Minecraft sessions, submitted records and the evidence needed to
+        validate them. Party members can see party chat and player stats.
+        Trusted moderators can review reported messages, records and
+        restrictions.
       </p>
       <p>
         We use account and gameplay data to provide party finding and record
@@ -38,6 +40,10 @@ export function PrivacyPolicy() {
       </p>
       <h2>Retention</h2>
       <ul>
+        <li>
+          Minecraft sign-in sessions: up to 30 days, or until revoked.
+          Credentials are stored hashed on the server.
+        </li>
         <li>PB summaries: until you delete them.</li>
         <li>
           Accepted soloclear and terminal evidence: 30 days. Rejected or
@@ -69,10 +75,10 @@ export function PrivacyPolicy() {
       <h2>Your data</h2>
       <p>
         <a href="/account">Delete your synced PBs or account</a>. Account
-        deletion removes browser links and unneeded data. Active restrictions,
-        open investigations, appeal evidence and the limited audit history above
-        may remain. Deleting an account does not remove a ban. Local records in
-        Minecraft remain on your device.
+        deletion removes browser links, Minecraft sessions and unneeded data.
+        Active restrictions, open investigations, appeal evidence and the
+        limited audit history above may remain. Deleting an account does not
+        remove a ban. Local records in Minecraft remain on your device.
       </p>
       <p>
         You can request access, correction, deletion, restriction or portability
@@ -170,7 +176,7 @@ export function AccountPrivacy() {
     }
   }
   return (
-    <section className="moderation">
+    <section className="moderation content-stack">
       <title>Your data · Mithril</title>
       <a href="/profile">Back to profile</a>
       <h1>Your data</h1>
@@ -227,6 +233,7 @@ export function AccountPrivacy() {
           </button>
         </form>
       )}
+      {user && <MinecraftSessions key={user.uuid} />}
     </section>
   );
 }

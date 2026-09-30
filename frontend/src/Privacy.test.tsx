@@ -53,6 +53,7 @@ it("requires explicit confirmation and clears it when deletion scope changes", a
         JSON.stringify({
           authenticated: true,
           user: { uuid: "c".repeat(32), name: "Synthetic" },
+          devices: [],
         }),
       ),
   );
@@ -106,17 +107,16 @@ it("does not show deletion controls when signed out", async () => {
 });
 
 it("does not automatically retry an uncertain deletion", async () => {
-  const fetcher = vi
-    .fn()
-    .mockResolvedValueOnce(
-      new Response(
-        JSON.stringify({
-          authenticated: true,
-          user: { name: "Synthetic", uuid: "c".repeat(32) },
-        }),
-      ),
-    )
-    .mockRejectedValueOnce(new Error("Connection lost"));
+  const fetcher = vi.fn(async (url: string) => {
+    if (url.endsWith("erase")) throw new Error("Connection lost");
+    return new Response(
+      JSON.stringify({
+        authenticated: true,
+        user: { name: "Synthetic", uuid: "c".repeat(32) },
+        devices: [],
+      }),
+    );
+  });
   vi.stubGlobal("fetch", fetcher);
   render(<AccountPrivacy />);
   fireEvent.change(await screen.findByLabelText("Type DELETE to confirm"), {
@@ -124,5 +124,9 @@ it("does not automatically retry an uncertain deletion", async () => {
   });
   fireEvent.click(screen.getByRole("button", { name: "Delete synced PBs" }));
   expect(await screen.findByRole("alert")).toBeTruthy();
-  await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
+  await waitFor(() =>
+    expect(
+      fetcher.mock.calls.filter(([url]) => url.endsWith("erase")),
+    ).toHaveLength(1),
+  );
 });

@@ -8,7 +8,7 @@ UUID = "0" * 32
 NONCE = "1" * 64
 
 
-@pytest.mark.parametrize("scope", ["link", "sync", "party"])
+@pytest.mark.parametrize("scope", ["link", "sync", "party", "device"])
 def test_client_bound_proof_is_fresh_scoped_and_single_use(tmp_path, scope):
     lookups = []
     app = create_app(
@@ -20,7 +20,7 @@ def test_client_bound_proof_is_fresh_scoped_and_single_use(tmp_path, scope):
     with TestClient(app, base_url="https://mithril.foo") as client:
         body = {"version": 1, "uuid": UUID, "name": "Player", "client_nonce": NONCE}
         verify = {}
-        if scope != "link":
+        if scope in ("sync", "party"):
             store = app.state.auth
             link, receipt, _ = store.issue_link(UUID, "Player")
             store.finish_link(link, "", remember=True)
