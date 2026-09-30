@@ -94,7 +94,7 @@ def register_moderation(app, browser, name_lookup):
     @app.get("/api/v1/moderation/resolve/{name}")
     def resolve(name: str, request: Request):
         read(request, "home")
-        if not re.fullmatch(r"[A-Za-z0-9_]{1,16}", name):
+        if not re.fullmatch(r"\w{1,16}", name, flags=re.ASCII):
             raise HTTPException(422, "Enter a Minecraft username")
         try:
             result = name_lookup(name)

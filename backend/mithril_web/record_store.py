@@ -224,6 +224,10 @@ class RecordStore:
             return "clock"
         if body.ticks > body.elapsed_ms / 50 + 40 or body.ticks < body.elapsed_ms / 250:
             return "tick_rate"
+        return RecordStore._invalid_observation(row, body, now, score)
+
+    @staticmethod
+    def _invalid_observation(row, body, now, score):
         if body.roster != [row["uuid"]]:
             return "not_solo"
         if body.dead or (body.evidence.deaths or 0) > 0:
@@ -290,20 +294,23 @@ class RecordStore:
             self._record(
                 uuid, body.floor, "terminals", body.real_ms, body.ticks, "single_report", group_id
             )
-            reports = self.db.execute(
-                "SELECT * FROM terminal_reports WHERE group_id=?", (group_id,)
-            ).fetchall()
-            if len(reports) > 1:
-                conflict = (
-                    max(r["real_ms"] for r in reports) - min(r["real_ms"] for r in reports) > 1000
-                    or max(r["ticks"] for r in reports) - min(r["ticks"] for r in reports) > 20
-                )
-                # Preserve eligibility pending human review; a hostile witness cannot erase a PB.
-                self.db.execute(
-                    "UPDATE pb_records SET source=? WHERE evidence_id=?",
-                    ("conflicting_reports" if conflict else "corroborated", group_id),
-                )
+            self._corroborate(group_id)
             return self._terminal_result(group_id, uuid)
+
+    def _corroborate(self, group_id):
+        reports = self.db.execute(
+            "SELECT * FROM terminal_reports WHERE group_id=?", (group_id,)
+        ).fetchall()
+        if len(reports) > 1:
+            conflict = (
+                max(r["real_ms"] for r in reports) - min(r["real_ms"] for r in reports) > 1000
+                or max(r["ticks"] for r in reports) - min(r["ticks"] for r in reports) > 20
+            )
+            # Preserve eligibility pending human review; a hostile witness cannot erase a PB.
+            self.db.execute(
+                "UPDATE pb_records SET source=? WHERE evidence_id=?",
+                ("conflicting_reports" if conflict else "corroborated", group_id),
+            )
 
     def _terminal_result(self, group, uuid):
         row = self.db.execute(

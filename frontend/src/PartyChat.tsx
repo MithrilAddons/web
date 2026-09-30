@@ -74,6 +74,7 @@ export function PartyChat({
           {!connected ? "Reconnecting…" : "Connected"}
         </span>
         <button
+          type="button"
           className="text-button"
           aria-expanded={!collapsed}
           aria-controls={`${id}-body`}
@@ -146,7 +147,11 @@ export function PartyChat({
             )}
           </div>
           {unread && (
-            <button className="chat-jump small-button" onClick={bottom}>
+            <button
+              type="button"
+              className="chat-jump small-button"
+              onClick={bottom}
+            >
               New messages ↓
             </button>
           )}
@@ -237,7 +242,11 @@ function ReportMessage({
   return (
     <div className="chat-report">
       {!open && status !== "Reported." && (
-        <button className="text-button" onClick={() => setOpen(true)}>
+        <button
+          type="button"
+          className="text-button"
+          onClick={() => setOpen(true)}
+        >
           Report
         </button>
       )}
@@ -249,7 +258,7 @@ function ReportMessage({
           }}
         >
           <label>
-            Report reason
+            Report reason{" "}
             <input
               required
               maxLength={500}
@@ -257,7 +266,11 @@ function ReportMessage({
               onChange={(e) => setReason(e.target.value)}
             />
           </label>
-          <button disabled={busy || !reason.trim()} className="small-button">
+          <button
+            type="submit"
+            disabled={busy || !reason.trim()}
+            className="small-button"
+          >
             Submit report
           </button>
           <button
@@ -270,7 +283,7 @@ function ReportMessage({
           </button>
         </form>
       )}
-      {status && <p role="status">{status}</p>}
+      {status && <output>{status}</output>}
     </div>
   );
 }

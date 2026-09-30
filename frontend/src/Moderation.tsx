@@ -149,8 +149,8 @@ export function Moderation() {
         {access && <span className="quiet-label">{access.role}</span>}
       </header>
       {error && <p role="alert">{error}</p>}
-      {notice && <p role="status">{notice}</p>}
-      {!access && !error && <p role="status">Checking access…</p>}
+      {notice && <output>{notice}</output>}
+      {!access && !error && <output>Checking access…</output>}
       {access && (
         <>
           <form
@@ -161,7 +161,7 @@ export function Moderation() {
             }}
           >
             <label>
-              Player
+              Player{" "}
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
@@ -170,14 +170,16 @@ export function Moderation() {
                 maxLength={36}
               />
             </label>
-            <button disabled={busy}>Find player</button>
+            <button type="submit" disabled={busy}>
+              Find player
+            </button>
           </form>
           {player && (
             <>
               <h2>{player.name ?? "Player"}</h2>
               <code>{player.uuid}</code>
               <label>
-                Reason
+                Reason{" "}
                 <textarea
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
@@ -291,7 +293,7 @@ export function Moderation() {
               >
                 <h3>Restriction</h3>
                 <label>
-                  Action
+                  Action{" "}
                   <select
                     value={kind}
                     onChange={(e) => setKind(e.target.value)}
@@ -304,7 +306,7 @@ export function Moderation() {
                   </select>
                 </label>
                 <label>
-                  Duration
+                  Duration{" "}
                   <select
                     value={duration}
                     onChange={(e) => setDuration(e.target.value)}
@@ -321,7 +323,7 @@ export function Moderation() {
                 <p className="quiet-label">
                   Selected records provide evidence for this case.
                 </p>
-                <button disabled={busy || !reason.trim()}>
+                <button type="submit" disabled={busy || !reason.trim()}>
                   Apply restriction
                 </button>
               </form>
@@ -335,6 +337,7 @@ export function Moderation() {
                     <p>{item.reason}</p>
                     <div className="moderation-actions">
                       <button
+                        type="button"
                         className="secondary"
                         disabled={busy}
                         onClick={() =>
@@ -349,6 +352,7 @@ export function Moderation() {
                       </button>
                       {!item.revoked && (
                         <button
+                          type="button"
                           className="secondary"
                           disabled={busy || !reason.trim()}
                           onClick={() =>
@@ -364,6 +368,7 @@ export function Moderation() {
                         </button>
                       )}
                       <button
+                        type="button"
                         className="secondary"
                         disabled={busy || !reason.trim()}
                         onClick={() =>
@@ -387,6 +392,7 @@ export function Moderation() {
                 <section>
                   <h3>Moderator access</h3>
                   <button
+                    type="button"
                     className="secondary"
                     disabled={busy || !reason.trim()}
                     onClick={() =>
@@ -422,6 +428,7 @@ export function Moderation() {
           <section>
             <h2>Audit log</h2>
             <button
+              type="button"
               className="secondary"
               disabled={busy}
               onClick={() =>
@@ -464,6 +471,7 @@ export function Moderation() {
             </ol>
             {audit.length > 0 && (
               <button
+                type="button"
                 className="secondary"
                 disabled={busy}
                 onClick={() =>
@@ -508,7 +516,7 @@ function Correction({
         }}
       >
         <label>
-          Time (ms)
+          Time (ms){" "}
           <input
             type="number"
             value={milliseconds}
@@ -520,7 +528,7 @@ function Correction({
           />
         </label>
         <label>
-          Ticks
+          Ticks{" "}
           <input
             type="number"
             value={ticks}
@@ -531,7 +539,9 @@ function Correction({
             required
           />
         </label>
-        <button disabled={disabled}>Save correction</button>
+        <button type="submit" disabled={disabled}>
+          Save correction
+        </button>
       </form>
     </details>
   );
@@ -581,6 +591,7 @@ function ChatReview({
     <section className="moderation">
       <h2>Chat reports</h2>
       <button
+        type="button"
         className="secondary"
         disabled={busy || disabled}
         onClick={() => void act()}
@@ -590,7 +601,7 @@ function ChatReview({
       {error && <p role="alert">{error}</p>}
       {reports.length > 0 && (
         <label>
-          Review reason
+          Review reason{" "}
           <input
             value={reason}
             maxLength={500}
@@ -610,6 +621,7 @@ function ChatReview({
             </pre>
             <div className="moderation-actions">
               <button
+                type="button"
                 className="secondary"
                 disabled={busy || disabled}
                 onClick={() => void onSelect(report.uuid, report.id)}
@@ -617,6 +629,7 @@ function ChatReview({
                 Review player
               </button>
               <button
+                type="button"
                 className="secondary"
                 disabled={busy || disabled || !reason.trim()}
                 onClick={() =>
@@ -626,6 +639,7 @@ function ChatReview({
                 Remove message
               </button>
               <button
+                type="button"
                 className="secondary"
                 disabled={busy || disabled || !reason.trim()}
                 onClick={() =>

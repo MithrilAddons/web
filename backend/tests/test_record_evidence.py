@@ -177,8 +177,9 @@ def test_terminal_single_is_eligible_matching_clients_corroborate_and_replay_is_
     assert store.terminal(OTHER, report(now, OTHER, 40500))["corroboration"] == "corroborated"
     assert store.terminal(UUID, first)["corroboration"] == "corroborated"
     assert store.db.execute("SELECT COUNT(*) FROM pb_records").fetchone()[0] == 2
+    duplicate = report(now, report_id="c" * 32)
     with pytest.raises(HTTPException):
-        store.terminal(UUID, report(now, report_id="c" * 32))
+        store.terminal(UUID, duplicate)
 
 
 def test_retained_terminal_evidence_cannot_recreate_a_deleted_summary(storage):

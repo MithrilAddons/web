@@ -297,8 +297,8 @@ def register(app, finder, stats, browser, mod, *, wait=WAIT, name_lookup=mojang_
         stats.failed.pop(uuid, None)
         if uuid in stats.pending:
             stats.erased_pending.add(uuid)
-        for party in list(finder.parties.values()):
-            for message in list(party.chat.messages):
+        for party in finder.parties.values():
+            for message in party.chat.messages:
                 if (message.get("sender") or {}).get("uuid") == uuid:
                     hide_message(party.id, message["id"])
             for key in [key for key in party.chat.receipts if key[0] == uuid]:

@@ -12,6 +12,8 @@ from fastapi import HTTPException
 from .chat_reports import ChatReports
 from .record_store import DAY
 
+CASE_QUERY = "SELECT * FROM sanctions WHERE id=?"
+
 
 class Moderation:
     def __init__(self, records, owner=None, network_key=None):
@@ -236,6 +238,17 @@ class Moderation:
                 "chat": chat,
             }
 
+    def _sanction_network(self, body, now):
+        if body.kind != "network_ban":
+            return None
+        peer = self.db.execute(
+            "SELECT network FROM account_networks WHERE uuid=? AND seen>?",
+            (body.uuid, now - DAY),
+        ).fetchone()
+        if not self.network_key or not peer:
+            raise HTTPException(409, "No recent authenticated connection is available")
+        return peer[0]
+
     def sanction(self, actor, body):
         with self.lock, self.db:
             self._require(actor)
@@ -244,15 +257,7 @@ class Moderation:
             now = self.clock()
             if body.expires is not None and not now < body.expires <= now + 3650 * DAY:
                 raise HTTPException(422, "Expiry must be in the next ten years; omit for permanent")
-            network = None
-            if body.kind == "network_ban":
-                peer = self.db.execute(
-                    "SELECT network FROM account_networks WHERE uuid=? AND seen>?",
-                    (body.uuid, now - DAY),
-                ).fetchone()
-                if not self.network_key or not peer:
-                    raise HTTPException(409, "No recent authenticated connection is available")
-                network = peer[0]
+            network = self._sanction_network(body, now)
             case_id = secrets.token_urlsafe(32)
             until = body.expires if body.expires is not None else now + 30 * DAY
             self.db.execute(
@@ -290,9 +295,7 @@ class Moderation:
                     "INSERT OR IGNORE INTO chat_evidence_holds VALUES (?,?,?)",
                     (report_id, case_id, until),
                 )
-            result = self._case(
-                self.db.execute("SELECT * FROM sanctions WHERE id=?", (case_id,)).fetchone()
-            )
+            result = self._case(self.db.execute(CASE_QUERY, (case_id,)).fetchone())
             self.db.execute("INSERT INTO case_activity VALUES (?,?)", (case_id, now))
             self._audit(actor, "sanction", body.uuid, body.reason, None, result)
             return result
@@ -300,7 +303,7 @@ class Moderation:
     def case_action(self, actor, body):
         with self.lock, self.db:
             self._require(actor)
-            row = self.db.execute("SELECT * FROM sanctions WHERE id=?", (body.case_id,)).fetchone()
+            row = self.db.execute(CASE_QUERY, (body.case_id,)).fetchone()
             if not row:
                 raise HTTPException(404, "Case not found")
             before = self._case(row)
@@ -326,9 +329,7 @@ class Moderation:
                 "UPDATE chat_evidence_holds SET until=? WHERE case_id=?",
                 (None if appeal else until, row["id"]),
             )
-            after = self._case(
-                self.db.execute("SELECT * FROM sanctions WHERE id=?", (row["id"],)).fetchone()
-            )
+            after = self._case(self.db.execute(CASE_QUERY, (row["id"],)).fetchone())
             self.db.execute(
                 "INSERT OR REPLACE INTO case_activity VALUES (?,?)", (row["id"], self.clock())
             )

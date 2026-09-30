@@ -194,7 +194,10 @@ def test_restore_command_rejects_expired_backups_and_missing_ledger(tmp_path):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     now = datetime.now(UTC)
+    auth_path = tmp_path / "auth.db"
+    expired = now - timedelta(days=7)
+    recent = now - timedelta(hours=1)
     with pytest.raises(ValueError, match="seven days"):
-        module.replay(tmp_path / "auth.db", now - timedelta(days=7), now)
+        module.replay(auth_path, expired, now)
     with pytest.raises(ValueError, match="preserve"):
-        module.replay(tmp_path / "auth.db", now - timedelta(hours=1), now)
+        module.replay(auth_path, recent, now)

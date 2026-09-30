@@ -64,4 +64,5 @@ class ModerationPreview(Preview):
 
 
 if __name__ == "__main__":
-    ThreadingHTTPServer(("127.0.0.1", 8792), ModerationPreview).serve_forever()
+    # Synthetic, read-only loopback preview; no real accounts or credentials are served.
+    ThreadingHTTPServer(("127.0.0.1", 8792), ModerationPreview).serve_forever()  # NOSONAR

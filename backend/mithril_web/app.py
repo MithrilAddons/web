@@ -34,6 +34,8 @@ from .skins import SkinCache
 from .slayer_market import SlayerMarket
 from .solo_evidence import SoloProgress, SoloStart, TerminalReport
 
+BEARER_PATTERN = r"Bearer [A-Za-z0-9_-]{43}"
+
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
@@ -189,7 +191,7 @@ def create_app(
         is_mod = request.url.path.startswith("/api/v1/party/mod/")
         row = (
             app.state.auth.party_identity(authorization[7:])
-            if is_mod and re.fullmatch(r"Bearer [A-Za-z0-9_-]{43}", authorization)
+            if is_mod and re.fullmatch(BEARER_PATTERN, authorization)
             else app.state.auth.get(request.cookies.get(COOKIE, ""), "session")
         )
         if row:
@@ -334,11 +336,13 @@ def create_app(
             "user": identity(row),
         }
 
-    @app.post("/api/v1/auth/sync-records")
+    @app.post(
+        "/api/v1/auth/sync-records", responses={410: {"description": "Use live record tracking"}}
+    )
     def sync_records(body: Submission, request: Request):
         mod(request)
         authorization = request.headers.get("authorization", "")
-        if not re.fullmatch(r"Bearer [A-Za-z0-9_-]{43}", authorization):
+        if not re.fullmatch(BEARER_PATTERN, authorization):
             raise HTTPException(401, "Mod authentication required")
         user = request.app.state.auth.sync_identity(authorization[7:])
         if not user:
@@ -350,7 +354,7 @@ def create_app(
     def record_user(request):
         mod(request)
         authorization = request.headers.get("authorization", "")
-        if not re.fullmatch(r"Bearer [A-Za-z0-9_-]{43}", authorization):
+        if not re.fullmatch(BEARER_PATTERN, authorization):
             raise HTTPException(401, "Mod authentication required")
         user = request.app.state.auth.sync_identity(authorization[7:])
         if not user:
@@ -440,7 +444,7 @@ def create_app(
             "moderator": bool(app.state.moderation.role(row["uuid"])),
         }
 
-    @app.get("/api/v1/auth/skin")
+    @app.get("/api/v1/auth/skin", responses={401: {"description": "Session revoked"}})
     def skin(request: Request):
         token = request.cookies.get(COOKIE, "")
         row = request.app.state.auth.get(token, "session")
@@ -486,7 +490,7 @@ def create_app(
             raise HTTPException(503, "Skin unavailable. Try again later.")
         return result
 
-    @app.get("/api/v1/auth/player-card")
+    @app.get("/api/v1/auth/player-card", responses={401: {"description": "Session revoked"}})
     def player_card(request: Request):
         row = request.app.state.auth.get(request.cookies.get(COOKIE, ""), "session")
         if not row:

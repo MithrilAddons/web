@@ -58,7 +58,8 @@ def test_removal_hides_history_and_retry_and_keeps_mod_protocol_valid(chat):
         headers=mods[1],
         json={"version": 1, "party_id": party, "after": 0},
     ).json()
-    assert messages["messages"] == [] and messages["latest"] == 1
+    assert messages["messages"] == []
+    assert messages["latest"] == 1
     audit = app.state.moderation.audit(IDS[2], 100)["entries"]
     assert audit[0]["actor"] == IDS[2]
     assert "Synthetic message" not in json.dumps(audit)

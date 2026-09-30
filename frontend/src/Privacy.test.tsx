@@ -6,11 +6,44 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import { AccountPrivacy } from "./Privacy";
+import { AccountPrivacy, PrivacyPolicy } from "./Privacy";
 
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+});
+
+it("shows the configured operator and a usable privacy contact", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            operator: "Synthetic Operator",
+            email: "privacy@example.invalid",
+          }),
+        ),
+    ),
+  );
+  render(<PrivacyPolicy />);
+  const link = await screen.findByRole("link", {
+    name: "privacy@example.invalid",
+  });
+  expect(link.getAttribute("href")).toBe("mailto:privacy@example.invalid");
+  expect(screen.getByText(/Synthetic Operator/)).toBeTruthy();
+});
+
+it("keeps deletion unavailable after a failed session check", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => new Response("", { status: 503 })),
+  );
+  render(<AccountPrivacy />);
+  expect((await screen.findByRole("alert")).textContent).toContain(
+    "Could not check your account",
+  );
+  expect(screen.queryByRole("button")).toBeNull();
 });
 
 it("requires explicit confirmation and clears it when deletion scope changes", async () => {

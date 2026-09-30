@@ -167,7 +167,7 @@ export function AccountPrivacy() {
     <section className="moderation">
       <h1>Your data</h1>
       {error && <p role="alert">{error}</p>}
-      {status && <p role="status">{status}</p>}
+      {status && <output>{status}</output>}
       {!ready && !error && <p>Checking your account…</p>}
       {ready && !user && !status && (
         <p>
@@ -185,7 +185,7 @@ export function AccountPrivacy() {
         >
           <h2>{user.name}</h2>
           <label>
-            Delete
+            Delete{" "}
             <select
               value={scope}
               disabled={busy}
@@ -206,7 +206,7 @@ export function AccountPrivacy() {
             review evidence follow the <a href="/privacy">retention policy</a>.
           </p>
           <label>
-            Type DELETE to confirm
+            Type DELETE to confirm{" "}
             <input
               value={confirmation}
               disabled={busy}
@@ -214,7 +214,7 @@ export function AccountPrivacy() {
               autoComplete="off"
             />
           </label>
-          <button disabled={busy || confirmation !== "DELETE"}>
+          <button type="submit" disabled={busy || confirmation !== "DELETE"}>
             {busy ? "Deleting…" : "Delete selected data"}
           </button>
         </form>

@@ -156,7 +156,8 @@ def test_ban_ejects_and_blocks_web_mod_and_records_but_not_account_access(setup)
     finder.look(USER, "F7", ["mage"], None)
     response = post(client, headers[MOD], "sanction", uuid=USER, kind="ban", expires=1010)
     assert response.status_code == 200, response.text
-    assert USER not in finder.players and USER not in finder.lookers["F7"]
+    assert USER not in finder.players
+    assert USER not in finder.lookers["F7"]
     assert client.get("/api/v1/party/listings?floor=F7", headers=headers[USER]).status_code == 403
     assert client.get("/api/v1/auth/session", headers=headers[USER]).status_code == 200
     mod_headers = {"Authorization": f"Bearer {tokens[USER]['party']}"}
@@ -204,7 +205,8 @@ def test_network_privacy_expiry_and_spoofed_forwarded_header(setup):
     moderation.check(OTHER, "::ffff:192.0.2.1", remember=True)
     response = post(client, headers[MOD], "sanction", uuid=USER, kind="network_ban", expires=2000)
     case = response.json()["case"]
-    assert "network" not in case and "192.0.2.1" not in response.text
+    assert "network" not in case
+    assert "192.0.2.1" not in response.text
     assert moderation.affected_accounts(case) == {USER, OTHER}
     with pytest.raises(HTTPException, match="banned"):
         moderation.check(OTHER, "192.0.2.1")
@@ -239,7 +241,8 @@ def test_permanent_ban_appeal_holds_and_close_expiry(setup):
     moderation = app.state.moderation
     body = Sanction(version=1, reason="Review", uuid=USER, kind="ban", record_ids=[record])
     case = moderation.sanction(MOD, body)
-    assert case["expires"] is None and case["evidence_until"] == now[0] + 30 * DAY
+    assert case["expires"] is None
+    assert case["evidence_until"] == now[0] + 30 * DAY
 
     def action(value):
         return CaseAction(version=1, reason="Appeal review", case_id=case["id"], action=value)
