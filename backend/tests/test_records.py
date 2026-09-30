@@ -1,11 +1,12 @@
 import json
+import sqlite3
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 from mithril_web.app import create_app
 from mithril_web.auth import COOKIE
-from mithril_web.records import RecordStore, Submission, with_mod_records
+from mithril_web.records import RecordStore, with_mod_records
 
 UUID = "0123456789abcdef0123456789abcdef"
 OTHER = "f" * 32
@@ -84,13 +85,11 @@ def test_real_flow_requires_confirmation_and_separate_fresh_ownership(setup):
     assert client.post("/api/v1/auth/sync-verify", json=body).status_code == 410
     headers = authorize(client, link)
     assert (
-        client.post("/api/v1/auth/sync-records", headers=headers, json=FIXTURE).json()["accepted"]
-        == 4
+        client.post("/api/v1/auth/sync-records", headers=headers, json=FIXTURE).status_code == 410
     )
     card = client.get("/api/v1/auth/player-card").json()
-    assert card["mod_records_available"]
-    assert card["floors"][0]["solo_clear_ms"] == 300000
-    assert card["floors"][0]["ss_ms"] is None
+    assert not card["mod_records_available"]
+    assert card["floors"][0]["solo_clear_ms"] is None
     assert app.state.records.read(OTHER) == []
 
 
@@ -189,7 +188,7 @@ def test_boundaries_duplicates_uuid_injection_and_request_size(setup):
             "records": [{**FIXTURE["records"][0], "real_ms": value, "ticks": 144000}],
         }
         assert (
-            client.post("/api/v1/auth/sync-records", headers=headers, json=body).status_code == 200
+            client.post("/api/v1/auth/sync-records", headers=headers, json=body).status_code == 410
         )
     for body in (
         {**FIXTURE, "uuid": OTHER},
@@ -208,20 +207,27 @@ def test_boundaries_duplicates_uuid_injection_and_request_size(setup):
 
 
 def test_persistence_idempotency_independent_minima_and_immutable_card(tmp_path):
-    store = RecordStore(tmp_path / "records.db")
-    records = Submission.model_validate(FIXTURE).records
-    store.merge(UUID, records)
-    store.merge(UUID, records)
-    improved = records[0].model_copy(update={"real_ms": 290000, "ticks": 6000})
-    store.merge(UUID, [improved])
-    store.merge(UUID, records)  # Older clients cannot overwrite faster PBs.
-    store.close()
-    store = RecordStore(tmp_path / "records.db")
+    path = tmp_path / "records.db"
+    db = sqlite3.connect(path)
+    db.execute(
+        "CREATE TABLE mod_bests(uuid TEXT, floor TEXT, kind TEXT, real_ms INTEGER, ticks INTEGER)"
+    )
+    db.executemany(
+        "INSERT INTO mod_bests VALUES (?,?,?,?,?)",
+        [(UUID, r["floor"], r["kind"], r["real_ms"], r["ticks"]) for r in FIXTURE["records"]],
+    )
+    db.commit()
+    db.close()
+    store = RecordStore(path)
     result = store.read(UUID)
     assert len(result) == 4
-    best = next(r for r in result if r["floor"] == "F7" and r["kind"] == "solo_clear")
-    assert (best["real_ms"], best["ticks"]) == (290000, 5800)
+    assert store.db.execute("SELECT DISTINCT source FROM pb_records").fetchone()[0] == "legacy"
     summary = {"floors": [{"floor": "F7", "solo_clear_ms": None}]}
-    assert with_mod_records(summary, result)["floors"][0]["solo_clear_ms"] == 290000
+    assert with_mod_records(summary, result)["floors"][0]["solo_clear_ms"] == 300000
     assert summary["floors"][0]["solo_clear_ms"] is None
+    store.close()
+    store = RecordStore(path)
+    assert store.read(UUID) == result
+    assert store.db.execute("SELECT COUNT(*) FROM pb_records").fetchone()[0] == 4
+    assert not store.db.execute("SELECT 1 FROM sqlite_master WHERE name='mod_bests'").fetchone()
     store.close()

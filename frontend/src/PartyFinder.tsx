@@ -151,6 +151,9 @@ export function PartyWorkspace() {
             key={state.party.id}
             messages={state.party.messages ?? []}
             connected={!offline}
+            onReport={async (messageId, reason) => {
+              await partyApi.report(state.party!.id, messageId, reason);
+            }}
             onSend={async (text, requestId) => {
               apply(await partyApi.chat(state.party!.id, text, requestId));
             }}

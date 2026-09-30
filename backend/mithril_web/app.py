@@ -2,6 +2,7 @@
 
 import asyncio
 import contextlib
+import hashlib
 import http.client
 import os
 import re
@@ -17,15 +18,23 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.concurrency import run_in_threadpool
 from starlette.middleware.trustedhost import TrustedHostMiddleware
+from starlette.responses import JSONResponse
 
 from .auth import COOKIE, DAY, AuthAttempts, AuthStore, CodeAttempts, mojang_profile
+from .moderation import Moderation
+from .moderation_api import register_moderation
 from .parties import Finder
 from .party_api import WAIT, StatsService, mojang_uuid, register
 from .player_card import PlayerCardCache, fetch_card
+from .privacy import Privacy
+from .privacy_api import register_privacy
 from .records import RecordStore, Submission, with_mod_records
 from .releases import ReleaseCache
 from .skins import SkinCache
 from .slayer_market import SlayerMarket
+from .solo_evidence import SoloProgress, SoloStart, TerminalReport
+
+BEARER_PATTERN = r"Bearer [A-Za-z0-9_-]{43}"
 
 
 class StrictModel(BaseModel):
@@ -36,6 +45,7 @@ class Challenge(StrictModel):
     version: Literal[1]
     uuid: str = Field(pattern=r"^[0-9a-f]{32}$")
     name: str = Field(pattern=r"^[A-Za-z0-9_]{1,16}$")
+    client_nonce: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
 
 class Proof(StrictModel):
@@ -64,6 +74,15 @@ class SyncProof(Proof):
     receipt_token: str = Field(pattern=r"^[A-Za-z0-9_-]{43}$")
 
 
+def ownership_challenge(body: Challenge, scope: str) -> tuple[str, str | None]:
+    # Compatibility for older clients; new clients never accept this legacy proof.
+    if body.client_nonce is None:
+        return secrets.token_hex(20)[1:], None
+    nonce = secrets.token_hex(32)
+    value = f"mithrilpf:ownership:v2:{scope}:{body.uuid}:{body.client_nonce}:{nonce}"
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:39], nonce
+
+
 def identity(row):
     return {"uuid": row["uuid"], "name": row["name"]}
 
@@ -85,18 +104,32 @@ def create_app(
     name_lookup=mojang_uuid,
     release_loader=None,
     slayer_loader=None,
+    owner_uuid=None,
+    network_key=None,
 ) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app):
         path = database or Path(os.environ.get("MITHRIL_AUTH_DB", ".local/auth.sqlite3"))
         app.state.auth = AuthStore(Path(path), **({"clock": clock} if clock else {}))
-        app.state.records = RecordStore(Path(path).with_name("records.sqlite3"))
+        app.state.records = RecordStore(
+            Path(path).with_name("records.sqlite3"), clock=clock or time.time
+        )
+        key_path = os.environ.get("MITHRIL_NETWORK_KEY_FILE")
+        app.state.moderation = Moderation(
+            app.state.records,
+            owner_uuid or os.environ.get("MITHRIL_OWNER_UUID"),
+            network_key or (Path(key_path).read_bytes() if key_path else None),
+        )
+        app.state.privacy = Privacy(app.state.auth, app.state.moderation, Path(path).resolve())
         slayer_market.history_path = Path(path).with_name("pet-prices.sqlite3")
 
         async def cleanup():
             while True:
                 await asyncio.sleep(3600)
-                app.state.auth.cleanup()
+                await run_in_threadpool(app.state.auth.cleanup)
+                await run_in_threadpool(app.state.records.cleanup)
+                await run_in_threadpool(app.state.moderation.cleanup)
+                await run_in_threadpool(app.state.privacy.cleanup)
 
         tasks = [
             asyncio.create_task(cleanup()),
@@ -127,7 +160,9 @@ def create_app(
 
     @app.middleware("http")
     async def limits(request, call_next):
-        if request.url.path.startswith(("/api/v1/auth/", "/api/v1/party/")):
+        if request.url.path.startswith(
+            ("/api/v1/auth/", "/api/v1/party/", "/api/v1/records/", "/api/v1/moderation/")
+        ):
             # Nginx also bounds streaming requests; do not accept chunked auth bodies.
             length = request.headers.get("content-length", "0")
             if (
@@ -137,10 +172,30 @@ def create_app(
                 or "transfer-encoding" in request.headers
             ):
                 return Response(status_code=413)
+        if request.url.path.startswith("/api/v1/party/"):
+            try:
+                await run_in_threadpool(party_access, request)
+            except HTTPException as error:
+                return JSONResponse(
+                    {"detail": error.detail},
+                    status_code=error.status_code,
+                    headers={"Cache-Control": "no-store"},
+                )
         response = await call_next(request)
         response.headers["Cache-Control"] = "no-store"
         response.headers["X-Content-Type-Options"] = "nosniff"
         return response
+
+    def party_access(request):
+        authorization = request.headers.get("authorization", "")
+        is_mod = request.url.path.startswith("/api/v1/party/mod/")
+        row = (
+            app.state.auth.party_identity(authorization[7:])
+            if is_mod and re.fullmatch(BEARER_PATTERN, authorization)
+            else app.state.auth.get(request.cookies.get(COOKIE, ""), "session")
+        )
+        if row:
+            app.state.moderation.check(row["uuid"], request.client.host if request.client else None)
 
     def browser(request):
         if request.headers.get("origin") != "https://mithril.foo":
@@ -173,12 +228,13 @@ def create_app(
     def challenge(body: Challenge, request: Request):
         mod(request)
         challenge_attempts.check(request.client.host if request.client else "unknown")
-        server_id = secrets.token_hex(20)[1:]
+        server_id, nonce = ownership_challenge(body, "link")
         token = request.app.state.auth.issue("challenge", body.uuid, body.name, 60, server_id)
         return {
             "version": 1,
             "challenge_id": token,
             "server_id": server_id,
+            "server_nonce": nonce,
             "expires_in_seconds": 60,
         }
 
@@ -213,7 +269,9 @@ def create_app(
         verification_attempts.check(request.client.host if request.client else "unknown")
         store = request.app.state.auth
         row = verify_ownership(request, body.challenge_id, "challenge")
-        token, receipt, code = store.issue_link(row["uuid"], row["name"])
+        token, receipt, code = store.issue_link(
+            row["uuid"], row["name"], expected_epoch=row["_epoch"]
+        )
         return {
             "version": 1,
             "link_token": token,
@@ -236,12 +294,13 @@ def create_app(
         session = store.linked_receipt(body.receipt_token)
         if not session or session["uuid"] != body.uuid:
             raise HTTPException(401, "Link your browser first")
-        server_id = secrets.token_hex(20)[1:]
+        server_id, nonce = ownership_challenge(body, scope)
         token = store.issue(f"{scope}_challenge", body.uuid, body.name, 60, server_id)
         return {
             "version": 1,
             "challenge_id": token,
             "server_id": server_id,
+            "server_nonce": nonce,
             "expires_in_seconds": 60,
         }
 
@@ -262,7 +321,14 @@ def create_app(
         session = store.linked_receipt(body.receipt_token)
         if not session or session["uuid"] != row["uuid"]:
             raise HTTPException(401, "Link your browser first")
-        token = store.issue(scope, row["uuid"], row["name"], lifetime, server_id=session["token"])
+        token = store.issue(
+            scope,
+            row["uuid"],
+            row["name"],
+            lifetime,
+            server_id=session["token"],
+            expected_epoch=row["_epoch"],
+        )
         return {
             "version": 1,
             f"{scope}_token": token,
@@ -270,17 +336,57 @@ def create_app(
             "user": identity(row),
         }
 
-    @app.post("/api/v1/auth/sync-records")
+    @app.post(
+        "/api/v1/auth/sync-records", responses={410: {"description": "Use live record tracking"}}
+    )
     def sync_records(body: Submission, request: Request):
         mod(request)
         authorization = request.headers.get("authorization", "")
-        if not re.fullmatch(r"Bearer [A-Za-z0-9_-]{43}", authorization):
+        if not re.fullmatch(BEARER_PATTERN, authorization):
             raise HTTPException(401, "Mod authentication required")
         user = request.app.state.auth.sync_identity(authorization[7:])
         if not user:
             raise HTTPException(401, "Mod authentication expired")
-        request.app.state.records.merge(user["uuid"], body.records)
-        return {"version": 1, "user": user, "accepted": len(body.records)}
+        raise HTTPException(
+            410, "Update MithrilPF to submit new records. Existing synced PBs remain eligible."
+        )
+
+    def record_user(request):
+        mod(request)
+        authorization = request.headers.get("authorization", "")
+        if not re.fullmatch(BEARER_PATTERN, authorization):
+            raise HTTPException(401, "Mod authentication required")
+        user = request.app.state.auth.sync_identity(authorization[7:])
+        if not user:
+            raise HTTPException(401, "Mod authentication expired")
+        request.app.state.moderation.check(
+            user["uuid"], request.client.host if request.client else None, remember=True
+        )
+        return user["uuid"]
+
+    def submit_record(request, method, body):
+        # Authenticate again under the write lock: revocation/erasure cannot race a submission.
+        with app.state.records.lock:
+            uuid = record_user(request)
+            return uuid, getattr(app.state.records, method)(uuid, body)
+
+    @app.post("/api/v1/records/solo-start")
+    async def solo_start(body: SoloStart, request: Request):
+        _, result = await run_in_threadpool(submit_record, request, "start", body)
+        return result
+
+    @app.post("/api/v1/records/solo-progress")
+    async def solo_progress(body: SoloProgress, request: Request):
+        uuid, result = await run_in_threadpool(submit_record, request, "progress", body)
+        if result["status"] == "accepted":
+            await app.state.records_changed(uuid)
+        return result
+
+    @app.post("/api/v1/records/terminal-report")
+    async def terminal_report(body: TerminalReport, request: Request):
+        uuid, result = await run_in_threadpool(submit_record, request, "terminal", body)
+        await app.state.records_changed(uuid)
+        return result
 
     @app.post("/api/v1/auth/link-status")
     def link_status(body: Link, request: Request):
@@ -332,15 +438,22 @@ def create_app(
         if row["remembered"] and row["expires"] - store.clock() < 29 * DAY:
             store.renew(token)
             set_cookie(response, token, True)
-        return {"authenticated": True, "user": identity(row)}
+        return {
+            "authenticated": True,
+            "user": identity(row),
+            "moderator": bool(app.state.moderation.role(row["uuid"])),
+        }
 
-    @app.get("/api/v1/auth/skin")
+    @app.get("/api/v1/auth/skin", responses={401: {"description": "Session revoked"}})
     def skin(request: Request):
         token = request.cookies.get(COOKIE, "")
         row = request.app.state.auth.get(token, "session")
         if not row:
             raise HTTPException(401, "Sign in first")
         result = skins.get(row["uuid"])
+        if not request.app.state.auth.get(token, "session"):
+            skins.erase(row["uuid"])
+            raise HTTPException(401, "Sign in first")
         if not result:
             raise HTTPException(503, "Skin unavailable. Try again later.")
         return result
@@ -377,12 +490,15 @@ def create_app(
             raise HTTPException(503, "Skin unavailable. Try again later.")
         return result
 
-    @app.get("/api/v1/auth/player-card")
+    @app.get("/api/v1/auth/player-card", responses={401: {"description": "Session revoked"}})
     def player_card(request: Request):
         row = request.app.state.auth.get(request.cookies.get(COOKIE, ""), "session")
         if not row:
             raise HTTPException(401, "Sign in first")
         summary = cards.get(row["uuid"])
+        if not request.app.state.auth.get(request.cookies.get(COOKIE, ""), "session"):
+            cards.erase(row["uuid"])
+            raise HTTPException(401, "Sign in first")
         if summary is None:
             raise HTTPException(503, "Player stats unavailable. Try again shortly.")
         summary = with_mod_records(summary, request.app.state.records.read(row["uuid"]))
@@ -417,6 +533,9 @@ def create_app(
         wait=party_wait,
         name_lookup=name_lookup,
     )
+
+    register_moderation(app, browser, name_lookup)
+    register_privacy(app, browser, skins, cards)
 
     app.add_middleware(
         TrustedHostMiddleware,

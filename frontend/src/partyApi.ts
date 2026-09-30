@@ -301,6 +301,12 @@ export class PartyRequestError extends Error {
 }
 
 const MESSAGES: Record<string, string> = {
+  "Chat muted": "You are muted in party chat.",
+  "Account or connection banned":
+    "Your account or connection is banned from the party finder.",
+  "Message unavailable": "That message is no longer available.",
+  "Report limit reached; try again tomorrow":
+    "Report limit reached. Try again tomorrow.",
   chat_rate_limited: "You’re sending messages too quickly. Wait a moment.",
   invalid_message: "Use 1–256 characters without control or formatting codes.",
   message_conflict:
@@ -431,6 +437,11 @@ export const partyApi = {
       party_id: partyId,
       text,
       request_id: requestId,
+    }),
+  report: (partyId: string, messageId: string, reason: string) =>
+    call("chat/report", {
+      json: { version: 1, party_id: partyId, message_id: messageId, reason },
+      signal: AbortSignal.timeout(15000),
     }),
   publish: (body: PublishBody) => action("publish", body),
   edit: (rules: Rules, blocked: string[], blockNames: string[]) =>

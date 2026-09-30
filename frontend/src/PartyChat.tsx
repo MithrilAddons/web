@@ -16,10 +16,12 @@ export function PartyChat({
   messages,
   connected,
   onSend,
+  onReport,
 }: {
   messages: ChatMessage[];
   connected: boolean;
   onSend: (text: string, requestId: string) => Promise<void>;
+  onReport?: (messageId: string, reason: string) => Promise<void>;
 }) {
   const id = useId();
   const [draft, setDraft] = useState("");
@@ -72,6 +74,7 @@ export function PartyChat({
           {!connected ? "Reconnecting…" : "Connected"}
         </span>
         <button
+          type="button"
           className="text-button"
           aria-expanded={!collapsed}
           aria-controls={`${id}-body`}
@@ -127,6 +130,12 @@ export function PartyChat({
                         </time>
                       </div>
                       <p>{message.text}</p>
+                      {onReport && (
+                        <ReportMessage
+                          messageId={message.id}
+                          onReport={onReport}
+                        />
+                      )}
                     </div>
                   </div>
                 ) : (
@@ -138,7 +147,11 @@ export function PartyChat({
             )}
           </div>
           {unread && (
-            <button className="chat-jump small-button" onClick={bottom}>
+            <button
+              type="button"
+              className="chat-jump small-button"
+              onClick={bottom}
+            >
               New messages ↓
             </button>
           )}
@@ -195,5 +208,82 @@ export function PartyChat({
         )}
       </div>
     </section>
+  );
+}
+
+function ReportMessage({
+  messageId,
+  onReport,
+}: Readonly<{
+  messageId: string;
+  onReport: (id: string, reason: string) => Promise<void>;
+}>) {
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const working = useRef(false);
+  const [status, setStatus] = useState("");
+  async function sendReport() {
+    if (working.current || !reason.trim()) return;
+    working.current = true;
+    setBusy(true);
+    setStatus("");
+    try {
+      await onReport(messageId, reason.trim());
+      setOpen(false);
+      setStatus("Reported.");
+    } catch (error) {
+      setStatus(errorMessage(error));
+    } finally {
+      working.current = false;
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="chat-report">
+      {!open && status !== "Reported." && (
+        <button
+          type="button"
+          className="text-button"
+          onClick={() => setOpen(true)}
+        >
+          Report
+        </button>
+      )}
+      {open && (
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            void sendReport();
+          }}
+        >
+          <label>
+            Report reason{" "}
+            <input
+              required
+              maxLength={500}
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+            />
+          </label>
+          <button
+            type="submit"
+            disabled={busy || !reason.trim()}
+            className="small-button"
+          >
+            Submit report
+          </button>
+          <button
+            type="button"
+            className="text-button"
+            disabled={busy}
+            onClick={() => setOpen(false)}
+          >
+            Cancel
+          </button>
+        </form>
+      )}
+      {status && <output>{status}</output>}
+    </div>
   );
 }

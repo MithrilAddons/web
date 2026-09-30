@@ -1,0 +1,107 @@
+.moderation {
+  display: grid;
+  gap: 20px;
+  width: 100%;
+}
+.moderation h1,
+.moderation h2,
+.moderation h3,
+.moderation p {
+  margin: 0;
+}
+.moderation label {
+  display: grid;
+  gap: 6px;
+}
+.moderation input,
+.moderation select,
+.moderation textarea {
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  min-width: 0;
+}
+.moderation textarea {
+  resize: vertical;
+}
+.moderation input:not([type="checkbox"]) {
+  width: 100%;
+  height: auto;
+}
+.content-page .moderation :is(h1, h2, h3, p) {
+  margin: 0;
+}
+.moderation :is(select, textarea, summary):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.moderation-search,
+.moderation-correction,
+.moderation-actions {
+  display: flex;
+  gap: 12px;
+  align-items: end;
+  flex-wrap: wrap;
+}
+.moderation-search label {
+  flex: 1;
+}
+.moderation-records {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+  display: grid;
+  gap: 12px;
+}
+.moderation-records li,
+.moderation-sanction {
+  padding: 18px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+}
+.moderation .moderation-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.moderation-check input {
+  width: auto;
+}
+.moderation pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+.moderation code {
+  overflow-wrap: anywhere;
+}
+.moderation summary {
+  cursor: pointer;
+}
+.moderation-correction {
+  margin-top: 12px;
+}
+.moderation [role="alert"] {
+  color: var(--danger);
+}
+.moderation [role="status"] {
+  color: var(--success);
+}
+@media (max-width: 600px) {
+  .moderation-search,
+  .moderation-correction {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+.privacy-form {
+  display: grid;
+  gap: 16px;
+}

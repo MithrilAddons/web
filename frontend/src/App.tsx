@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { getHealth } from "./api";
 import { CookiePolicy, LinkAccount } from "./account";
 import { PartyWorkspace } from "./PartyFinder";
+import { AccountPrivacy, PrivacyPolicy } from "./Privacy";
+import { Moderation } from "./Moderation";
 import { SlayerProfits } from "./SlayerProfits";
 
 // Remove the bearer secret before React renders (including StrictMode remounts).
@@ -68,6 +70,7 @@ export function App() {
       <footer className="site-footer">
         <p>Not affiliated with Hypixel or Mojang.</p>
         <a href="/cookies">Cookies</a>
+        <a href="/privacy">Privacy</a>
         <a
           href={
             sourceRef === "main" ? sourceUrl : `${sourceUrl}/tree/${sourceRef}`
@@ -93,6 +96,12 @@ function PageContent({ path }: Readonly<{ path: string }>) {
     case "/slayer-profits":
     case "/slayerprofits":
       return <SlayerProfits />;
+    case "/privacy":
+      return <PrivacyPolicy />;
+    case "/account":
+      return <AccountPrivacy />;
+    case "/moderation":
+      return <Moderation />;
     case "/link":
       return (
         <div className="link-panel">

@@ -692,7 +692,7 @@ class Finder:
         text = text.strip()
         now = self.clock()
         if previous := party.chat.previous(uuid, request_id, now):
-            if previous["text"] != text or previous["source"] != source:
+            if previous["text"] != text or previous.get("source") != source:
                 raise PartyError("message_conflict")
             return previous
         while player.chat_sent and player.chat_sent[0] <= now - 60:
@@ -714,7 +714,9 @@ class Finder:
             "version": 1,
             "party_id": party.id,
             "latest": party.chat.sequence,
-            "messages": [m for m in party.chat.messages if int(m["id"]) > after],
+            "messages": [
+                m for m in party.chat.messages if int(m["id"]) > after and m.get("sender")
+            ],
         }
 
     # -- periodic sweep ------------------------------------------------------------

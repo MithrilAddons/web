@@ -114,3 +114,9 @@ Check desktop/narrow layouts, keyboard focus, skin rotation, player-card dialogs
 form inputs and service failures. Test party creation, eligible class selection,
 restored floor selection and full/invited states. Live Minecraft handoff checks
 are in API.md. Automated tests do not establish live-game correctness.
+
+After building, `python tools/preview_moderation.py` serves a read-only synthetic
+moderation layout at http://127.0.0.1:8792/moderation. Check desktop/narrow layouts,
+reason-required actions, record corrections, case/appeal controls and keyboard focus.
+Backend permission, revocation, audit atomicity and erasure/restore tests use temporary
+SQLite files. Do not point preview/test tools at production accounts or databases.

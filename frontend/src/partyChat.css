@@ -199,3 +199,12 @@
     margin-inline: 10px;
   }
 }
+
+.chat-report form {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+.chat-report input {
+  width: 100%;
+}

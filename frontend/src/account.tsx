@@ -4,7 +4,7 @@ import { PlayerCard } from "./PlayerCard";
 import { SkinAvatar } from "./SkinAvatar";
 
 type User = { uuid: string; name: string };
-type Session = { authenticated: boolean; user?: User };
+type Session = { authenticated: boolean; user?: User; moderator?: boolean };
 
 async function request<T>(path: string, body?: object): Promise<T> {
   const response = await fetch(`/api/v1/auth/${path}`, {
@@ -82,6 +82,8 @@ export function Account() {
             name={session.user.name}
             uuid={session.user.uuid}
           />
+          <a href="/account">Manage data</a>
+          {session.moderator && <a href="/moderation">Moderation</a>}
           {cardOpen && (
             <PlayerCard
               key={`card-${session.user.uuid}`}

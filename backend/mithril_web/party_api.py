@@ -20,6 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from starlette.concurrency import run_in_threadpool
 
 from .auth import COOKIE
+from .moderation_api import Action
 from .parties import PartyError, player_stats
 
 WAIT = 25  # clients re-request immediately, well inside the 60 s presence grace
@@ -107,6 +108,11 @@ class Empty(Strict):
     pass
 
 
+class ChatReport(Action):
+    party_id: str = Field(pattern=r"^[A-Za-z0-9_-]{12}$")
+    message_id: str = Field(pattern=r"^[0-9]{1,12}$")
+
+
 class ModPresence(Strict):
     version: Literal[1]
     online: bool = True
@@ -176,6 +182,7 @@ class StatsService:
         self.entries = OrderedDict()
         self.failed = {}
         self.pending = set()
+        self.erased_pending = set()
         self.attempts = deque()
 
     async def get(self, uuid):
@@ -189,7 +196,7 @@ class StatsService:
                     self.entries.popitem(last=False)
         if entry is None:
             return None
-        return player_stats(entry[1], self.records(uuid))
+        return player_stats(entry[1], await run_in_threadpool(self.records, uuid))
 
     async def _fetch(self, uuid, now):
         while self.attempts and self.attempts[0] <= now - 60:
@@ -204,7 +211,10 @@ class StatsService:
         self.pending.add(uuid)
         self.attempts.append(now)
         try:
-            return await run_in_threadpool(self.loader, uuid)
+            result = await run_in_threadpool(self.loader, uuid)
+            if uuid in self.erased_pending:
+                return None
+            return result
         except (OSError, ValueError, TypeError, KeyError, http.client.HTTPException):
             self.failed[uuid] = now
             if len(self.failed) > 4000:
@@ -212,6 +222,7 @@ class StatsService:
             return None
         finally:
             self.pending.discard(uuid)
+            self.erased_pending.discard(uuid)
 
 
 class Waiters:
@@ -248,18 +259,84 @@ def register(app, finder, stats, browser, mod, *, wait=WAIT, name_lookup=mojang_
         finally:
             waiters.wake(finder.drain())
 
-    def session(request):
-        row = request.app.state.auth.get(request.cookies.get(COOKIE, ""), "session")
+    async def records_changed(uuid):
+        records = await run_in_threadpool(app.state.records.read, uuid)
+        player = finder.players.get(uuid)
+        if player and player.stats is not None:
+            # Re-read PBs without fetching Hypixel; invalidations must clear cached minima.
+            values = player_stats({}, records)
+            fresh = {
+                **player.stats,
+                "solo_ms": values["solo_ms"],
+                "terminals_ms": values["terminals_ms"],
+            }
+            run(lambda: finder.set_stats(uuid, fresh))
+
+    def remove_players(uuids):
+        for uuid in uuids:
+            player = finder.players.get(uuid)
+            if not player:
+                continue
+            run(lambda uuid=uuid: finder.stop_looking(uuid))
+            if player.party:
+                run(lambda uuid=uuid: finder.leave(uuid))
+            finder.players.pop(uuid, None)
+            waiters.wake([uuid])
+
+    def hide_message(party_id, message_id):
+        party = finder.parties.get(party_id)
+        if not party:
+            return
+        party.chat.hide(message_id)
+        for uuid in party.members():
+            finder._touch(finder.players[uuid])
+        waiters.wake(finder.drain())
+
+    def erase_player(uuid):
+        stats.entries.pop(uuid, None)
+        stats.failed.pop(uuid, None)
+        if uuid in stats.pending:
+            stats.erased_pending.add(uuid)
+        for party in finder.parties.values():
+            for message in party.chat.messages:
+                if (message.get("sender") or {}).get("uuid") == uuid:
+                    hide_message(party.id, message["id"])
+            for key in [key for key in party.chat.receipts if key[0] == uuid]:
+                del party.chat.receipts[key]
+        remove_players([uuid])
+
+    app.state.erase_player = erase_player
+
+    app.state.hide_message = hide_message
+
+    app.state.records_changed = records_changed
+    app.state.remove_players = remove_players
+
+    async def allowed(request, row, remember=False):
+        await run_in_threadpool(
+            app.state.moderation.check,
+            row["uuid"],
+            request.client.host if request.client else None,
+            request.url.path in ("/api/v1/party/chat", "/api/v1/party/mod/chat/send"),
+            remember,
+        )
+        return row
+
+    async def session(request):
+        row = await run_in_threadpool(
+            request.app.state.auth.get, request.cookies.get(COOKIE, ""), "session"
+        )
         if not row:
             raise HTTPException(401, "Sign in first")
-        return row
+        return await allowed(request, row)
 
     async def enter(request, refresh=False):
         browser(request)
-        row = session(request)
+        row = await session(request)
         player = run(lambda: finder.seen(row["uuid"], row["name"], "web"))
         if refresh or player.stats is None:
             fresh = await stats.get(row["uuid"])
+            await session(request)
             if row["uuid"] in finder.players:
                 run(lambda: finder.set_stats(row["uuid"], fresh))
         return row["uuid"]
@@ -306,7 +383,7 @@ def register(app, finder, stats, browser, mod, *, wait=WAIT, name_lookup=mojang_
         same_state = body.state_id is None or body.state_id == finder.players[uuid].state_id
         if same_state and body.known is not None and body.known == finder.players[uuid].version:
             await waiters.wait(uuid, wait)
-        session(request)  # A logout/expiry during the held request must revoke chat too.
+        await session(request)  # A logout/expiry during the held request must revoke chat too.
         player = finder.players.get(uuid)
         if player is None:
             raise HTTPException(409, "unknown_player")
@@ -317,11 +394,31 @@ def register(app, finder, stats, browser, mod, *, wait=WAIT, name_lookup=mojang_
     @app.post("/api/v1/party/chat")
     async def chat(body: ChatSend, request: Request):
         browser(request)
-        uuid = session(request)["uuid"]
+        uuid = (await session(request))["uuid"]
         run(
             lambda: finder.send_chat(uuid, body.party_id, body.request_id, body.text, "web"),
         )
         return finder.personal(uuid)
+
+    @app.post("/api/v1/party/chat/report")
+    async def report_chat(body: ChatReport, request: Request):
+        browser(request)
+        uuid = (await session(request))["uuid"]
+        view = run(lambda: finder.chat_view(uuid, body.party_id))
+        message = next((m for m in view["messages"] if m["id"] == body.message_id), None)
+        if not message or not message.get("sender"):
+            raise HTTPException(404, "Message unavailable")
+        snapshot = dict(message)
+
+        def save_report():
+            with app.state.records.lock:
+                current = app.state.auth.get(request.cookies.get(COOKIE, ""), "session")
+                if not current or current["uuid"] != uuid:
+                    raise HTTPException(401, "Sign in first")
+                return app.state.moderation.chat.submit(uuid, body.party_id, snapshot, body.reason)
+
+        report_id = await run_in_threadpool(save_report)
+        return {"version": 1, "report_id": report_id}
 
     @app.post("/api/v1/party/look")
     async def look(body: LookRequest, request: Request):
@@ -351,6 +448,7 @@ def register(app, finder, stats, browser, mod, *, wait=WAIT, name_lookup=mojang_
         if finder.players[uuid].party:
             raise HTTPException(409, "in_party")
         blocked = await resolve(body.block_names)
+        await session(request)
         run(
             lambda: finder.publish(
                 uuid,
@@ -369,6 +467,7 @@ def register(app, finder, stats, browser, mod, *, wait=WAIT, name_lookup=mojang_
         uuid = await enter(request)
         run(lambda: finder._led(uuid))
         added = await resolve(body.block_names)
+        await session(request)
         run(lambda: finder.edit(uuid, body.rules.model_dump(), body.blocked, added))
         return finder.personal(uuid)
 
@@ -387,7 +486,7 @@ def register(app, finder, stats, browser, mod, *, wait=WAIT, name_lookup=mojang_
     @app.get("/api/v1/party/listings")
     async def listings(floor: Floor, request: Request):
         """Shared compact rows; send the ETag back as If-None-Match to get a 304."""
-        viewer = session(request)["uuid"]
+        viewer = (await session(request))["uuid"]
         viewer_tag = zlib.crc32(viewer.encode())
         tag = f'"{finder.epoch}-{floor}-{finder.floor_version[floor]}-{viewer_tag:x}"'
         if request.headers.get("if-none-match") == tag:
@@ -412,7 +511,7 @@ def register(app, finder, stats, browser, mod, *, wait=WAIT, name_lookup=mojang_
 
     @app.get("/api/v1/party/listings/{party_id}")
     async def detail(party_id: str, request: Request):
-        viewer = session(request)["uuid"]
+        viewer = (await session(request))["uuid"]
         party = finder.parties.get(party_id)
         if (
             not party
@@ -423,19 +522,19 @@ def register(app, finder, stats, browser, mod, *, wait=WAIT, name_lookup=mojang_
             raise HTTPException(404, "not_found")
         return {"version": 1, **finder.detail(party)}
 
-    def mod_user(request):
+    async def mod_user(request):
         mod(request)
         authorization = request.headers.get("authorization", "")
         if not re.fullmatch(r"Bearer [A-Za-z0-9_-]{43}", authorization):
             raise HTTPException(401, "Mod authentication required")
-        user = request.app.state.auth.party_identity(authorization[7:])
+        user = await run_in_threadpool(request.app.state.auth.party_identity, authorization[7:])
         if not user:
             raise HTTPException(401, "Mod authentication expired")
-        return user
+        return await allowed(request, user, remember=True)
 
     @app.post("/api/v1/party/mod/chat/send")
     async def mod_chat_send(body: ChatSend, request: Request):
-        user = mod_user(request)
+        user = await mod_user(request)
         message = run(
             lambda: finder.send_chat(
                 user["uuid"], body.party_id, body.request_id, body.text, "game"
@@ -445,17 +544,17 @@ def register(app, finder, stats, browser, mod, *, wait=WAIT, name_lookup=mojang_
 
     @app.post("/api/v1/party/mod/chat/state")
     async def mod_chat_state(body: ChatRead, request: Request):
-        user = mod_user(request)
+        user = await mod_user(request)
         view = run(lambda: finder.chat_view(user["uuid"], body.party_id, body.after))
         if view["latest"] == body.after:
             await waiters.wait(user["uuid"], wait)
-        mod_user(request)
+        await mod_user(request)
         return run(lambda: finder.chat_view(user["uuid"], body.party_id, body.after))
 
     @app.post("/api/v1/party/mod/presence")
     async def presence(body: ModPresence, request: Request):
         """Online means connected to Hypixel, not simply that Minecraft is running."""
-        user = mod_user(request)
+        user = await mod_user(request)
         run(lambda: finder.seen(user["uuid"], user["name"], "mod", body.online))
         tracked = user["uuid"] in finder.players
         return {
@@ -468,7 +567,7 @@ def register(app, finder, stats, browser, mod, *, wait=WAIT, name_lookup=mojang_
 
     @app.post("/api/v1/party/mod/roster")
     async def roster(body: ModRoster, request: Request):
-        user = mod_user(request)
+        user = await mod_user(request)
         run(
             lambda: finder.report_roster(
                 user["uuid"], body.party_id, body.handoff_id, body.leader, body.members
@@ -482,7 +581,7 @@ def register(app, finder, stats, browser, mod, *, wait=WAIT, name_lookup=mojang_
 
     @app.post("/api/v1/party/mod/invite")
     async def invite(body: ModInvite, request: Request):
-        user = mod_user(request)
+        user = await mod_user(request)
         names = run(
             lambda: finder.invite(
                 user["uuid"], body.party_id, body.handoff_id, body.leader, body.members, body.retry
