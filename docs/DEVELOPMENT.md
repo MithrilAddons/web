@@ -38,6 +38,14 @@ are `Verify (ubuntu-24.04)` and `Verify (windows-2025)`. Workflows have read-onl
 permissions and no production credentials; they do not deploy. Reports/builds are
 retained for 14 days; local reports are under ignored `build/reports/`.
 
+The Linux job submits SonarQube analysis with Python and frontend coverage reports
+and waits for the quality gate. Scanner logs are under **Actions → Verify →
+Verify (ubuntu-24.04) → SonarQube analysis**; coverage HTML/XML/LCOV reports are in
+the test-report artifact. Source and test boundaries are in `sonar-project.properties`.
+The repository needs a `SONAR_TOKEN` Actions secret and SonarQube automatic analysis
+must be off. Fork and Dependabot PRs run verification without the secret or scanner;
+their merged code is analyzed on main.
+
 Use focused `feat/`, `fix/`, `chore/`, `refactor/` or `docs/` branches, signed
 commits and PRs. Preserve protocol compatibility and optional-mod independence.
 Do not put secrets, account data or runtime files in fixtures or commits.

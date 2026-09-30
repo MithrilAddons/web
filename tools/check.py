@@ -27,7 +27,17 @@ def main() -> None:
         [uv, "lock", "--check", "--offline"],
         [uv, "run", "--locked", "--no-sync", "ruff", "check", "."],
         [uv, "run", "--locked", "--no-sync", "ruff", "format", "--check", "."],
-        [uv, "run", "--locked", "--no-sync", "pytest", "--junitxml=build/reports/python.xml"],
+        [
+            uv,
+            "run",
+            "--locked",
+            "--no-sync",
+            "pytest",
+            "--junitxml=build/reports/python.xml",
+            "--cov",
+            "--cov-report=xml:build/reports/coverage/python.xml",
+            "--cov-report=html:build/reports/coverage/python",
+        ],
         *[[npm, "run", task] for task in ("format:check", "lint", "test", "build")],
     ]
     for command in commands:
