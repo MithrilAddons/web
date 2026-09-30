@@ -1,0 +1,411 @@
+{
+  "source": "https://github.com/NotEnoughUpdates/NotEnoughUpdates-REPO/tree/051234a9d54a7cd5a66f56a1be1bc388f6cdbdde",
+  "pets": {
+    "BLAZE": {
+      "upgrades": [
+        {
+          "coins": 250000,
+          "seconds": 86400,
+          "items": {
+            "ENCHANTED_BLAZE_POWDER": 128
+          }
+        },
+        {
+          "coins": 500000,
+          "seconds": 172800,
+          "items": {
+            "ENCHANTED_BLAZE_POWDER": 256
+          }
+        },
+        {
+          "coins": 1000000,
+          "seconds": 259200,
+          "items": {
+            "ENCHANTED_BLAZE_POWDER": 512
+          }
+        },
+        {
+          "coins": 2500000,
+          "seconds": 432000,
+          "items": {
+            "ENCHANTED_BLAZE_ROD": 8
+          }
+        }
+      ]
+    },
+    "CROW": {
+      "upgrades": [
+        {
+          "coins": 250000,
+          "seconds": 86400,
+          "items": {
+            "ENCHANTED_MOONFLOWER": 128
+          }
+        },
+        {
+          "coins": 1000000,
+          "seconds": 172800,
+          "items": {
+            "COMPACTED_MOONFLOWER": 4,
+            "VEILSHROOM": 2
+          }
+        },
+        {
+          "coins": 5000000,
+          "seconds": 259200,
+          "items": {
+            "COMPACTED_MOONFLOWER": 8,
+            "DUSKBLOOM": 4
+          }
+        },
+        {
+          "coins": 10000000,
+          "seconds": 432000,
+          "items": {
+            "COMPACTED_MOONFLOWER": 16,
+            "DO_NOT_EAT_SHROOM": 8
+          }
+        }
+      ]
+    },
+    "ENDERMAN": {
+      "upgrades": [
+        {
+          "coins": 1000,
+          "seconds": 86400,
+          "items": {}
+        },
+        {
+          "coins": 5000,
+          "seconds": 172800,
+          "items": {}
+        },
+        {
+          "coins": 10000,
+          "seconds": 518400,
+          "items": {}
+        },
+        {
+          "coins": 40000000,
+          "seconds": 1036800,
+          "items": {
+            "ENCHANTED_EYE_OF_ENDER": 8
+          }
+        }
+      ]
+    },
+    "GRIFFIN": {
+      "upgrades": [
+        {
+          "coins": 100,
+          "seconds": 60,
+          "items": {
+            "GRIFFIN_UPGRADE_STONE_UNCOMMON": 1
+          }
+        },
+        {
+          "coins": 10000,
+          "seconds": 3600,
+          "items": {
+            "GRIFFIN_UPGRADE_STONE_RARE": 1
+          }
+        },
+        {
+          "coins": 250000,
+          "seconds": 86400,
+          "items": {
+            "GRIFFIN_UPGRADE_STONE_EPIC": 1
+          }
+        },
+        {
+          "coins": 500000,
+          "seconds": 259200,
+          "items": {
+            "GRIFFIN_UPGRADE_STONE_LEGENDARY": 1
+          }
+        }
+      ]
+    },
+    "HORSE": {
+      "upgrades": [
+        {
+          "coins": 500,
+          "seconds": 10,
+          "items": {
+            "LEATHER": 128
+          }
+        },
+        {
+          "coins": 2500,
+          "seconds": 20,
+          "items": {
+            "LEATHER": 256
+          }
+        },
+        {
+          "coins": 5000,
+          "seconds": 30,
+          "items": {
+            "LEATHER": 512
+          }
+        },
+        {
+          "coins": 10000,
+          "seconds": 45,
+          "items": {
+            "ENCHANTED_LEATHER": 8
+          }
+        }
+      ]
+    },
+    "JERRY": {
+      "upgrades": [
+        {
+          "coins": 500,
+          "seconds": 10,
+          "items": {
+            "ASSISTANT": 1
+          }
+        },
+        {
+          "coins": 2500,
+          "seconds": 20,
+          "items": {
+            "ASSISTANT": 1
+          }
+        },
+        {
+          "coins": 5000,
+          "seconds": 30,
+          "items": {
+            "ASSISTANT": 1
+          }
+        },
+        {
+          "coins": 10000,
+          "seconds": 45,
+          "items": {
+            "ASSISTANT": 1
+          }
+        }
+      ]
+    },
+    "MAGMA_CUBE": {
+      "upgrades": [
+        {
+          "coins": 2500,
+          "seconds": 7200,
+          "items": {}
+        },
+        {
+          "coins": 5000,
+          "seconds": 72000,
+          "items": {}
+        },
+        {
+          "coins": 100000,
+          "seconds": 432000,
+          "items": {}
+        },
+        {
+          "coins": 500000,
+          "seconds": 864000,
+          "items": {
+            "ENCHANTED_MAGMA_CREAM": 16
+          }
+        }
+      ]
+    },
+    "PIGMAN": {
+      "upgrades": [
+        {
+          "coins": 25000,
+          "seconds": 3600,
+          "items": {
+            "ENCHANTED_PORK": 16
+          }
+        },
+        {
+          "coins": 50000,
+          "seconds": 10800,
+          "items": {
+            "ENCHANTED_PORK": 32
+          }
+        },
+        {
+          "coins": 100000,
+          "seconds": 21600,
+          "items": {
+            "ENCHANTED_PORK": 64
+          }
+        },
+        {
+          "coins": 250000,
+          "seconds": 43200,
+          "items": {
+            "ENCHANTED_PORK": 128
+          }
+        }
+      ]
+    },
+    "SKELETON": {
+      "upgrades": [
+        {
+          "coins": 5000,
+          "seconds": 300,
+          "items": {
+            "BONE": 512
+          }
+        },
+        {
+          "coins": 10000,
+          "seconds": 600,
+          "items": {
+            "ENCHANTED_BONE": 8
+          }
+        },
+        {
+          "coins": 25000,
+          "seconds": 900,
+          "items": {
+            "ENCHANTED_BONE": 16
+          }
+        },
+        {
+          "coins": 50000,
+          "seconds": 1800,
+          "items": {
+            "ENCHANTED_BONE": 32
+          }
+        }
+      ]
+    },
+    "SPIDER": {
+      "upgrades": [
+        {
+          "coins": 5000,
+          "seconds": 300,
+          "items": {
+            "STRING": 512,
+            "SPIDER_EYE": 256
+          }
+        },
+        {
+          "coins": 10000,
+          "seconds": 600,
+          "items": {
+            "ENCHANTED_STRING": 8,
+            "ENCHANTED_SPIDER_EYE": 4
+          }
+        },
+        {
+          "coins": 25000,
+          "seconds": 900,
+          "items": {
+            "ENCHANTED_STRING": 16,
+            "ENCHANTED_SPIDER_EYE": 8
+          }
+        },
+        {
+          "coins": 50000,
+          "seconds": 1800,
+          "items": {
+            "ENCHANTED_STRING": 32,
+            "ENCHANTED_SPIDER_EYE": 16
+          }
+        }
+      ]
+    },
+    "TIGER": {
+      "upgrades": [
+        {
+          "coins": 15000,
+          "seconds": 86400,
+          "items": {}
+        },
+        {
+          "coins": 75000,
+          "seconds": 172800,
+          "items": {}
+        },
+        {
+          "coins": 900000,
+          "seconds": 604800,
+          "items": {}
+        },
+        {
+          "coins": 14000000,
+          "seconds": 1036800,
+          "items": {
+            "ENCHANTED_RAW_CHICKEN": 1024
+          }
+        }
+      ]
+    },
+    "WOLF": {
+      "upgrades": [
+        {
+          "coins": 5000,
+          "seconds": 300,
+          "items": {
+            "LOG:1": 512
+          }
+        },
+        {
+          "coins": 10000,
+          "seconds": 600,
+          "items": {
+            "ENCHANTED_SPRUCE_LOG": 8
+          }
+        },
+        {
+          "coins": 25000,
+          "seconds": 900,
+          "items": {
+            "ENCHANTED_SPRUCE_LOG": 16
+          }
+        },
+        {
+          "coins": 50000,
+          "seconds": 1800,
+          "items": {
+            "ENCHANTED_SPRUCE_LOG": 32
+          }
+        }
+      ]
+    },
+    "ZOMBIE": {
+      "upgrades": [
+        {
+          "coins": 500,
+          "seconds": 10,
+          "items": {
+            "ROTTEN_FLESH": 128
+          }
+        },
+        {
+          "coins": 1000,
+          "seconds": 20,
+          "items": {
+            "ROTTEN_FLESH": 256
+          }
+        },
+        {
+          "coins": 2500,
+          "seconds": 30,
+          "items": {
+            "ROTTEN_FLESH": 512
+          }
+        },
+        {
+          "coins": 5000,
+          "seconds": 45,
+          "items": {
+            "ENCHANTED_ROTTEN_FLESH": 8
+          }
+        }
+      ]
+    }
+  },
+  "license": "MIT License\n\nCopyright (c) 2020 Moulberry\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.\n"
+}

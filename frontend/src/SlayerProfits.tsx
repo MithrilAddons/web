@@ -357,9 +357,11 @@ export function SlayerProfits() {
             valid ? `${total >= 0 ? "+" : "−"}${coins(Math.abs(total))}` : "—"
           }
           detail={
-            waiting || stale || result.unpriced > 0
+            waiting || stale || result.unpriced > 0 || !pets.pets.length
               ? "Partial estimate"
-              : "coins"
+              : (pets.pets[0]!.historyHours ?? 0) < 168
+                ? "Provisional pet prices"
+                : "coins"
           }
           state={total >= 0 ? "positive" : "negative"}
         />
@@ -503,9 +505,19 @@ export function SlayerProfits() {
                   <div>
                     <strong>{pet.name}</strong>
                     <small>
-                      {pet.rarity.toLowerCase()} · {pet.startLevel} →{" "}
-                      {pet.endLevel}
+                      {pet.kat
+                        ? "Common → Legendary · Kat"
+                        : pet.rarity.toLowerCase()}{" "}
+                      · {pet.startLevel} → {pet.endLevel}
                     </small>
+                    {pet.kat && (
+                      <small
+                        title={`Kat fees ${number(pet.kat.coins)} + materials ${number(pet.kat.materials)} + flowers ${number(pet.kat.flowerCost)} coins`}
+                      >
+                        {coins(pet.kat.total)} upgrades incl. {pet.kat.flowers}{" "}
+                        flowers
+                      </small>
+                    )}
                   </div>
                   <div>
                     +{coins(pet.coinsPerHour)}/hr
@@ -515,7 +527,14 @@ export function SlayerProfits() {
               ))}
             </ol>
           ) : (
-            <p className="slayer-note">No pet prices.</p>
+            <p className="slayer-note">No reliable pet prices.</p>
+          )}
+          {!!pets.pets.length && (
+            <p className="slayer-note">
+              {pets.pets.some((pet) => (pet.historyHours ?? 0) < 168)
+                ? "Provisional · building 7-day price history"
+                : "7-day prices · spikes excluded"}
+            </p>
           )}
         </section>
       </div>
@@ -535,6 +554,15 @@ export function SlayerProfits() {
           Pets: Taming 60, 50% Combat XP Boost, max Beastmaster and EXP Share
           items. Shards add 10% pet XP and 10 points of EXP Share. Applies the
           best pet margin to counted XP. Wisp resale profit is excluded.
+        </p>
+        <p>
+          Pet prices average hourly observations over seven days, excluding
+          outliers. Requires three comparable listings per price; after 24
+          observations, prices over 50% above or one-third below the baseline
+          are excluded. Uses the higher current/average buy price and lower
+          resale price. Skins and Tier Boost pets are excluded. Common pets
+          require full Legendary XP and all four Kat upgrades, with level-100
+          coin discounts, materials and flowers for each wait deducted.
         </p>
         {market && (
           <dl className="slayer-feed-times">

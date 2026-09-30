@@ -131,6 +131,35 @@ it("preserves pet XP assumptions, shard bonuses, margins, and zero throughput", 
   expect(petLeveling(tier, 0, quotes).best).toBe(0);
 });
 
+it("excludes plain Commons and deducts every Kat cost before ranking", () => {
+  const base = {
+    name: "Synthetic pet",
+    rarity: "LEGENDARY",
+    startLevel: 1,
+    endLevel: 100,
+    startPrice: 1e6,
+    endPrice: 10e6,
+    requiredXp: 25353230,
+    samples: 6,
+  };
+  const kat = {
+    coins: 1e6,
+    materials: 1e6,
+    flowers: 4,
+    flowerCost: 1e6,
+    total: 3e6,
+  };
+  const result = petLeveling(slayers[0]!.tiers[0]!, 60, [
+    { ...base, rarity: "COMMON", endPrice: 1e9 },
+    { ...base, rarity: "COMMON", kat, startPrice: 1e5 },
+    base,
+  ]);
+  expect(result.pets).toHaveLength(2);
+  expect(result.pets[0]!.rarity).toBe("LEGENDARY");
+  expect(result.pets[1]!.coinsPerXp).toBeCloseTo(6.9e6 / 25353230);
+  expect(result.best).toBeCloseTo((result.profitXp * 9e6) / 25353230);
+});
+
 it("applies Aatrox meter XP and quest discounts independently to both strategies", () => {
   const slayer = slayers[0]!;
   const tier = slayer.tiers[4]!;

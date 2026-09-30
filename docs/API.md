@@ -23,15 +23,21 @@ No GitHub credentials or proxying of JAR contents are involved.
 `bazaar` maps item IDs to `{instant, offer}`; `npc` maps item IDs/names to sell values.
 `auctions` maps drop names to `{price, source, samples, spread}`; source is `BIN`,
 `Recent sales`, or `Unstable BIN`. `pets` contains profitable Combat pet pairs with
-`{name, rarity, startLevel, endLevel, startPrice, endPrice, requiredXp, samples}`.
+`{name, rarity, endRarity, startLevel, endLevel, startPrice, endPrice, requiredXp,
+samples, historyHours, kat}`. `historyHours` counts observed hourly price buckets
+(up to 168); fewer than 168 means provisional. `kat` is null for same-rarity
+leveling or `{coins, materials, flowers, flowerCost, total}` for a Common to
+Legendary route. All costs except `flowers` (a count) are coins. Pet profit
+subtracts `kat.total` as well as the purchase price before dividing by XP.
 `feeds` contains `bazaar`, `npc`, `auctions`, and `sales`, each with
 `{status, updated}` (epoch seconds or null). Status is `loading`, `ready`, `stale`,
 or `unavailable`. Missing prices are omitted rather than invented. The calculator
 ships its factual drop catalogue and performs expected-value calculations locally.
 
 The server fetches only fixed, public Hypixel endpoints without an API key or
-player lookup. One background refresh loop runs while the page has been used
-within 15 minutes. Bazaar refreshes every five minutes, NPC data hourly, Auction
+player lookup. One background loop continuously collects Bazaar and pet prices;
+NPC and recent-drop sales refresh while the page has been used within 15 minutes.
+Bazaar refreshes every five minutes, NPC data hourly, Auction
 House every 15 minutes, and recently ended auctions every minute. Requests return
 the current snapshot immediately. Failed feeds back off for one minute, retaining
 last-known values for at most 24 hours. Browser refresh does not bypass these limits.
@@ -43,6 +49,25 @@ depth/element bounds. Network operations run off the application event loop.
 Recent sale history is process-local, deduplicated, and limited to 20 samples per
 eligible item over 24 hours; it resets on restart. No player or auction identifiers
 are returned to the browser. The endpoint uses the existing public nginx rate limit.
+
+Pet history persists in `pet-prices.sqlite3` beside the auth database. It stores
+one aggregate price per pet name/rarity/level/hour for seven days, never raw
+listings or player/auction IDs. Endpoints require three low listings within 25%.
+Skins and Tier Boost pets are excluded. The baseline is the mean of prior hourly
+observations within [median / 1.5, median * 1.5]. After 24 prior observations, a
+current price outside [baseline / 1.5, baseline * 1.5] is excluded. Outliers are
+retained in history so sustained market changes can establish a new baseline.
+Buy prices use max(current, baseline), sale prices min(current, baseline).
+Estimates are available immediately and labelled provisional while history builds.
+This is an asking-price heuristic, not a guarantee of sale liquidity.
+
+Common resale pairs are excluded. Common to Legendary routes require a complete
+Kat recipe, a Legendary level-100 resale quote, and all ingredient/flower prices.
+They require 25,353,230 XP and subtract all four upgrades: 30% level-100 coin
+discount, undiscounted materials at Bazaar instant-buy prices, and
+sum(ceil(each upgrade's seconds / 86400)) Kat Flowers. Missing prices exclude the
+route. Flowers use Bazaar instant-buy or current AH asks. No unpriced material is
+assumed free. Only Combat pets are considered, matching the existing XP model.
 
 ## Account linking and scoped mod credentials
 

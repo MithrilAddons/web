@@ -37,6 +37,15 @@ export type PetQuote = {
   endPrice: number;
   requiredXp: number;
   samples: number;
+  endRarity?: string;
+  historyHours?: number;
+  kat?: {
+    coins: number;
+    materials: number;
+    flowers: number;
+    flowerCost: number;
+    total: number;
+  } | null;
 };
 export type Feed = {
   status: "loading" | "ready" | "stale" | "unavailable";
@@ -304,9 +313,12 @@ export function petLeveling(
     slots;
   const profitXp = (excludeActive ? 0 : active) + shared;
   const pets = quotes
+    .filter((quote) => quote.rarity !== "COMMON" || quote.kat)
     .map((quote) => ({
       ...quote,
-      coinsPerXp: (quote.endPrice - quote.startPrice) / quote.requiredXp,
+      coinsPerXp:
+        (quote.endPrice - quote.startPrice - (quote.kat?.total ?? 0)) /
+        quote.requiredXp,
     }))
     .filter((q) => q.coinsPerXp > 0 && Number.isFinite(q.coinsPerXp))
     .sort((a, b) => b.coinsPerXp - a.coinsPerXp)

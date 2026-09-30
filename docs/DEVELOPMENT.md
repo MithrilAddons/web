@@ -83,6 +83,22 @@ slot's share rate. Excluding the main pet removes its margin while keeping the
 XP used to calculate EXP Share. Mayor/shard combinations and UI controls are
 covered by synthetic regression tests.
 
+Pet rankings use persisted hourly prices and conservative seven-day averages;
+see API.md for sampling, outlier and provisional-price rules. Tests use temporary
+history databases and synthetic feeds, including spike recovery, restart,
+retention, sparse markets and Common-to-Legendary costs. A Common pet is trained
+to full Legendary XP before all four upgrades, with Kat Flowers skipping each
+wait. Missing recipes or ingredient prices exclude that route.
+
+`backend/mithril_web/kat_data.json` contains factual Kat recipes extracted from
+[NotEnoughUpdates-REPO at 051234a](https://github.com/NotEnoughUpdates/NotEnoughUpdates-REPO/tree/051234a9d54a7cd5a66f56a1be1bc388f6cdbdde).
+Its MIT copyright and license are preserved in that file; no mod code or runtime
+dependency is imported. Only complete four-step Combat-pet recipes are included.
+Refresh the pinned data deliberately when game recipes change. The 30% level-100
+coin discount and retained XP are documented by the
+[Hypixel wiki](https://wiki.hypixel.net/Ghoul_Pet); a
+[Kat Flower](https://wiki.hypixel.net/Kat_Flower) skips one day.
+
 For Slayer UI checks, open `/slayer-profits` on the development server; it is public
 and requires no sign-in. Check all five boss families, tier/meter resets, pricing
 mode, numeric validation, boosts, partial/stale prices, keyboard operation, and

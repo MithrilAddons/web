@@ -19,7 +19,7 @@ from mithril_web.slayer_market import (
 )
 
 
-def nbt_item(name="Warden Heart", pet=None):
+def nbt_item(name="Warden Heart", pet=None, count=1):
     def string(value):
         data = value.encode()
         return struct.pack(">H", len(data)) + data
@@ -29,7 +29,13 @@ def nbt_item(name="Warden Heart", pet=None):
 
     display = compound("display", b"\x08" + string("Name") + string(name))
     extra = compound("ExtraAttributes", b"\x08" + string("petInfo") + string(json.dumps(pet)))
-    item = compound("tag", display + extra) + b"\x00"
+    item = (
+        compound("tag", display + extra)
+        + b"\x01"
+        + string("Count")
+        + struct.pack("b", count)
+        + b"\x00"
+    )
     root = compound("", b"\x09" + string("i") + b"\x0a" + struct.pack(">i", 1) + item)
     return base64.b64encode(gzip.compress(root)).decode()
 
@@ -81,7 +87,7 @@ def test_nbt_and_pet_experience_are_decoded_without_player_data():
         }
     )
     assert pet["xp"] == 100000000
-    pairs = pet_quotes([pet, {**pet, "level": 200, "price": 2000000000}])
+    pairs = pet_quotes([pet, {**pet, "level": 200, "price": 2000000000}] * 3)
     assert pairs[0]["requiredXp"] == 114023230
     assert pairs[0]["startLevel"] == 150
 
@@ -102,7 +108,7 @@ def test_invalid_or_oversized_item_rejected(encoded):
 def test_pet_pairs_use_lowest_three_and_reject_losses():
     pets = [
         {"name": "Synthetic Pet", "rarity": "LEGENDARY", "level": level, "price": price, "xp": 0}
-        for level, price in [(1, 100), (1, 110), (1, 120), (1, 99999), (100, 1000)]
+        for level, price in [(1, 100), (1, 110), (1, 120), (1, 99999), *[(100, 1000)] * 3]
     ]
     assert pet_quotes(pets)[0]["startPrice"] == 110
     assert pet_quotes(pets)[0]["requiredXp"] == 25353230
@@ -170,6 +176,22 @@ def test_auction_scan_merges_pages_and_bounds_page_count():
     cache.loader = lambda _: page(pages=201)
     with pytest.raises(ValueError, match="page count"):
         cache.load_auctions()
+
+
+def test_kat_flower_auction_prices_are_per_item_not_per_stack():
+    snapshot = page(prices=[])
+    snapshot["auctions"] = [
+        {
+            "bin": True,
+            "item_name": "Kat Flower",
+            "starting_bid": 64000,
+            "item_bytes": nbt_item("Kat Flower", count=64),
+        },
+        {"bin": True, "item_name": "Kat Flower", "starting_bid": 1, "item_bytes": "invalid"},
+    ]
+    cache = SlayerMarket(loader=lambda _: snapshot)
+    bins, _ = cache.load_auctions()
+    assert bins["Kat Flower"] == [1000]
 
 
 def test_recent_sales_deduplicate_expire_and_bound_history():

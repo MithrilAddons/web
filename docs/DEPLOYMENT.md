@@ -9,7 +9,7 @@ with the backend bound to loopback behind nginx. Keep other hosted services unch
 - `/opt/mithril-web/releases/<release>/`: root-owned source, frontend build and venv.
 - `/opt/mithril-web/current`: active release symlink.
 - `deploy/mithril-web.service`: unprivileged mithril-web service, loopback port 8780.
-- `/var/lib/mithril-web/`: private persistent auth.sqlite3 and records.sqlite3.
+- `/var/lib/mithril-web/`: persistent auth.sqlite3, records.sqlite3 and pet-prices.sqlite3.
 - `/etc/nginx/sites-available/mithril.foo`: installed deploy/nginx.conf.
 - `/var/www/mithril-web-acme`: certificate challenge webroot.
 
@@ -52,7 +52,11 @@ source and install the updated nginx config for `/api/v1/slayer-prices` and the
 `/slayerprofits` to `/slayer-profits` redirect. After deployment, verify both routes,
 the public price response, and eventual feed readiness. A cold Auction House scan
 may take up to roughly two minutes; failure must leave a partial/stale indicator.
-This feature introduces no database migration, credentials, or dependency changes.
+Pet-price history creates its own `pet-prices.sqlite3` beside the auth database;
+include it in SQLite backups once present. Preserve it across releases and code
+rollbacks. Existing auth/record schemas, credentials and dependencies are unchanged.
+After deployment, verify that aggregate history is collected without page visits,
+survives a service restart and returns provisional quotes while the week builds.
 
 API responses are not publicly cached. Authentication has an nginx limit of
 30 requests/minute/IP (burst 15), party routes 60/minute/IP (burst 30).

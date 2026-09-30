@@ -49,6 +49,38 @@ function mockMarket() {
   return fetcher;
 }
 
+it("labels provisional history and shows Kat costs without treating Common resale as profit", async () => {
+  const value = {
+    ...market,
+    pets: [
+      {
+        ...market.pets[0],
+        rarity: "COMMON",
+        endRarity: "LEGENDARY",
+        historyHours: 2,
+        requiredXp: 25353230,
+        kat: {
+          coins: 100000,
+          materials: 200000,
+          flowers: 4,
+          flowerCost: 400000,
+          total: 700000,
+        },
+      },
+    ],
+  };
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(new Response(JSON.stringify(value))),
+  );
+  render(<SlayerProfits />);
+  await screen.findByText(/Common → Legendary · Kat/);
+  expect(screen.getByText("700K upgrades incl. 4 flowers")).toBeTruthy();
+  expect(
+    screen.getByText("Provisional · building 7-day price history"),
+  ).toBeTruthy();
+});
+
 it.each(["/slayer-profits", "/slayer-profits/", "/slayerprofits"])(
   "opens %s without sign-in",
   async (path) => {

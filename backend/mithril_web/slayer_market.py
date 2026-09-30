@@ -1,7 +1,7 @@
 """Shared, keyless Hypixel prices for the Slayer calculator; no player lookups.
 
 Pricing rules adapted from the owner's MithrilAddons at 403f0dd. Only aggregate
-quotes leave this service. Recent sale samples live in bounded process memory.
+quotes leave this service. Drop sales are in memory; aggregate pet prices persist.
 """
 
 import asyncio
@@ -12,6 +12,7 @@ import io
 import json
 import math
 import re
+import sqlite3
 import struct
 import threading
 import time
@@ -19,20 +20,15 @@ import zlib
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from .pet_market import KAT_ITEMS, XP_100, pet_quotes
+
 CATALOGUE = json.loads(Path(__file__).with_name("slayer_data.json").read_text())
 DROPS = [d for s in CATALOGUE for t in s["tiers"] for d in t["drops"]]
 TARGETS = sorted({d["auctionName"] for d in DROPS if not d["bazaarId"]}, key=len, reverse=True)
-BAZAAR_IDS = {d["bazaarId"] for d in DROPS if d["bazaarId"]}
+BAZAAR_IDS = {d["bazaarId"] for d in DROPS if d["bazaarId"]} | KAT_ITEMS | {"KAT_FLOWER"}
 NPC_KEYS = BAZAAR_IDS | {d[k] for d in DROPS for k in ("name", "auctionName")}
 FORMATTING = re.compile(r"§[0-9A-FK-OR]", re.I)
 PET_NAME = re.compile(r"^\[Lvl (\d+)] (.+)$")
-XP_100 = dict(
-    zip(
-        ("COMMON", "UNCOMMON", "RARE", "EPIC", "LEGENDARY", "MYTHIC"),
-        (5624785, 8644220, 12626665, 18608500, 25353230, 25353230),
-        strict=True,
-    )
-)
 PERIODS = {"bazaar": 300, "npc": 3600, "auctions": 900, "sales": 60}
 MAX_BODY = 16 * 1024 * 1024
 
@@ -85,7 +81,7 @@ def fetch_json(path):
         connection.close()
 
 
-def decode_item(encoded):
+def decode_item(encoded, *, with_count=False):
     """Read bounded standard NBT from the official API's gzipped item payload."""
     if not isinstance(encoded, str) or len(encoded) > 3_000_000:
         raise ValueError("Invalid item")
@@ -139,7 +135,8 @@ def decode_item(encoded):
         raise ValueError("Expected NBT compound")
     string()
     root = tag(10)
-    return root["i"][0]["tag"]
+    item = root["i"][0]
+    return (item["tag"], item["Count"]) if with_count else item["tag"]
 
 
 def choose_quote(bins, sales):
@@ -177,12 +174,15 @@ def pet_listing(auction):
         return None
     try:
         info = json.loads(decode_item(auction.get("item_bytes"))["ExtraAttributes"]["petInfo"])
+        if info.get("skin") or info.get("heldItem") == "PET_ITEM_TIER_BOOST":
+            return None
         rarity = info.get("tier") or auction.get("tier", "")
         xp = info.get("exp")
         if rarity not in XP_100 or (xp is not None and (not positive(xp) and xp != 0)):
             return None
         return {
             "name": match[2].strip(),
+            "kind": info.get("type", ""),
             "rarity": rarity,
             "level": level,
             "price": auction["starting_bid"],
@@ -201,54 +201,9 @@ def pet_listing(auction):
         return None
 
 
-def pet_quotes(listings):
-    groups = {}
-    for item in listings:
-        groups.setdefault((item["name"], item["rarity"]), []).append(item)
-    result = []
-    for (name, rarity), group in groups.items():
-        golden = name.lower() == "golden dragon"
-        end_level = 200 if golden else 100
-        start_level = (
-            min((p["level"] for p in group if 100 <= p["level"] < 200), default=None)
-            if golden
-            else 1
-        )
-        start = sorted((p for p in group if p["level"] == start_level), key=lambda p: p["price"])[
-            :3
-        ]
-        end = sorted((p for p in group if p["level"] == end_level), key=lambda p: p["price"])[:3]
-        if not start or not end:
-            continue
-        xp = XP_100[rarity]
-        if golden:
-            experiences = [p["xp"] for p in start if p["xp"] is not None]
-            if not experiences and start_level != 100:
-                continue
-            xp = 214023230 - (sum(experiences) / len(experiences) if experiences else 25353230)
-        start_price = sum(p["price"] for p in start) / len(start)
-        end_price = sum(p["price"] for p in end) / len(end)
-        if xp > 0 and end_price > start_price:
-            result.append(
-                {
-                    "name": name,
-                    "rarity": rarity,
-                    "startLevel": start_level,
-                    "endLevel": end_level,
-                    "startPrice": start_price,
-                    "endPrice": end_price,
-                    "requiredXp": xp,
-                    "samples": len(start) + len(end),
-                }
-            )
-    return sorted(
-        result, key=lambda p: (p["endPrice"] - p["startPrice"]) / p["requiredXp"], reverse=True
-    )[:100]
-
-
 class SlayerMarket:
-    def __init__(self, loader=fetch_json, clock=time.time):
-        self.loader, self.clock = loader, clock
+    def __init__(self, loader=None, clock=time.time):
+        self.loader, self.clock = loader or fetch_json, clock
         self.lock = threading.Lock()
         self.stopped = threading.Event()
         self.active_until = 0
@@ -256,6 +211,7 @@ class SlayerMarket:
         self.feeds = {name: {"status": "loading", "updated": None} for name in PERIODS}
         self.bazaar, self.npc, self.bins, self.sales = {}, {}, {}, {}
         self.pets = []
+        self.history_path = None
 
     def get(self):
         with self.lock:
@@ -295,14 +251,18 @@ class SlayerMarket:
     async def run(self):
         try:
             while True:
-                if self.clock() < self.active_until:
-                    await asyncio.to_thread(self.refresh)
+                if self.clock() < self.active_until or self.history_path is not None:
+                    await asyncio.to_thread(
+                        self.refresh, background=self.clock() >= self.active_until
+                    )
                 await asyncio.sleep(1)
         finally:
             self.stopped.set()
 
-    def refresh(self):
+    def refresh(self, *, background=False):
         for name in PERIODS:
+            if background and name in ("npc", "sales"):
+                continue
             if self.stopped.is_set() or self.clock() < self.next[name]:
                 continue
             try:
@@ -316,6 +276,7 @@ class SlayerMarket:
                 self.next[name] = self.clock() + PERIODS[name]
             except (
                 OSError,
+                sqlite3.Error,
                 zlib.error,
                 ValueError,
                 http.client.HTTPException,
@@ -379,7 +340,27 @@ class SlayerMarket:
                 price = auction.get("starting_bid")
                 if auction.get("bin") is not True or not positive(price):
                     continue
-                name = target_name(auction.get("item_name"))
+                name = (
+                    "Kat Flower"
+                    if clean(auction.get("item_name")) == "Kat Flower"
+                    else target_name(auction.get("item_name"))
+                )
+                if name == "Kat Flower":
+                    try:
+                        _, count = decode_item(auction.get("item_bytes"), with_count=True)
+                        if not isinstance(count, int) or not 1 <= count <= 64:
+                            continue
+                        price /= count
+                    except (
+                        ValueError,
+                        OSError,
+                        EOFError,
+                        zlib.error,
+                        KeyError,
+                        IndexError,
+                        TypeError,
+                    ):
+                        continue
                 if name:
                     bins[name] = sorted([*bins.get(name, []), price])[:3]
                 pet = pet_listing(auction)
@@ -395,7 +376,18 @@ class SlayerMarket:
                 futures = [pool.submit(self.loader, f"skyblock/auctions?page={n}") for n in numbers]
                 for n, future in zip(numbers, futures, strict=True):
                     consume(future.result(), n)
-        return bins, pet_quotes(pets)
+        updated = self.feeds["bazaar"]["updated"]
+        bazaar = self.bazaar if updated is not None and self.clock() - updated <= 86400 else {}
+        flower = bazaar.get("KAT_FLOWER", {}).get("offer", 0)
+        if not flower and bins.get("Kat Flower"):
+            flower = sum(bins["Kat Flower"]) / len(bins["Kat Flower"])
+        return bins, pet_quotes(
+            pets,
+            bazaar=bazaar,
+            flower_price=flower,
+            history_path=self.history_path,
+            now=self.clock(),
+        )
 
     def load_sales(self):
         now = self.clock()

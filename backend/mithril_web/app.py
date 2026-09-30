@@ -91,6 +91,7 @@ def create_app(
         path = database or Path(os.environ.get("MITHRIL_AUTH_DB", ".local/auth.sqlite3"))
         app.state.auth = AuthStore(Path(path), **({"clock": clock} if clock else {}))
         app.state.records = RecordStore(Path(path).with_name("records.sqlite3"))
+        slayer_market.history_path = Path(path).with_name("pet-prices.sqlite3")
 
         async def cleanup():
             while True:
