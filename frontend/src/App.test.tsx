@@ -81,14 +81,16 @@ it("does not show party finder at unknown paths", () => {
 it("asks signed-out visitors to link before browsing parties", async () => {
   vi.stubGlobal(
     "fetch",
-    vi.fn().mockImplementation(async (url: string) => {
+    vi.fn().mockImplementation((url: string) => {
       if (url.endsWith("/party/state")) {
-        return new Response(JSON.stringify({ detail: "Sign in first" }), {
-          status: 401,
-        });
+        return Promise.resolve(
+          new Response(JSON.stringify({ detail: "Sign in first" }), {
+            status: 401,
+          }),
+        );
       }
       const body = url.endsWith("/health") ? fixture : { authenticated: false };
-      return new Response(JSON.stringify(body));
+      return Promise.resolve(new Response(JSON.stringify(body)));
     }),
   );
   render(<App />);
