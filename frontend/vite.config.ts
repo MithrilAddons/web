@@ -16,6 +16,22 @@ export default defineConfig({
     environment: "jsdom",
     clearMocks: true,
     restoreMocks: true,
+    coverage: {
+      provider: "v8",
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: ["src/**/*.test.{ts,tsx}", "src/**/*.d.ts"],
+      reporter: [
+        "text",
+        "html",
+        [
+          "lcov",
+          { projectRoot: fileURLToPath(new URL("..", import.meta.url)) },
+        ],
+      ],
+      reportsDirectory: fileURLToPath(
+        new URL("../build/reports/coverage/frontend", import.meta.url),
+      ),
+    },
     reporters: ["default", "junit"],
     outputFile: {
       junit: fileURLToPath(
