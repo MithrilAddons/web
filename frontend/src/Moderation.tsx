@@ -231,7 +231,7 @@ export function Moderation() {
               </button>
             ))}
           </nav>
-          <div hidden={view !== "players"}>
+          <div className="content-stack" hidden={view !== "players"}>
             <form
               className="moderation-search"
               onSubmit={(event) => {
@@ -463,7 +463,7 @@ export function Moderation() {
                   ))}
                 </ul>
                 {access.role === "owner" && (
-                  <section>
+                  <section className="content-stack">
                     <h3>Moderator access</h3>
                     <button
                       type="button"
@@ -503,7 +503,7 @@ export function Moderation() {
             />
           )}
           {view === "audit" && (
-            <section>
+            <section className="content-stack">
               <h2>Audit log</h2>
               {auditLoading && <output>Loading audit log…</output>}
               {auditError && <p role="alert">{auditError}</p>}
@@ -698,7 +698,7 @@ function ChatReview({
     }
   }
   return (
-    <section className="moderation">
+    <section className="content-stack">
       <h2>Chat reports</h2>
       <button
         type="button"

@@ -131,6 +131,13 @@ h3 {
   color: var(--muted);
   font-size: 12px;
 }
+.content-stack {
+  display: grid;
+  gap: 16px;
+}
+.content-stack > :is(button, .button) {
+  justify-self: start;
+}
 .home-page {
   padding-top: 0;
 }
