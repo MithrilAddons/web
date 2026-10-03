@@ -1,0 +1,35 @@
+{
+  "summary": {
+    "version": 1,
+    "status": "ok",
+    "checked_at": 1790985600,
+    "floors": {
+      "F7": {
+        "open_parties": 0,
+        "looking": 0
+      },
+      "M7": {
+        "open_parties": 0,
+        "looking": 0
+      }
+    },
+    "hypixel": "unknown",
+    "latest_version": "1.2.3"
+  },
+  "releases": {
+    "version": 1,
+    "status": "ready",
+    "updated_at": 1790985600,
+    "releases": [
+      {
+        "version": "1.2.3",
+        "url": "https://github.com/MithrilAddons/mithrilpf/releases/download/v1.2.3/mithrilpf-1.2.3.jar",
+        "prerelease": false,
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "notes": "Synthetic notes",
+        "page": "https://github.com/MithrilAddons/mithrilpf/releases/tag/v1.2.3",
+        "modrinth": "https://modrinth.com/mod/mithrilpf"
+      }
+    ]
+  }
+}

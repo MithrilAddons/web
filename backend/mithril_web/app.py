@@ -165,6 +165,7 @@ def create_app(
     skins = SkinCache(**({"loader": skin_loader} if skin_loader else {}))
     cards = PlayerCardCache(**({"loader": card_loader} if card_loader else {}))
     releases = ReleaseCache(**({"loader": release_loader} if release_loader else {}))
+    app.state.releases = releases
     slayer_market = SlayerMarket(**({"loader": slayer_loader} if slayer_loader else {}))
 
     @app.middleware("http")

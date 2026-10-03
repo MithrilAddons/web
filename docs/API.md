@@ -1,5 +1,31 @@
 # API v1
 
+## Optional Discord foundation API
+
+The Discord bot uses a separate authenticated loopback listener on `127.0.0.1:8781`,
+never the public API or nginx. `GET /internal/v1/summary` returns service time,
+aggregate open-party/search counts for F7/M7, the latest known mod version and
+recent Finder profile lookup health. Names, UUIDs, reports and credentials are absent.
+Health is `unknown` with no observed fetch in five minutes, `failing` when the last
+fetch failed, `slow` if recent successful service includes failures or >=2-second
+fetches, otherwise `ok`. This measures Finder lookups, not every Hypixel endpoint.
+
+`GET /internal/v1/releases` reuses the existing five-minute ReleaseCache fetch and
+returns up to ten supported published releases ordered by version, with official
+JAR/page links, GitHub-provided SHA-256 asset digests and notes capped at 3,000
+characters. Drafts and missing digests are excluded from announcements. Cache status
+is `ready`, `stale` or `unavailable`; the bot announces ready data only. Public
+`mod-release` behavior and response shape remain unchanged. No detached JAR signature
+is claimed. Synthetic examples are in `contracts/discord-foundation-v1.json` and the
+Discord repository; compare their hashes for coordinated protocol changes.
+
+The internal listener checks the actual loopback peer plus a constant-time comparison
+of its separate bearer secret. It rejects bodies and mutations, does not trust proxy
+headers, and serves no public/account routes. The public listener serves no internal
+routes even with valid internal authorization or forged forwarding headers. Both
+listeners share one process/event loop, keeping Finder state authoritative. Phase 1
+creates no identity links, event feed, new user data or Discord moderation mutations.
+
 All production requests use `https://mithril.foo/api/v1`. Responses and explicitly
 versioned request bodies use `version: 1`. Synthetic fixtures live in `contracts/`;
 Python and frontend tests check their meanings. No real accounts belong in fixtures.
