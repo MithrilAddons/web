@@ -184,6 +184,7 @@ class StatsService:
         self.pending = set()
         self.erased_pending = set()
         self.attempts = deque()
+        self.outcomes = deque(maxlen=20)
 
     async def get(self, uuid):
         now = self.clock()
@@ -212,10 +213,12 @@ class StatsService:
         self.attempts.append(now)
         try:
             result = await run_in_threadpool(self.loader, uuid)
+            self.outcomes.append((self.clock(), bool(result), self.clock() - now))
             if uuid in self.erased_pending:
                 return None
             return result
         except (OSError, ValueError, TypeError, KeyError, http.client.HTTPException):
+            self.outcomes.append((self.clock(), False, self.clock() - now))
             self.failed[uuid] = now
             if len(self.failed) > 4000:
                 self.failed = {k: v for k, v in self.failed.items() if v > now - 60}
@@ -250,6 +253,7 @@ def register(app, finder, stats, browser, mod, *, wait=WAIT, name_lookup=mojang_
     resolving = [0]
     fragments = {}  # party id -> (public_version, serialized listing)
     app.state.finder = finder
+    app.state.finder_stats = stats
 
     def run(action):
         try:

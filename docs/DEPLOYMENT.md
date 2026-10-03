@@ -1,5 +1,22 @@
 # Deployment
 
+## Optional Discord listener
+
+Deploy the matching tested/public source before enabling the Discord bot. Install
+`deploy/discord-listener.conf` as a drop-in for `mithril-web.service`; the existing
+unit remains the default for installations without Discord. Generate a separate
+32-byte random lowercase hexadecimal secret in root-owned mode-0600
+`/etc/mithril-discord/internal-secret.txt`. systemd LoadCredential supplies it to
+both services without granting the bot access to web databases or the Hypixel key.
+
+The drop-in runs `python -m mithril_web.serve`: public port 8780 and internal port
+8781 both bind only `127.0.0.1`, within one Uvicorn process and one Finder event loop.
+Only port 8780 trusts nginx forwarding headers. Never proxy 8781 through nginx or
+add extra web workers. Test unauthenticated internal requests (401), public internal
+paths (404), spoofed forwarding headers, unchanged public health/auth behavior and
+aggregate status before starting the bot. The source-only extension adds no schema
+migration. Disabling the bot does not affect matching; rollback of the bot is separate.
+
 Production serves `https://mithril.foo`; www redirects to the root.
 The .foo domain requires HTTPS. Serve the frontend and API from one origin,
 with the backend bound to loopback behind nginx. Keep other hosted services unchanged.
