@@ -141,18 +141,7 @@ class ReleaseCache:
                     if self.loader is None:
                         values = fetch_release_catalog()
                         release = select_release(values)
-                        details = []
-                        for value in values:
-                            try:
-                                details.append(discord_release(value))
-                            except (ValueError, StopIteration):
-                                continue
-                        # Keep the highest supported version first, matching the public link.
-                        catalog = sorted(
-                            details,
-                            key=lambda item: _version_key(item["version"]),
-                            reverse=True,
-                        )
+                        catalog = _discord_catalog(values)
                     else:
                         release = self.loader()
                     self.value = {"status": "ready" if release else "none", "release": release}
@@ -188,3 +177,14 @@ def _version_key(version):
         {"alpha": 0, "beta": 1, "rc": 2, None: 3}[match[4]],
         int(match[5] or 0),
     )
+
+
+def _discord_catalog(values):
+    details = []
+    for value in values:
+        try:
+            details.append(discord_release(value))
+        except (ValueError, StopIteration):
+            continue
+    # Keep the highest supported version first, matching the public link.
+    return sorted(details, key=lambda item: _version_key(item["version"]), reverse=True)
