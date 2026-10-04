@@ -127,6 +127,34 @@ export function replayTile(point: ReplayPoint | null): number | null {
   return row * 6 + col;
 }
 
+/** Older recordings only locate the observation of a global counter increase. */
+export function inferRoomSecrets(
+  points: readonly ReplayPoint[],
+  rooms: readonly { tiles: number[]; secrets_found: number | null }[],
+): Map<number, RoomSecret[]> {
+  const tiles = new Map(
+    rooms.flatMap((room) => room.tiles.map((tile) => [tile, room] as const)),
+  );
+  const events = new Map<number, RoomSecret[]>();
+  let previous = 0;
+  for (const point of points) {
+    const increase = Math.max(0, point.secrets - previous);
+    previous = Math.max(previous, point.secrets);
+    const tile = replayTile(point);
+    const room = tile === null ? undefined : tiles.get(tile);
+    if (room?.secrets_found == null || !increase) continue;
+    const key = room.tiles[0]!;
+    const timeline = events.get(key) ?? [];
+    const before = timeline.at(-1)?.found ?? 0;
+    const found = Math.min(room.secrets_found, before + increase);
+    if (found > before) {
+      timeline.push({ ms: point.ms, found });
+      events.set(key, timeline);
+    }
+  }
+  return events;
+}
+
 export type RoomVisit = { room: number; start: number; end: number };
 export function replayVisits(
   points: readonly ReplayPoint[],

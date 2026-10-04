@@ -301,15 +301,56 @@ it.each([
   expect(await screen.findByRole("heading", { name: heading })).toBeTruthy();
   expect(screen.getByRole("slider").getAttribute("value")).toBe(position);
 });
-it("keeps legacy replay counters static without prematurely showing final markers", async () => {
+it("estimates legacy counters as secrets arrive instead of displaying final counts on entry", async () => {
   mock({ ...data, map: { ...timedMap, replay: legacyReplay } });
   render(<RunMap recordId={id} />);
   const slider = await screen.findByRole("slider");
-  fireEvent.change(slider, { target: { value: "600" } });
-  const room = screen.getByRole("button", { name: "Room: 3/5 secrets" });
+  fireEvent.change(slider, { target: { value: "0" } });
+  const room = screen.getByRole("button", { name: "Room: 0/5 secrets" });
   expect(room).toBeTruthy();
   expect(room.querySelector(".map-marker")).toBeNull();
-  expect(screen.getByText(/no room-counter timeline/)).toBeTruthy();
+  expect(screen.getByText(/Legacy room counts are estimated/)).toBeTruthy();
+  fireEvent.change(slider, { target: { value: "200" } });
+  expect(
+    screen.getByRole("button", { name: "Room: 1/5 secrets" }),
+  ).toBeTruthy();
+  expect(
+    screen.getByText("Secrets", { selector: ".run-room-details dt" })
+      .nextElementSibling?.textContent,
+  ).toBe("1/5");
+  expect(document.querySelector(".run-room-row button")?.textContent).toContain(
+    "1/5",
+  );
+  fireEvent.change(slider, { target: { value: "600" } });
+  expect(
+    screen.getByRole("button", { name: "Room: 3/5 secrets" }),
+  ).toBeTruthy();
+  fireEvent.change(slider, { target: { value: "0" } });
+  expect(
+    screen.getByRole("button", { name: "Room: 0/5 secrets" }),
+  ).toBeTruthy();
+  fireEvent.change(slider, { target: { value: "15000" } });
+  expect(
+    screen.getByRole("button", { name: "Room: 3/5 secrets" }),
+  ).toBeTruthy();
+});
+
+it("preserves empty recorded room timelines instead of estimating legacy progress", async () => {
+  mock({
+    ...data,
+    map: { ...timedMap, replay: { ...legacyReplay, room_secrets: "" } },
+  });
+  render(<RunMap recordId={id} />);
+  const slider = await screen.findByRole("slider");
+  fireEvent.change(slider, { target: { value: "600" } });
+  expect(
+    screen.getByRole("button", { name: "Room: 0/5 secrets" }),
+  ).toBeTruthy();
+  expect(screen.queryByText(/Legacy room counts/)).toBeNull();
+  fireEvent.change(slider, { target: { value: "15000" } });
+  expect(
+    screen.getByRole("button", { name: "Room: 3/5 secrets" }),
+  ).toBeTruthy();
 });
 it("keeps a manually picked room pinned during playback and resumes following on Play", async () => {
   const frames = vi.fn<(callback: FrameRequestCallback) => number>(() => 1);
