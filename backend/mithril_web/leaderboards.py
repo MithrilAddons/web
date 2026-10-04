@@ -42,14 +42,19 @@ def snapshot(records, auth):
                         AND s.kind IN ('ban','network_ban') AND s.revoked IS NULL
                         AND (s.expires IS NULL OR s.expires>?))
                 ), ranked AS (
-                    SELECT uuid,real_ms,ticks,{ranking} OVER (ORDER BY {rank_order}) AS rank
+                    SELECT id,uuid,real_ms,ticks,{ranking} OVER (ORDER BY {rank_order}) AS rank
                     FROM best WHERE choice=1
-                ) SELECT r.*,n.name FROM ranked r LEFT JOIN record_names n USING(uuid)
-                WHERE rank<=10 ORDER BY rank,uuid LIMIT 1001
+                ) SELECT r.uuid,r.real_ms,r.ticks,r.rank,n.name,m.record_id AS map_id
+                FROM ranked r LEFT JOIN record_names n USING(uuid)
+                LEFT JOIN pb_maps m ON m.record_id=r.id
+                WHERE rank<=10 ORDER BY rank,r.uuid LIMIT 1001
             """,
                 (floor, kind, records.clock()),
             ).fetchall()
             if len(rows) > 1000:
                 raise HTTPException(503, "Leaderboard exceeds publication capacity")
-            boards[key] = [dict(row) for row in rows]
+            boards[key] = [
+                {k: v for k, v in dict(row).items() if k != "map_id" or v is not None}
+                for row in rows
+            ]
         return {"version": 1, "updated_at": records.clock(), "boards": boards}

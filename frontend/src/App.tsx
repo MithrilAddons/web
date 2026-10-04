@@ -6,6 +6,7 @@ import { AccountPrivacy, PrivacyPolicy } from "./Privacy";
 import { Moderation } from "./Moderation";
 import { ModDownload } from "./ModDownload";
 import { SlayerProfits } from "./SlayerProfits";
+import { RunMap } from "./RunMap";
 
 // Remove the bearer secret before React renders (including StrictMode remounts).
 const linkToken =
@@ -92,6 +93,8 @@ function pageClass(path: string, workspace: boolean) {
 }
 
 function PageContent({ path }: Readonly<{ path: string }>) {
+  const run = /^\/runs\/([A-Za-z0-9_-]{43})$/.exec(path);
+  if (run?.[1]) return <RunMap key={run[1]} recordId={run[1]} />;
   switch (path) {
     case "/party-finder":
       return <PartyFinder />;

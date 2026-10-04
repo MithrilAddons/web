@@ -30,6 +30,7 @@ from .privacy import Privacy
 from .privacy_api import register_privacy
 from .records import RecordStore, Submission, with_mod_records
 from .releases import ReleaseCache
+from .run_maps import public_record
 from .skins import SkinCache
 from .slayer_market import SlayerMarket
 from .solo_evidence import SoloProgress, SoloStart, TerminalReport
@@ -175,10 +176,11 @@ def create_app(
         ):
             # Nginx also bounds streaming requests; do not accept chunked auth bodies.
             length = request.headers.get("content-length", "0")
+            maximum = 32768 if request.url.path == "/api/v1/records/solo-progress" else 4096
             if (
                 len(length) > 6
                 or not length.isdigit()
-                or int(length) > 4096
+                or int(length) > maximum
                 or "transfer-encoding" in request.headers
             ):
                 return Response(status_code=413)
@@ -455,6 +457,18 @@ def create_app(
                         "INSERT OR REPLACE INTO record_names VALUES (?,?)", (uuid, user["name"])
                     )
             return uuid, result
+
+    @app.get(
+        "/api/v1/records/solo/{record_id}",
+        responses={
+            404: {"description": "Record unavailable"},
+            503: {"description": "Map unavailable"},
+        },
+    )
+    def solo_record(record_id: str):
+        if not re.fullmatch(r"[A-Za-z0-9_-]{43}", record_id):
+            raise HTTPException(404, "Record unavailable")
+        return public_record(app.state.records, record_id)
 
     @app.post("/api/v1/records/solo-start")
     async def solo_start(body: SoloStart, request: Request):

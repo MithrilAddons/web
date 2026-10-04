@@ -11,6 +11,7 @@ from fastapi import HTTPException
 
 from .chat_reports import ChatReports
 from .record_store import DAY
+from .run_maps import retain_current
 
 CASE_QUERY = "SELECT * FROM sanctions WHERE id=?"
 
@@ -153,6 +154,8 @@ class Moderation:
             if status == row["status"]:
                 raise HTTPException(409, "Record already has that status")
             self.db.execute("UPDATE pb_records SET status=? WHERE id=?", (status, row["id"]))
+            if row["kind"] == "solo_clear":
+                retain_current(self.db, row["uuid"], row["floor"])
             after = {**before, "status": status}
             if body.action == "correct":
                 new_id = self.records._record(

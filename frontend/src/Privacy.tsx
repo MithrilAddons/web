@@ -40,6 +40,12 @@ export function PrivacyPolicy() {
         saved by other people cannot be recalled.
       </p>
       <p>
+        New solo-clear PBs can include a public dungeon map frozen at 300 score:
+        room names, layout, connections, clear states and secret counts. The map
+        is linked from the Discord time. We store structured map data, not
+        screenshots or individual secret locations.
+      </p>
+      <p>
         We use account and gameplay data to provide party finding and record
         validation. We use limited moderation and connection data to prevent
         abuse, handle appeals and hold moderators accountable. We do not sell
@@ -52,6 +58,11 @@ export function PrivacyPolicy() {
           Credentials are stored hashed on the server.
         </li>
         <li>PB summaries: until you delete them.</li>
+        <li>
+          Solo-clear maps: only the current best per player and floor, until
+          replaced, invalidated or deleted with your synced PBs. Older run links
+          can remain available without their map.
+        </li>
         <li>
           Accepted soloclear and terminal evidence: 30 days. Rejected or
           abandoned attempts: 7 days.
