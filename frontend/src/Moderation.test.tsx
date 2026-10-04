@@ -57,6 +57,12 @@ async function find() {
   });
   fireEvent.click(screen.getByRole("button", { name: "Find player" }));
   await screen.findByText("SyntheticPlayer");
+  await waitFor(() =>
+    expect(
+      (screen.getByRole("button", { name: "Find player" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false),
+  );
 }
 
 it("denies access without displaying moderator controls", async () => {
