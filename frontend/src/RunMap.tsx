@@ -3,6 +3,7 @@ import "./runMap.css";
 import { RunReplay } from "./RunReplay";
 import {
   decodeRoomSecrets,
+  inferRoomSecrets,
   decodeReplay,
   replayTile,
   replayPosition,
@@ -206,12 +207,13 @@ function DungeonMap({ data }: Readonly<{ data: MapData }>) {
   const playerRoom = tile === null ? -1 : (tiles.get(tile) ?? -1);
   const selected = following ? playerRoom : manual;
   const roomSecrets = useMemo(
-    () => decodeRoomSecrets(data.replay),
-    [data.replay],
+    () =>
+      decodeRoomSecrets(data.replay) ?? inferRoomSecrets(points, data.rooms),
+    [data.replay, points, data.rooms],
   );
   const final = !points.length || ms >= duration;
   const found = (entry: Room) =>
-    final || roomSecrets === null
+    final || entry.secrets_found === null
       ? entry.secrets_found
       : replayRoomSecrets(roomSecrets, entry.tiles[0]!, ms);
   const count = (entry: Room) =>
@@ -221,8 +223,7 @@ function DungeonMap({ data }: Readonly<{ data: MapData }>) {
   const settled = (index: number) =>
     final ||
     (reached(index) &&
-      ((roomSecrets !== null &&
-        (data.rooms[index]!.secrets_found ?? 0) > 0 &&
+      (((data.rooms[index]!.secrets_found ?? 0) > 0 &&
         found(data.rooms[index]!) === data.rooms[index]!.secrets_found) ||
         (byRoom[index]?.at(-1)?.end ?? Infinity) <= ms));
   const state = (index: number) => {
@@ -604,7 +605,7 @@ function DungeonMap({ data }: Readonly<{ data: MapData }>) {
             <p>
               Replay uses elapsed time. Secret indicators are approximate.{" "}
               {data.replay.room_secrets === undefined
-                ? "Room counts are from 300 score; this replay has no room-counter timeline."
+                ? "Legacy room counts are estimated from dungeon secret increases and sampled positions, capped at each room’s final count. Delayed updates or unmapped positions can leave estimates incomplete; the final snapshot shows recorded totals."
                 : "Room secrets follow recorded counter updates."}
             </p>
             <p>

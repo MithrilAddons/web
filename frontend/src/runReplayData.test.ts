@@ -11,11 +11,62 @@ import {
   replayVisits,
   compactTime,
   replayTrail,
+  inferRoomSecrets,
 } from "./runReplayData";
 
 import roomFixture from "../../contracts/run-replay-room-secrets-v1.json";
 
 const points = decodeReplay({ ...fixture, version: 1 });
+
+it("infers legacy room progress at pickup observations across tiles and repeat visits", () => {
+  const route = [
+    { ...points[0]!, ms: 0, secrets: 0 },
+    { ...points[0]!, ms: 200, secrets: 1 },
+    { ...points[0]!, ms: 400, x: -153, secrets: 3 },
+    { ...points[0]!, ms: 600, x: -121, secrets: 3 },
+    { ...points[0]!, ms: 800, x: -121, secrets: 4 },
+    { ...points[0]!, ms: 1000, secrets: 4 },
+    { ...points[0]!, ms: 1200, secrets: 5 },
+  ];
+  const rooms = inferRoomSecrets(route, [
+    { tiles: [0, 1], secrets_found: 4 },
+    { tiles: [2], secrets_found: 1 },
+  ]);
+  expect(replayRoomSecrets(rooms, 0, 0)).toBe(0);
+  expect(replayRoomSecrets(rooms, 0, 200)).toBe(1);
+  expect(replayRoomSecrets(rooms, 0, 400)).toBe(3);
+  expect(replayRoomSecrets(rooms, 2, 600)).toBe(0);
+  expect(replayRoomSecrets(rooms, 2, 800)).toBe(1);
+  expect(replayRoomSecrets(rooms, 0, 1000)).toBe(3);
+  expect(replayRoomSecrets(rooms, 0, 1200)).toBe(4);
+  expect(replayRoomSecrets(rooms, 0, 199)).toBe(0);
+  expect(rooms.has(1)).toBe(false);
+});
+
+it("caps legacy estimates and never moves unlocated or excess pickups to another room", () => {
+  const route = [
+    { ...points[0]!, ms: 0, secrets: 2 },
+    { ...points[0]!, ms: 200, secrets: 4 },
+    { ...points[0]!, ms: 400, flags: 3, secrets: 5 },
+    { ...points[0]!, ms: 600, x: -168.5, secrets: 6 },
+    { ...points[0]!, ms: 800, x: -121, secrets: 7 },
+    { ...points[0]!, ms: 1000, x: -153, secrets: 7 },
+    { ...points[0]!, ms: 1200, x: -153, secrets: 8 },
+    { ...points[0]!, ms: 1400, x: -89, secrets: 9 },
+    { ...points[0]!, ms: 1600, x: -57, secrets: 10 },
+  ];
+  const rooms = inferRoomSecrets(route, [
+    { tiles: [0], secrets_found: 1 },
+    { tiles: [1], secrets_found: 2 },
+    { tiles: [3], secrets_found: null },
+    { tiles: [4], secrets_found: 0 },
+  ]);
+  expect(rooms.get(0)).toEqual([{ ms: 0, found: 1 }]);
+  expect(replayRoomSecrets(rooms, 1, 1000)).toBe(0);
+  expect(rooms.get(1)).toEqual([{ ms: 1200, found: 1 }]);
+  expect(rooms.size).toBe(2);
+  expect(inferRoomSecrets([], []).size).toBe(0);
+});
 
 it("decodes the mod wire fixture with positions, yaw, counters and exact cutoff", () => {
   expect(points).toHaveLength(7);

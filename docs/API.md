@@ -537,8 +537,13 @@ with no increases; omission means the older client did not record this timeline.
 Multi-tile observations collapse to one room; repeat visits do not double-count.
 `contracts/run-replay-room-secrets-v1.json` is shared with the mod and frontend.
 The browser seeks these counters independently of position samples, updating map
-labels, selected-room details and the room list. Old replays retain final counts;
-no room history is inferred from global pickups or player positions. Observation
+labels, selected-room details and the room list. For old replays without this stream,
+the browser estimates room progress by assigning each global counter increase to
+the room at that sample's position, capped at its saved final count. Unmapped
+increases are not assigned or carried into later rooms; repeat visits accumulate.
+These estimates are labelled as approximate and may miss delayed updates. The
+final snapshot always uses the saved room counts. An empty recorded stream remains
+authoritative and never triggers estimation. Observation
 times may lag or group actual pickups; final room states and dungeon totals stay
 labelled as the 300-score snapshot. The optional stream shares map retention and
 erasure, with no additional table or copy. The 640 KiB upload allowance is unchanged.
