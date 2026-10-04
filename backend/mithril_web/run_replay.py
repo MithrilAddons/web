@@ -32,9 +32,13 @@ class RunReplay(BaseModel):
                 or not previous_secrets <= secrets <= 3600
             ):
                 raise ValueError("Invalid replay timeline")
-            if flags & 2:
-                if x or z or not flags & 1:
-                    raise ValueError("Unmapped replay point must break the path")
-            elif not (-3200 <= x <= -145 and -3200 <= z <= -145):
-                raise ValueError("Replay position outside dungeon")
+            validate_position(x, z, flags)
             previous_time, previous_secrets = elapsed, secrets
+
+
+def validate_position(x, z, flags):
+    if flags & 2:
+        if x or z or not flags & 1:
+            raise ValueError("Unmapped replay point must break the path")
+    elif not (-3200 <= x <= -145 and -3200 <= z <= -145):
+        raise ValueError("Replay position outside dungeon")

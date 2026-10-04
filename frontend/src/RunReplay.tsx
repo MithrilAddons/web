@@ -45,6 +45,7 @@ export function RunReplay({
   const event = events[replayIndex(events, ms)];
   const flash = event && ms - event.ms < 1500 && !(event.flags & 2);
   const observed = points[replayIndex(points, ms)]?.secrets ?? 0;
+  const playLabel = ms >= duration ? "Replay again" : "Play replay";
   return (
     <>
       <div className="run-map-graphic">
@@ -82,11 +83,7 @@ export function RunReplay({
               setPlaying(!playing);
             }}
           >
-            {playing
-              ? "Pause replay"
-              : ms >= duration
-                ? "Replay again"
-                : "Play replay"}
+            {playing ? "Pause replay" : playLabel}
           </button>
           <span>
             {replayTime(ms)} / {replayTime(duration)}

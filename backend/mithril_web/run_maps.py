@@ -78,11 +78,11 @@ class RunMap(StrictMap):
     replay: RunReplay | None = None
 
     def public_data(self):
-        exclude = (
-            {"stats", "replay"}
-            if self.version == 1
-            else ({"replay"} if self.replay is None else set())
-        )
+        exclude = set()
+        if self.version == 1:
+            exclude = {"stats", "replay"}
+        elif self.replay is None:
+            exclude = {"replay"}
         return self.model_dump(exclude=exclude)
 
     @model_validator(mode="after")

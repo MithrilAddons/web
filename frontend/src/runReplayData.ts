@@ -10,7 +10,7 @@ export type ReplayPoint = {
 
 export function decodeReplay(data: ReplayData): ReplayPoint[] {
   const bytes = Uint8Array.from(atob(data.samples), (value) =>
-    value.charCodeAt(0),
+    value.codePointAt(0)!,
   );
   const view = new DataView(bytes.buffer);
   const points: ReplayPoint[] = [];

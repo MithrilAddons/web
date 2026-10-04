@@ -66,8 +66,9 @@ def test_record_erasure_removes_replay_with_its_map(api):
 def test_replay_invalid_start_coordinates_flags_or_counters(field, value):
     changed = [list(point) for point in points()]
     changed[0][field] = value
+    replay = RunReplay.model_validate(encoded(changed))
     with pytest.raises(ValueError):
-        RunReplay.model_validate(encoded(changed)).validate_timeline(15000)
+        replay.validate_timeline(15000)
 
 
 @pytest.mark.parametrize(
@@ -86,16 +87,17 @@ def test_replay_invalid_start_coordinates_flags_or_counters(field, value):
 def test_replay_rejects_nonmonotonic_incomplete_or_invalid_timelines(change):
     changed = [list(point) for point in points()]
     change(changed)
+    replay = RunReplay.model_validate(encoded(changed))
     with pytest.raises(ValueError):
-        RunReplay.model_validate(encoded(changed)).validate_timeline(15000)
+        replay.validate_timeline(15000)
 
 
 @pytest.mark.parametrize("raw", [b"x" * 25, b"x" * 12])
 def test_replay_rejects_partial_or_single_samples(raw):
+    data = timed_map()
+    data["replay"] = dict(version=1, samples=base64.b64encode(raw).decode())
     with pytest.raises(ValueError):
-        RunReplay.model_validate(
-            dict(version=1, samples=base64.b64encode(raw).decode())
-        ).validate_timeline(15000)
+        RunMap.model_validate(data)
 
 
 @pytest.mark.parametrize(
