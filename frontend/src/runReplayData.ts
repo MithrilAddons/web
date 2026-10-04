@@ -153,9 +153,8 @@ export function replayVisits(
 
 export function compactTime(ms: number): string {
   const seconds = Number(((ms % 60000) / 1000).toFixed(3));
-  return ms < 60000
-    ? `${seconds} s`
-    : `${Math.floor(ms / 60000)}:${seconds < 10 ? "0" : ""}${seconds}`;
+  if (ms < 60000) return `${seconds} s`;
+  return `${Math.floor(ms / 60000)}:${seconds < 10 ? "0" : ""}${seconds}`;
 }
 
 export function replayTrail(

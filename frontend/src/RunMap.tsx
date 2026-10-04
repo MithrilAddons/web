@@ -203,11 +203,8 @@ function DungeonMap({ data }: Readonly<{ data: MapData }>) {
   const [fromList, setFromList] = useState(false);
   const [sort, setSort] = useState("entry");
   const tile = replayTile(replayPosition(points, ms));
-  const selected = following
-    ? tile === null
-      ? -1
-      : (tiles.get(tile) ?? -1)
-    : manual;
+  const playerRoom = tile === null ? -1 : (tiles.get(tile) ?? -1);
+  const selected = following ? playerRoom : manual;
   const roomSecrets = useMemo(
     () => decodeRoomSecrets(data.replay),
     [data.replay],
@@ -228,12 +225,10 @@ function DungeonMap({ data }: Readonly<{ data: MapData }>) {
         (data.rooms[index]!.secrets_found ?? 0) > 0 &&
         found(data.rooms[index]!) === data.rooms[index]!.secrets_found) ||
         (byRoom[index]?.at(-1)?.end ?? Infinity) <= ms));
-  const state = (index: number) =>
-    settled(index)
-      ? label(data.rooms[index]!.state)
-      : reached(index)
-        ? "Visited"
-        : "Not reached";
+  const state = (index: number) => {
+    if (settled(index)) return label(data.rooms[index]!.state);
+    return reached(index) ? "Visited" : "Not reached";
+  };
   const replaceHash = (hash: string) =>
     window.history.replaceState(
       window.history.state,
@@ -354,7 +349,7 @@ function DungeonMap({ data }: Readonly<{ data: MapData }>) {
           >
             <svg
               viewBox="0 0 370 370"
-              role="group"
+              role="graphics-document"
               aria-label="Dungeon layout at 300 score"
               className={selected >= 0 ? "has-selection" : ""}
             >

@@ -80,7 +80,7 @@ export function RunReplay({
     onFollow();
     setMs(Math.max(0, Math.min(duration, value)));
   };
-  const keyboard = (e: KeyboardEvent<HTMLDivElement>) => {
+  const keyboard = (e: KeyboardEvent<HTMLElement>) => {
     if (e.altKey || e.ctrlKey || e.metaKey) return;
     if (e.key === " " && (e.target as HTMLElement).closest("button")) return;
     if (e.key === " ") toggle();
@@ -100,13 +100,8 @@ export function RunReplay({
     ? `${rooms[hovered.room]!.name} · ${replayTime(hovered.start)} – ${replayTime(hovered.end)}`
     : "Transit / unmapped";
   return (
-    <div
-      className="run-replay"
-      role="group"
-      aria-label="Run replay"
-      tabIndex={0}
-      onKeyDown={keyboard}
-    >
+    <fieldset className="run-replay">
+      <legend className="sr-only">Run replay</legend>
       <div className="run-map-graphic">
         {children}
         <svg
@@ -148,30 +143,32 @@ export function RunReplay({
       </div>
       <div className="run-replay-controls">
         <div className="run-replay-bar">
-          <button type="button" onClick={toggle}>
+          <button type="button" onClick={toggle} onKeyDown={keyboard}>
             {playing ? "Pause replay" : "Play replay"}
           </button>
           <span className="run-replay-clock">
             {replayTime(ms)} <span>/ {replayTime(duration)}</span>
           </span>
-          <div className="run-speed" role="group" aria-label="Playback speed">
+          <fieldset className="run-speed">
+            <legend className="sr-only">Playback speed</legend>
             {[1, 2, 4, 8].map((value) => (
               <button
                 type="button"
                 key={value}
                 aria-pressed={speed === value}
                 onClick={() => setSpeed(value)}
+                onKeyDown={keyboard}
               >
                 {value}×
               </button>
             ))}
-          </div>
+          </fieldset>
         </div>
         <div className="run-timeline" onPointerLeave={() => setHoverMs(null)}>
           <div className="run-timeline-track" aria-hidden="true">
-            {visits.map((visit, index) => (
+            {visits.map((visit) => (
               <span
-                key={index}
+                key={visit.start}
                 className="run-visit"
                 style={{
                   left: `${(visit.start / duration) * 100}%`,
@@ -199,6 +196,7 @@ export function RunReplay({
             step="1"
             value={Math.floor(ms)}
             aria-label="Replay position"
+            onKeyDown={keyboard}
             aria-valuetext={`${replayTime(ms)} of ${replayTime(duration)}`}
             aria-keyshortcuts="Space ArrowLeft ArrowRight Home End"
             title={hoverLabel}
@@ -226,6 +224,6 @@ export function RunReplay({
           {observed} secrets observed{!player && " · Position not captured"}
         </p>
       </div>
-    </div>
+    </fieldset>
   );
 }

@@ -82,7 +82,7 @@ it("renders final geometry with no default selection and accessible room control
   );
   expect(screen.getByRole("heading", { name: "Run summary" })).toBeTruthy();
   expect(screen.queryByText("Size")).toBeNull();
-  const map = screen.getByRole("group", {
+  const map = screen.getByRole("graphics-document", {
     name: "Dungeon layout at 300 score",
   });
   expect(map.querySelector("line")?.getAttribute("x1")).toBe("118");
@@ -92,7 +92,7 @@ it("renders final geometry with no default selection and accessible room control
   fireEvent.keyDown(room, { key: " " });
   expect(room.getAttribute("aria-pressed")).toBe("true");
   expect(location.hash).toBe("#room-2");
-  expect(history.length).toBe(length);
+  expect(history).toHaveLength(length);
   expect(screen.getByRole("heading", { name: "Puzzle" })).toBeTruthy();
   expect(room.querySelector("title")?.textContent).toContain("Puzzle");
   fireEvent.keyDown(
