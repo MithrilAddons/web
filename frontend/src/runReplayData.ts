@@ -107,3 +107,68 @@ export function replayTime(ms: number): string {
   ms = Math.floor(ms);
   return `${Math.floor(ms / 60000)}:${(Math.floor(ms / 1000) % 60).toString().padStart(2, "0")}.${(ms % 1000).toString().padStart(3, "0")}`;
 }
+
+/** A sample in a door gap or outside the six-by-six map has no room. */
+export function replayTile(point: ReplayPoint | null): number | null {
+  if (!point || point.flags & 2) return null;
+  const x = point.x + 200,
+    z = point.z + 200;
+  const col = Math.floor(x / 32),
+    row = Math.floor(z / 32);
+  if (
+    col < 0 ||
+    col >= 6 ||
+    row < 0 ||
+    row >= 6 ||
+    x - col * 32 > 31 ||
+    z - row * 32 > 31
+  )
+    return null;
+  return row * 6 + col;
+}
+
+export type RoomVisit = { room: number; start: number; end: number };
+export function replayVisits(
+  points: readonly ReplayPoint[],
+  tiles: ReadonlyMap<number, number>,
+): RoomVisit[] {
+  const visits: RoomVisit[] = [];
+  let current: RoomVisit | undefined;
+  for (const [index, point] of points.entries()) {
+    const tile = replayTile(point);
+    const room = tile === null ? undefined : tiles.get(tile);
+    if (room === undefined) {
+      current = undefined;
+      continue;
+    }
+    const end = points[index + 1]?.ms ?? point.ms;
+    if (current?.room === room) current.end = end;
+    else {
+      current = { room, start: point.ms, end };
+      visits.push(current);
+    }
+  }
+  return visits;
+}
+
+export function compactTime(ms: number): string {
+  const seconds = Number(((ms % 60000) / 1000).toFixed(3));
+  if (ms < 60000) return `${seconds} s`;
+  return `${Math.floor(ms / 60000)}:${seconds < 10 ? "0" : ""}${seconds}`;
+}
+
+export function replayTrail(
+  points: readonly ReplayPoint[],
+  ms: number,
+): ReplayPoint[] {
+  const start = Math.max(0, ms - 3000);
+  const trail = points.slice(
+    replayIndex(points, start) + 1,
+    replayIndex(points, ms) + 1,
+  );
+  const first = replayPosition(points, start),
+    last = replayPosition(points, ms);
+  if (first) trail.unshift({ ...first, ms: start, flags: 0 });
+  if (last && trail.at(-1)?.ms !== ms) trail.push({ ...last, ms, flags: 0 });
+  return trail;
+}
