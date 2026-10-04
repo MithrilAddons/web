@@ -1,5 +1,6 @@
 """Submission history and bounded live evidence. Network calls never hold the DB lock."""
 
+import hashlib
 import json
 import secrets
 import sqlite3
@@ -164,9 +165,13 @@ class RecordStore:
             ).fetchone()
             if not row:
                 raise HTTPException(404, "Attempt unavailable")
+            now = self.clock()
+            request_hash = hashlib.sha256(body.model_dump_json().encode()).hexdigest()
+            repeated = self._repeat_progress(row, body, now, request_hash)
+            if repeated is not None:
+                return repeated
             if row["status"] != "active":
                 raise HTTPException(409, "Attempt is no longer active")
-            now = self.clock()
             score = body.evidence.score(body.elapsed_ms, bool(row["paul"]))
             reason = self._invalid_progress(row, body, now, score)
             self.db.execute(
@@ -175,7 +180,12 @@ class RecordStore:
                     row["id"],
                     row["sequence"] + 1,
                     now,
-                    body.model_dump_json(exclude={"nonce", "attempt_id", "map"}),
+                    json.dumps(
+                        {
+                            **body.model_dump(mode="json", exclude={"nonce", "attempt_id", "map"}),
+                            "request_hash": request_hash,
+                        }
+                    ),
                 ),
             )
             if reason:
@@ -215,6 +225,40 @@ class RecordStore:
                 )
                 retain_current(self.db, uuid, row["floor"], result["record_id"], body.map)
             return result
+
+    def _repeat_progress(self, row, body, now, request_hash):
+        # Only the last exact accepted request may recover its lost acknowledgement.
+        # Do not refresh last_received: retries must not extend the live evidence window.
+        if (
+            row["status"] not in {"active", "accepted"}
+            or body.sequence != row["sequence"]
+            or not 0 <= now - row["last_received"] <= 15
+        ):
+            return None
+        sample = self.db.execute(
+            "SELECT body FROM solo_samples WHERE attempt_id=? AND sequence=?",
+            (row["id"], body.sequence),
+        ).fetchone()
+        if not sample or not secrets.compare_digest(
+            json.loads(sample["body"]).get("request_hash", ""), request_hash
+        ):
+            return None
+        result = {
+            "version": 2,
+            "attempt_id": row["id"],
+            "sequence": row["sequence"],
+            "nonce": row["nonce"],
+            "status": row["status"],
+        }
+        if row["status"] == "accepted":
+            record = self.db.execute(
+                "SELECT id FROM pb_records WHERE evidence_id=? AND status='eligible'",
+                (row["id"],),
+            ).fetchone()
+            if not record:
+                return {"version": 2, "status": "rejected", "reason": "record_unavailable"}
+            result["record_id"] = record["id"]
+        return result
 
     @staticmethod
     def _invalid_progress(row, body, now, score):

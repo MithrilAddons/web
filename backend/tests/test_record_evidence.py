@@ -279,3 +279,116 @@ def test_existing_minima_migrate_once_and_deletion_cannot_reimport_them(tmp_path
     store = RecordStore(path)
     assert store.read(UUID) == []
     store.close()
+
+
+def progress_body(attempt, sequence, *, complete=False):
+    return SoloProgress(
+        version=2,
+        attempt_id=attempt["attempt_id"],
+        nonce=attempt["nonce"],
+        sequence=sequence,
+        elapsed_ms=sequence * 5000,
+        ticks=sequence * 100,
+        roster=[UUID],
+        dead=False,
+        valid=True,
+        evidence=ScoreEvidence(**(HIGH if complete else LOW)),
+        complete=complete,
+    )
+
+
+def test_lost_progress_and_finish_replies_are_recovered_without_duplicate_writes(storage):
+    store, now = storage
+    attempt = start(store)
+    for seq in range(1, 4):
+        body = progress_body(attempt, seq, complete=seq == 3)
+        now[0] += 5
+        attempt = store.progress(UUID, body)
+        received = store.db.execute("SELECT last_received FROM solo_attempts").fetchone()[0]
+        now[0] += 0.5
+        assert store.progress(UUID, body) == attempt
+        assert store.db.execute("SELECT last_received FROM solo_attempts").fetchone()[0] == received
+        assert store.db.execute("SELECT COUNT(*) FROM solo_samples").fetchone()[0] == seq
+    assert store.db.execute("SELECT COUNT(*) FROM pb_records").fetchone()[0] == 1
+    assert attempt["status"] == "accepted"
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"ticks": 99},
+        {"nonce": "x" * 43},
+        {"elapsed_ms": 5001},
+        {
+            "map": {
+                "version": 1,
+                "rooms": [
+                    {
+                        "tiles": [0],
+                        "type": "NORMAL",
+                        "state": "COMPLETE",
+                        "name": "Synthetic",
+                        "secrets_found": 1,
+                        "secrets_total": 1,
+                    }
+                ],
+                "doors": [],
+            }
+        },
+    ],
+)
+def test_retry_cannot_change_any_progress_field(storage, change):
+    store, now = storage
+    attempt = start(store)
+    for seq in range(1, 4):
+        body = progress_body(attempt, seq, complete=seq == 3)
+        now[0] += 5
+        attempt = store.progress(UUID, body)
+    changed = SoloProgress.model_validate({**body.model_dump(), **change})
+    with pytest.raises(HTTPException) as error:
+        store.progress(UUID, changed)
+    assert error.value.status_code == 409
+    assert store.db.execute("SELECT COUNT(*) FROM pb_records").fetchone()[0] == 1
+
+
+@pytest.mark.parametrize("mode", ["expired", "legacy", "missing", "older"])
+def test_retry_cannot_refresh_expired_or_unrecognized_evidence(storage, mode):
+    store, now = storage
+    body = progress_body(start(store), 1)
+    now[0] += 5
+    reply = store.progress(UUID, body)
+    if mode == "expired":
+        now[0] += 15.001
+    elif mode == "older":
+        now[0] += 5
+        store.progress(UUID, progress_body(reply, 2))
+    else:
+        with store.db:
+            if mode == "missing":
+                store.db.execute("DELETE FROM solo_samples")
+            else:
+                saved = json.loads(store.db.execute("SELECT body FROM solo_samples").fetchone()[0])
+                saved.pop("request_hash")
+                store.db.execute("UPDATE solo_samples SET body=?", (json.dumps(saved),))
+    assert store.progress(UUID, body)["status"] == "rejected"
+    assert store.read(UUID) == []
+
+
+@pytest.mark.parametrize("deleted", [False, True])
+def test_finish_retry_cannot_restore_moderated_or_deleted_records(storage, deleted):
+    store, now = storage
+    attempt = start(store)
+    for seq in range(1, 4):
+        body = progress_body(attempt, seq, complete=seq == 3)
+        now[0] += 5
+        attempt = store.progress(UUID, body)
+    with store.db:
+        store.db.execute(
+            "DELETE FROM pb_records" if deleted else "UPDATE pb_records SET status='invalidated'"
+        )
+    assert store.progress(UUID, body) == {
+        "version": 2,
+        "status": "rejected",
+        "reason": "record_unavailable",
+    }
+    assert store.read(UUID) == []

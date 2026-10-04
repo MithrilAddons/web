@@ -6,6 +6,8 @@ import re
 import threading
 import time
 
+from .release_checks import extract_checks
+
 RELEASES_URL = "https://github.com/MithrilAddons/mithrilpf/releases"
 MAX_RESPONSE = 131072
 VERSION = re.compile(r"v(\d+)\.(\d+)\.(\d+)(?:-(alpha|beta|rc)\.(\d+))?")
@@ -105,6 +107,7 @@ def discord_release(value):
     notes = value.get("body") or ""
     if not isinstance(notes, str):
         raise ValueError("Invalid release notes")
+    notes, checks = extract_checks(notes, release["version"], digest[7:].lower())
     return {
         **release,
         "prerelease": value["prerelease"],
@@ -112,6 +115,7 @@ def discord_release(value):
         "notes": notes[:3000],
         "page": f"{RELEASES_URL}/tag/v{release['version']}",
         "modrinth": "https://modrinth.com/mod/mithrilpf",
+        **({"checks": checks} if checks is not None else {}),
     }
 
 
