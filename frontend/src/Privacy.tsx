@@ -41,8 +41,10 @@ export function PrivacyPolicy() {
       </p>
       <p>
         New solo-clear PBs can include a public dungeon map frozen at 300 score:
-        room names, layout, connections, clear states and secret counts. The map
-        is linked from the Discord time. We store structured map data, not
+        room names, layout, connections, clear states, room times, secret counts
+        and crypts. An optional 2D replay records the player's dungeon position,
+        facing and observed secret-counter increases through that cutoff. The
+        map is linked from the Discord time. We store structured map data, not
         screenshots or individual secret locations.
       </p>
       <p>

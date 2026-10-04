@@ -462,8 +462,9 @@ saved in the account/record databases. No additional cookies are used.
 
 Version 2 `POST /api/v1/records/solo-progress` accepts an optional `map` on a
 completion report only. Capture freezes at the same 300-score observation as the
-PB. Existing clients can omit it. This route allows a 32 KiB request; all other
-request body limits remain 4 KiB. The map itself is bounded to 16 KiB of UTF-8 JSON.
+PB. Existing clients can omit it. This route allows a 640 KiB request; all other
+request body limits remain 4 KiB. Map metadata is bounded to 16 KiB of UTF-8 JSON;
+the complete map including replay is bounded to 600 KiB when read from storage.
 
 The v1 map contains `version:1`, `rooms` (1–36), and `doors` (0–60). Room `tiles`
 are unique, connected indices on a 6×6 grid (row-major 0–35, up to four per room).
@@ -473,7 +474,36 @@ are UNKNOWN, NORMAL, RARE, ENTRANCE, BLOOD, FAIRY, CHAMPION, PUZZLE or TRAP;
 states are UNKNOWN, UNOPENED, DISCOVERED, CLEARED, COMPLETE or FAILED. Doors
 join adjacent tiles in distinct rooms with ordered `a < b` and type UNKNOWN,
 NORMAL, WITHER, BLOOD or ENTRANCE. Overlaps, duplicate doors and excess fields
-are rejected. No pixels, player coordinates or individual secret positions are sent.
+are rejected. No pixels or individual secret locations are sent.
+
+Map `version:2` adds required `elapsed_ms` and `ticks` to every room and a required
+`stats` object containing `elapsed_ms`, `ticks`, `transit_ms`, `transit_ticks`,
+`secrets_found`, `secrets_total`, and `crypts`. Times are nonnegative integers,
+bounded to two hours (7,200,000 ms / 144,000 ticks). Room times include repeat
+visits; each clock's room sum plus transit must equal its run total exactly.
+Run totals must match the completion report and crypts must match its evidence.
+Secret counts are 0–3600 or null, crypts 0–100 or null; null means not captured,
+not zero. Known found counts cannot exceed known totals. All observations freeze
+at the PB's 300-score cutoff. The page displays tick times to match the PB, plus
+dungeon totals. Existing v1 maps remain readable without fabricating these fields.
+`contracts/run-map-v2.json` is shared with the mod's snapshot regression test.
+
+A v2 map can also contain `replay:{version:1,samples:<base64>}`. Decoded samples
+are little-endian 12-byte records: elapsed milliseconds (uint32), world X and Z
+in sixteenths of a block (int16 each), yaw (uint8, 256 steps per rotation), flags
+(uint8), and cumulative observed dungeon secrets (uint16, 0–3600). Flag bit 0
+breaks interpolation from the preceding point (teleport, large displacement or
+capture gap); bit 1 means position unavailable, with coordinates zero and bit 0
+also set. Mapped coordinates are bounded to the dungeon grid. The first sample
+is at zero with bit 0 set; timestamps strictly increase and finish exactly at
+`stats.elapsed_ms`. Interior samples are at least 200 ms apart; the final sample
+can be sooner. At most 36,002 samples are accepted. Secret counts cannot decrease.
+`contracts/run-replay-v1.json` checks the mod encoder, backend and browser decoder.
+Encoding happens on the mod's sync worker; database compression covers the entire
+snapshot. Replay uses real elapsed time over the final map; it does not reconstruct
+room states over time. Secret increases indicate when the global counter update
+was observed, which may lag or combine pickups. Retention and erasure are shared
+with the map, with no additional copy in progress evidence.
 
 `GET /api/v1/records/solo/{record_id}` is public and returns
 `{version:1,record:{id,uuid,name,floor,real_ms,ticks,created},map}` for an eligible
@@ -492,7 +522,7 @@ Old eligible run links return `map:null`. Snapshots are compressed separately in
 Use one backend process: parties/searches/cooldowns/notices are in memory, bounded
 at 4000 players/800 parties, and do not survive restarts. Auth and PBs use locked
 SQLite stores. Mod presence has a 60-second freshness window. HTTP requests are
-bounded at 4 KiB (32 KiB for solo-progress); mod handoff responses at 16 KiB and
+bounded at 4 KiB (640 KiB for solo-progress); mod handoff responses at 16 KiB and
 chat responses at 256 KiB.
 Reverse-proxy limits and rollback are in DEPLOYMENT.md. Restart recovery does not
 silently restore a closed finder party.

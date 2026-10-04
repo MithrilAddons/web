@@ -105,6 +105,14 @@ class SoloProgress(Strict):
     def completion_map(self):
         if self.map is not None and not self.complete:
             raise ValueError("Map requires a completion report")
+        if self.map is not None and self.map.stats is not None:
+            stats = self.map.stats
+            if (
+                stats.elapsed_ms != self.elapsed_ms
+                or stats.ticks != self.ticks
+                or stats.crypts != self.evidence.crypts
+            ):
+                raise ValueError("Map stats must match the completion observation")
         return self
 
 

@@ -4,15 +4,22 @@
 
 Map capture adds the idempotent `pb_maps` table to records.sqlite3. Back up the
 database and deploy the backend/frontend plus updated nginx configuration before
-the mod and bot. Only `/api/v1/records/solo-progress` has a 32 KiB body allowance;
+the mod and bot. Only `/api/v1/records/solo-progress` has a 640 KiB body allowance;
 other requests retain 4 KiB. Validate nginx before reload. Verify a synthetic
 map upload, current-best replacement, public page, ban/invalidation and erasure.
 Do not seed production with synthetic player records.
 
+Map v2 adds room timing, dungeon totals and an optional replay without a database
+migration. Its replay raises the solo-progress body limit from 32 to 640 KiB;
+deploy and validate the updated nginx configuration too. Deploy v1/v2 backend
+and frontend support before releasing the v2
+mod: an older backend rejects that map format. After v2 clients are distributed,
+keep a compatible reader/validator deployed and recover with a forward fix.
+
 The map-aware erasure path must remain deployed while maps exist. Recover with
 a compatible forward fix; do not restore an older writer/deletion implementation
 or stale database. Keep the independent current erasure ledger during recovery.
-At most two compressed maps are retained per player (one per floor). Deleted
+At most two compressed maps with optional replays are retained per player (one per floor). Deleted
 SQLite pages are reused; file size need not shrink immediately. Normal seven-day
 backup expiration and erasure replay also apply to these snapshots.
 

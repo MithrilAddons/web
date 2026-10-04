@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import "./runMap.css";
+import { RunReplay } from "./RunReplay";
+import type { ReplayData } from "./runReplayData";
 
 type Room = {
   tiles: number[];
@@ -8,11 +10,24 @@ type Room = {
   state: string;
   secrets_found: number | null;
   secrets_total: number | null;
+  elapsed_ms?: number;
+  ticks?: number;
+};
+type RunStats = {
+  elapsed_ms: number;
+  ticks: number;
+  transit_ms: number;
+  transit_ticks: number;
+  secrets_found: number | null;
+  secrets_total: number | null;
+  crypts: number | null;
 };
 type MapData = {
-  version: 1;
+  version: 1 | 2;
   rooms: Room[];
   doors: { a: number; b: number; type: string }[];
+  stats?: RunStats;
+  replay?: ReplayData;
 };
 type Run = {
   version: 1;
@@ -78,7 +93,10 @@ export function RunMap({ recordId }: Readonly<{ recordId: string }>) {
               : "Could not load this run. Try again shortly.",
           );
         const value = (await response.json()) as Run;
-        if (value.version !== 1 || (value.map && value.map.version !== 1))
+        if (
+          value.version !== 1 ||
+          (value.map && ![1, 2].includes(value.map.version))
+        )
           throw new Error("This run uses an unsupported map format.");
         if (active) setRun(value);
       })
@@ -144,91 +162,132 @@ function DungeonMap({ data }: Readonly<{ data: MapData }>) {
   const room = data.rooms[selected];
   return (
     <>
+      {data.stats ? (
+        <>
+          <dl className="run-summary" aria-label="Dungeon totals at 300 score">
+            <div>
+              <dt>Secrets collected</dt>
+              <dd>{data.stats.secrets_found ?? "Not captured"}</dd>
+            </div>
+            <div>
+              <dt>Total secrets</dt>
+              <dd>{data.stats.secrets_total ?? "Not captured"}</dd>
+            </div>
+            <div>
+              <dt>Crypts killed</dt>
+              <dd>{data.stats.crypts ?? "Not captured"}</dd>
+            </div>
+          </dl>
+          <p className="run-timing">
+            Rooms{" "}
+            <strong>{time(data.stats.ticks - data.stats.transit_ticks)}</strong>
+            {" + "}Transit / unmapped{" "}
+            <strong>{time(data.stats.transit_ticks)}</strong>
+            {" = "}Run <strong>{time(data.stats.ticks)}</strong>
+          </p>
+          <p className="run-caption">
+            Times use server ticks, include repeat visits, and stop at 300
+            score.
+          </p>
+        </>
+      ) : (
+        <p className="run-caption">
+          Room timing and dungeon totals were not recorded for this run.
+        </p>
+      )}
       <div className="run-map-layout">
         <div className="run-map-canvas">
-          <svg
-            viewBox="0 0 370 370"
-            role="img"
-            aria-label="Dungeon layout at 300 score"
-          >
-            {data.doors.map((door) => {
-              const a = coordinate(door.a),
-                b = coordinate(door.b);
-              const horizontal = a.y === b.y;
-              return (
-                <line
-                  key={`${door.a}-${door.b}`}
-                  x1={a.x + 24 + (horizontal ? 24 : 0)}
-                  y1={a.y + 24 + (horizontal ? 0 : 24)}
-                  x2={b.x + 24 - (horizontal ? 24 : 0)}
-                  y2={b.y + 24 - (horizontal ? 0 : 24)}
-                  stroke={doorColors[door.type] ?? "#aaa39b"}
-                  strokeWidth="8"
+          <RunReplay data={data.replay}>
+            <svg
+              viewBox="0 0 370 370"
+              role="img"
+              aria-label="Dungeon layout at 300 score"
+            >
+              {data.doors.map((door) => {
+                const a = coordinate(door.a),
+                  b = coordinate(door.b);
+                const horizontal = a.y === b.y;
+                return (
+                  <line
+                    key={`${door.a}-${door.b}`}
+                    x1={a.x + 24 + (horizontal ? 24 : 0)}
+                    y1={a.y + 24 + (horizontal ? 0 : 24)}
+                    x2={b.x + 24 - (horizontal ? 24 : 0)}
+                    y2={b.y + 24 - (horizontal ? 0 : 24)}
+                    stroke={doorColors[door.type] ?? "#aaa39b"}
+                    strokeWidth="8"
+                  >
+                    <title>{label(door.type)} door</title>
+                  </line>
+                );
+              })}
+              {data.rooms.map((entry, index) => (
+                <a
+                  key={entry.tiles[0]}
+                  href="#room-details"
+                  onClick={() => setSelected(index)}
+                  aria-label={`${entry.name ?? label(entry.type)}: ${count(entry)} secrets`}
+                  className={
+                    index === selected ? "map-room selected" : "map-room"
+                  }
                 >
-                  <title>{label(door.type)} door</title>
-                </line>
-              );
-            })}
-            {data.rooms.map((entry, index) => (
-              <a
-                key={entry.tiles[0]}
-                href="#room-details"
-                onClick={() => setSelected(index)}
-                aria-label={`${entry.name ?? label(entry.type)}: ${count(entry)} secrets`}
-                className={
-                  index === selected ? "map-room selected" : "map-room"
-                }
-              >
-                <g fill={colors[entry.type] ?? "#68717a"}>
-                  {entry.tiles.flatMap((tile) =>
-                    entry.tiles
-                      .filter(
-                        (other) =>
-                          other === tile + 6 ||
-                          (other === tile + 1 &&
-                            Math.floor(other / 6) === Math.floor(tile / 6)),
-                      )
-                      .map((other) => {
-                        const a = coordinate(tile),
-                          b = coordinate(other);
-                        const square =
-                          other === tile + 1 &&
-                          entry.tiles.includes(tile + 6) &&
-                          entry.tiles.includes(tile + 7);
-                        return (
-                          <rect
-                            key={`${tile}-${other}`}
-                            x={a.x}
-                            y={a.y}
-                            width={b.x - a.x + 48}
-                            height={square ? 108 : b.y - a.y + 48}
-                          />
-                        );
-                      }),
-                  )}
-                  {entry.tiles.map((tile) => {
+                  <g fill={colors[entry.type] ?? "#68717a"}>
+                    {entry.tiles.flatMap((tile) =>
+                      entry.tiles
+                        .filter(
+                          (other) =>
+                            other === tile + 6 ||
+                            (other === tile + 1 &&
+                              Math.floor(other / 6) === Math.floor(tile / 6)),
+                        )
+                        .map((other) => {
+                          const a = coordinate(tile),
+                            b = coordinate(other);
+                          const square =
+                            other === tile + 1 &&
+                            entry.tiles.includes(tile + 6) &&
+                            entry.tiles.includes(tile + 7);
+                          return (
+                            <rect
+                              key={`${tile}-${other}`}
+                              x={a.x}
+                              y={a.y}
+                              width={b.x - a.x + 48}
+                              height={square ? 108 : b.y - a.y + 48}
+                            />
+                          );
+                        }),
+                    )}
+                    {entry.tiles.map((tile) => {
+                      const p = coordinate(tile);
+                      return (
+                        <rect
+                          key={tile}
+                          x={p.x}
+                          y={p.y}
+                          width="48"
+                          height="48"
+                        />
+                      );
+                    })}
+                  </g>
+                  {entry.tiles.slice(0, 1).map((tile) => {
                     const p = coordinate(tile);
                     return (
-                      <rect key={tile} x={p.x} y={p.y} width="48" height="48" />
+                      <g key={tile} className="map-room-label">
+                        <text x={p.x + 24} y={p.y + 24}>
+                          {count(entry)}
+                        </text>
+                        <text x={p.x + 24} y={p.y + 40} className="map-marker">
+                          {markers[entry.state] ?? ""}
+                        </text>
+                      </g>
                     );
                   })}
-                </g>
-                {entry.tiles.slice(0, 1).map((tile) => {
-                  const p = coordinate(tile);
-                  return (
-                    <g key={tile} className="map-room-label">
-                      <text x={p.x + 24} y={p.y + 24}>
-                        {count(entry)}
-                      </text>
-                      <text x={p.x + 24} y={p.y + 40} className="map-marker">
-                        {markers[entry.state] ?? ""}
-                      </text>
-                    </g>
-                  );
-                })}
-              </a>
-            ))}
-          </svg>
+                </a>
+              ))}
+            </svg>
+          </RunReplay>
           <p className="run-caption">
             Found / total secrets · ✓ Complete · • Cleared · × Failed
           </p>
@@ -253,6 +312,14 @@ function DungeonMap({ data }: Readonly<{ data: MapData }>) {
                 <div>
                   <dt>Status</dt>
                   <dd>{label(room.state)}</dd>
+                </div>
+                <div>
+                  <dt>Time in room</dt>
+                  <dd>
+                    {room.ticks === undefined
+                      ? "Not recorded"
+                      : time(room.ticks)}
+                  </dd>
                 </div>
                 <div>
                   <dt>Secrets</dt>
@@ -290,6 +357,12 @@ function DungeonMap({ data }: Readonly<{ data: MapData }>) {
               {entry.name ?? `${label(entry.type)} room`}
             </span>{" "}
             <span>
+              {entry.ticks !== undefined && (
+                <>
+                  <strong>{time(entry.ticks)}</strong>
+                  {" · "}
+                </>
+              )}
               {count(entry)} <small>secrets · {label(entry.state)}</small>
             </span>
           </button>

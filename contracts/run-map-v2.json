@@ -1,0 +1,41 @@
+{
+  "version": 2,
+  "rooms": [
+    {
+      "tiles": [0, 1],
+      "name": "Room",
+      "type": "NORMAL",
+      "state": "CLEARED",
+      "secrets_found": 3,
+      "secrets_total": 5,
+      "elapsed_ms": 6000,
+      "ticks": 120
+    },
+    {
+      "tiles": [7],
+      "name": "Puzzle",
+      "type": "PUZZLE",
+      "state": "COMPLETE",
+      "secrets_found": 0,
+      "secrets_total": 0,
+      "elapsed_ms": 8000,
+      "ticks": 160
+    }
+  ],
+  "doors": [
+    {
+      "a": 1,
+      "b": 7,
+      "type": "NORMAL"
+    }
+  ],
+  "stats": {
+    "elapsed_ms": 15000,
+    "ticks": 300,
+    "transit_ms": 1000,
+    "transit_ticks": 20,
+    "secrets_found": 3,
+    "secrets_total": 5,
+    "crypts": 5
+  }
+}
