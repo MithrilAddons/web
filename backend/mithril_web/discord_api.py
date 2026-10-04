@@ -6,6 +6,8 @@ import time
 from fastapi import FastAPI, Request
 from starlette.responses import JSONResponse
 
+from .leaderboards import snapshot
+
 
 def summary(finder, stats, release):
     floors = {floor: {"open_parties": 0, "looking": 0} for floor in ("F7", "M7")}
@@ -68,5 +70,10 @@ def create_internal(public_app, secret):
     @app.get("/internal/v1/releases")
     def get_releases():
         return public_app.state.releases.discord()
+
+    @app.get("/internal/v1/leaderboards")
+    def get_leaderboards():
+        state = public_app.state
+        return snapshot(state.records, state.auth)
 
     return app

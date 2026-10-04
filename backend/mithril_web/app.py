@@ -441,13 +441,20 @@ def create_app(
         request.app.state.moderation.check(
             user["uuid"], request.client.host if request.client else None, remember=True
         )
-        return user["uuid"]
+        return user
 
     def submit_record(request, method, body):
         # Authenticate again under the write lock: revocation/erasure cannot race a submission.
         with app.state.records.lock:
-            uuid = record_user(request)
-            return uuid, getattr(app.state.records, method)(uuid, body)
+            user = record_user(request)
+            uuid = user["uuid"]
+            result = getattr(app.state.records, method)(uuid, body)
+            if result.get("status") == "accepted":
+                with app.state.records.db:
+                    app.state.records.db.execute(
+                        "INSERT OR REPLACE INTO record_names VALUES (?,?)", (uuid, user["name"])
+                    )
+            return uuid, result
 
     @app.post("/api/v1/records/solo-start")
     async def solo_start(body: SoloStart, request: Request):

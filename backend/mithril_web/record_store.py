@@ -24,6 +24,8 @@ class RecordStore:
                 real_ms INTEGER NOT NULL, ticks INTEGER NOT NULL, created REAL NOT NULL,
                 source TEXT NOT NULL, status TEXT NOT NULL, evidence_id TEXT);
             CREATE INDEX IF NOT EXISTS pb_account ON pb_records(uuid, status);
+            CREATE TABLE IF NOT EXISTS record_names (
+                uuid TEXT PRIMARY KEY, name TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS solo_attempts (
                 id TEXT PRIMARY KEY, uuid TEXT NOT NULL, floor TEXT NOT NULL, started REAL NOT NULL,
                 last_received REAL NOT NULL, sequence INTEGER NOT NULL, nonce TEXT NOT NULL,

@@ -2,6 +2,12 @@
 
 ## Optional Discord listener
 
+Leaderboard support adds an idempotent `record_names` table to records.sqlite3;
+back it up with existing records. Deploy the updated backend before enabling the
+bot's leaderboard channel. Verify ranked clocks, equal terminal groups and removal
+after invalidation or erasure. The new privacy erasure path must remain deployed
+while retained record names exist; use a compatible forward fix for backend recovery.
+
 Deploy the matching tested/public source before enabling the Discord bot. Install
 `deploy/discord-listener.conf` as a drop-in for `mithril-web.service`; the existing
 unit remains the default for installations without Discord. Generate a separate

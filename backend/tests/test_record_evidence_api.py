@@ -67,6 +67,12 @@ def test_finish_refreshes_matching_stats_and_logout_revokes_tracking(api):
         assert response.status_code == 200
         attempt = response.json()
     assert attempt["status"] == "accepted"
+    assert (
+        app.state.records.db.execute(
+            "SELECT name FROM record_names WHERE uuid=?", (UUID,)
+        ).fetchone()[0]
+        == "SyntheticPlayer"
+    )
     app.state.records_changed.assert_awaited_once_with(UUID)
     client.cookies.set(COOKIE, session)
     assert (

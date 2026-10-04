@@ -33,6 +33,13 @@ export function PrivacyPolicy() {
         restrictions.
       </p>
       <p>
+        Eligible mod records and Minecraft names appear on the public Discord
+        leaderboards. Each player appears once per category. Deleting synced PBs
+        removes them on the next successful bot refresh, normally within a
+        minute. Discord retains the posts under its own privacy policy; copies
+        saved by other people cannot be recalled.
+      </p>
+      <p>
         We use account and gameplay data to provide party finding and record
         validation. We use limited moderation and connection data to prevent
         abuse, handle appeals and hold moderators accountable. We do not sell

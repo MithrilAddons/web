@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "updated_at": 100000,
+  "boards": {
+    "f7_solo": [
+      {
+        "uuid": "00000000000000000000000000000001",
+        "name": "SyntheticOne",
+        "rank": 1,
+        "real_ms": 100000,
+        "ticks": 1800
+      }
+    ],
+    "m7_solo": [],
+    "m7_terminals": [
+      {
+        "uuid": "00000000000000000000000000000001",
+        "name": "SyntheticOne",
+        "rank": 1,
+        "real_ms": 100000,
+        "ticks": 1800
+      },
+      {
+        "uuid": "00000000000000000000000000000002",
+        "name": "SyntheticTwo",
+        "rank": 1,
+        "real_ms": 100000,
+        "ticks": 1800
+      }
+    ]
+  }
+}

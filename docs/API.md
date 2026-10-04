@@ -2,6 +2,27 @@
 
 ## Optional Discord foundation API
 
+`GET /internal/v1/leaderboards` returns the synthetic shape in
+`contracts/discord-leaderboards-v1.json`: `version:1`, `updated_at` and three boards
+(`f7_solo`, `m7_solo`, `m7_terminals`). Each row contains UUID, nullable last
+authenticated Minecraft name, rank, real_ms and ticks from one eligible observation.
+Each player contributes their best record per category. Solo ranks use ticks only
+and UUID for deterministic ties, returning ten players. M7 terminals sort by real_ms
+then ticks and use ten dense ranks, including all players tied at rank ten.
+F7 terminal records never participate. Existing eligible legacy, manual and
+single-report records remain eligible; active account/network bans and invalidated
+records are excluded. No new client submission or Discord link is required.
+
+Record names are retained alongside PB summaries, captured from accepted mod
+submissions and backfilled from authenticated sessions (never pending proof names).
+They are erased atomically with PB/account deletion.
+Unknown names remain null and are displayed as UUIDs. This introduces the additive
+`record_names` table. The bot refreshes once per minute and removes stale content
+on backend failure. Record deletion/moderation affects the next successful refresh;
+Discord access failures may delay this. The endpoint remains authenticated,
+loopback-only and no-store. Each board is bounded at 1,000 players; overflow returns
+503 rather than truncating a tie group. No gameplay evidence or credentials are exposed.
+
 The Discord bot uses a separate authenticated loopback listener on `127.0.0.1:8781`,
 never the public API or nginx. `GET /internal/v1/summary` returns service time,
 aggregate open-party/search counts for F7/M7, the latest known mod version and
