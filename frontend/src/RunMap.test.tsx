@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { RunMap } from "./RunMap";
 import { App } from "./App";
+import timedMap from "../../contracts/run-map-v2.json";
 
 const id = "a".repeat(43);
 const data = {
@@ -108,7 +109,7 @@ it.each([
 });
 
 it("rejects unsupported maps and escapes room labels", async () => {
-  mock({ ...data, map: { ...data.map, version: 2 } });
+  mock({ ...data, map: { ...data.map, version: 3 } });
   render(<RunMap recordId={id} />);
   expect((await screen.findByRole("alert")).textContent).toContain(
     "unsupported map format",
@@ -122,6 +123,70 @@ it("rejects unsupported maps and escapes room labels", async () => {
     await screen.findByRole("heading", { name: "<script>bad()</script>" }),
   ).toBeTruthy();
   expect(document.querySelector("script")).toBeNull();
+});
+
+it("shows frozen dungeon totals and room plus transit times matching the PB", async () => {
+  mock({ ...data, record: { ...data.record, ticks: 300 }, map: timedMap });
+  render(<RunMap recordId={id} />);
+  await screen.findByRole("heading", { name: "0:15.000 by Synthetic" });
+  expect(screen.getByLabelText("Dungeon totals at 300 score").textContent).toBe(
+    "Secrets collected3Total secrets5Crypts killed5",
+  );
+  expect(
+    screen.getByText(/Rooms/, { selector: ".run-timing" }).textContent,
+  ).toBe("Rooms 0:14.000 + Transit / unmapped 0:01.000 = Run 0:15.000");
+  expect(screen.getByText("Time in room").nextElementSibling?.textContent).toBe(
+    "0:06.000",
+  );
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: "Puzzle 0:08.000 · 0/0 secrets · Complete",
+    }),
+  );
+  expect(screen.getByText("Time in room").nextElementSibling?.textContent).toBe(
+    "0:08.000",
+  );
+  expect(screen.getByText(/include repeat visits/)).toBeTruthy();
+});
+
+it("distinguishes old maps and missing counters from measured zeros", async () => {
+  mock();
+  render(<RunMap recordId={id} />);
+  await screen.findByText(
+    "Room timing and dungeon totals were not recorded for this run.",
+  );
+  expect(screen.getByText("Not recorded")).toBeTruthy();
+  cleanup();
+  mock({
+    ...data,
+    map: {
+      ...timedMap,
+      stats: {
+        ...timedMap.stats,
+        secrets_found: null,
+        secrets_total: null,
+        crypts: null,
+      },
+    },
+  });
+  render(<RunMap recordId={id} />);
+  expect(await screen.findAllByText("Not captured")).toHaveLength(3);
+  cleanup();
+  mock({
+    ...data,
+    map: {
+      ...timedMap,
+      stats: {
+        ...timedMap.stats,
+        secrets_found: 0,
+        secrets_total: 0,
+        crypts: 0,
+      },
+    },
+  });
+  render(<RunMap recordId={id} />);
+  await screen.findByLabelText("Dungeon totals at 300 score");
+  expect(screen.queryByText("Not captured")).toBeNull();
 });
 
 it("handles a network failure without leaving a loading page", async () => {

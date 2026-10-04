@@ -7,8 +7,10 @@ from typing import Annotated, Literal
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from .run_replay import RunReplay
+
 Tile = Annotated[int, Field(ge=0, le=35)]
-MAP_LIMIT = 16384
+MAP_LIMIT = 600 * 1024
 
 
 class StrictMap(BaseModel):
@@ -53,10 +55,59 @@ class MapDoor(StrictMap):
     type: Literal["UNKNOWN", "NORMAL", "WITHER", "BLOOD", "ENTRANCE"]
 
 
+class TimedMapRoom(MapRoom):
+    elapsed_ms: int = Field(ge=0, le=7_200_000)
+    ticks: int = Field(ge=0, le=144_000)
+
+
+class RunStats(StrictMap):
+    elapsed_ms: int = Field(ge=0, le=7_200_000)
+    ticks: int = Field(ge=0, le=144_000)
+    transit_ms: int = Field(ge=0, le=7_200_000)
+    transit_ticks: int = Field(ge=0, le=144_000)
+    secrets_found: int | None = Field(ge=0, le=3600)
+    secrets_total: int | None = Field(ge=0, le=3600)
+    crypts: int | None = Field(ge=0, le=100)
+
+
 class RunMap(StrictMap):
-    version: Literal[1]
-    rooms: list[MapRoom] = Field(min_length=1, max_length=36)
+    version: Literal[1, 2]
+    rooms: list[MapRoom | TimedMapRoom] = Field(min_length=1, max_length=36)
     doors: list[MapDoor] = Field(max_length=60)
+    stats: RunStats | None = None
+    replay: RunReplay | None = None
+
+    def public_data(self):
+        exclude = (
+            {"stats", "replay"}
+            if self.version == 1
+            else ({"replay"} if self.replay is None else set())
+        )
+        return self.model_dump(exclude=exclude)
+
+    @model_validator(mode="after")
+    def timing(self):
+        timed = [room for room in self.rooms if isinstance(room, TimedMapRoom)]
+        if self.version == 1:
+            if timed or self.stats is not None or self.replay is not None:
+                raise ValueError("Timing requires map version 2")
+            return self
+        if self.stats is None or len(timed) != len(self.rooms):
+            raise ValueError("Version 2 requires complete room timing and run stats")
+        if self.replay is not None:
+            self.replay.validate_timeline(self.stats.elapsed_ms)
+        for field, transit in (("elapsed_ms", "transit_ms"), ("ticks", "transit_ticks")):
+            if sum(getattr(room, field) for room in timed) + getattr(
+                self.stats, transit
+            ) != getattr(self.stats, field):
+                raise ValueError("Room and transit times must equal run time")
+        if (
+            self.stats.secrets_found is not None
+            and self.stats.secrets_total is not None
+            and self.stats.secrets_found > self.stats.secrets_total
+        ):
+            raise ValueError("Found secrets exceed dungeon total")
+        return self
 
     @model_validator(mode="after")
     def consistent(self):
@@ -74,7 +125,7 @@ class RunMap(StrictMap):
             if door.a not in owners or door.b not in owners or owners[door.a] == owners[door.b]:
                 raise ValueError("Door must join distinct rooms")
             pairs.add(pair)
-        if len(self.model_dump_json().encode()) > MAP_LIMIT:
+        if len(self.model_dump_json(exclude={"replay"}).encode()) > 16384:
             raise ValueError("Map too large")
         return self
 
@@ -92,7 +143,7 @@ def retain_current(db, uuid, floor, record_id=None, snapshot=None):
         (uuid, floor, best_id),
     )
     if snapshot is not None and record_id == best_id:
-        packed = zlib.compress(snapshot.model_dump_json().encode())
+        packed = zlib.compress(json.dumps(snapshot.public_data(), separators=(",", ":")).encode())
         db.execute(
             "INSERT OR REPLACE INTO pb_maps VALUES (?,?,?,?)", (uuid, floor, record_id, packed)
         )
@@ -119,5 +170,5 @@ def public_record(records, record_id):
             raw = decoder.decompress(packed, MAP_LIMIT + 1)
             if len(raw) > MAP_LIMIT or not decoder.eof or decoder.unused_data:
                 raise HTTPException(503, "Map unavailable")
-            snapshot = RunMap.model_validate(json.loads(raw)).model_dump()
+            snapshot = RunMap.model_validate(json.loads(raw)).public_data()
         return {"version": 1, "record": result, "map": snapshot}

@@ -176,7 +176,7 @@ def create_app(
         ):
             # Nginx also bounds streaming requests; do not accept chunked auth bodies.
             length = request.headers.get("content-length", "0")
-            maximum = 32768 if request.url.path == "/api/v1/records/solo-progress" else 4096
+            maximum = 640 * 1024 if request.url.path == "/api/v1/records/solo-progress" else 4096
             if (
                 len(length) > 6
                 or not length.isdigit()

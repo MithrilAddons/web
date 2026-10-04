@@ -1,11 +1,13 @@
 import copy
 import json
 import zlib
+from pathlib import Path
 
 import pytest
 from mithril_web.auth import COOKIE
 from mithril_web.leaderboards import snapshot
 from mithril_web.run_maps import MAP_LIMIT, RunMap, retain_current
+from mithril_web.solo_evidence import SoloProgress
 from pydantic import ValidationError
 from test_moderation import MOD, USER, post, seed
 from test_moderation import setup as setup
@@ -37,6 +39,82 @@ def map_data():
         ],
         doors=[dict(a=1, b=7, type="NORMAL")],
     )
+
+
+def timed_map():
+    return json.loads((Path(__file__).parents[2] / "contracts/run-map-v2.json").read_text())
+
+
+def test_timed_map_round_trip_matches_mod_contract_and_current_best_retention(api):
+    client, app, now, _, _ = api
+    data = timed_map()
+    first = complete(api, data)["record_id"]
+    assert read(client, first).json()["map"] == data
+    stored = app.state.records.db.execute("SELECT data FROM pb_maps").fetchone()[0]
+    assert json.loads(zlib.decompress(stored)) == data
+    assert len(stored) < 1024
+    for row in app.state.records.db.execute("SELECT body FROM solo_samples"):
+        assert "map" not in json.loads(row[0])
+    now[0] += 1
+    complete(api, map_data(), ticks=294)
+    assert read(client, first).json()["map"] is None
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        lambda m: m.update(version=1),
+        lambda m: m.pop("stats"),
+        lambda m: m["rooms"][0].pop("ticks"),
+        lambda m: m["rooms"][0].update(ticks=-1),
+        lambda m: m["rooms"][0].update(elapsed_ms=6001),
+        lambda m: m["stats"].update(transit_ticks=21),
+        lambda m: m["stats"].update(transit_ms=-1),
+        lambda m: m["stats"].update(crypts=101),
+        lambda m: m["stats"].update(secrets_found=6),
+        lambda m: m["stats"].update(secrets_total=3601),
+        lambda m: m["stats"].update(ticks=True),
+        lambda m: m["stats"].update(extra=1),
+    ],
+)
+def test_timed_map_rejects_partial_invalid_or_nonconserving_stats(change):
+    data = timed_map()
+    change(data)
+    with pytest.raises(ValidationError):
+        RunMap.model_validate(data)
+
+
+def test_timed_map_preserves_unknown_and_zero_counters():
+    data = timed_map()
+    data["stats"].update(secrets_found=None, secrets_total=None, crypts=None)
+    assert RunMap.model_validate(data).public_data() == data
+    data["stats"].update(secrets_found=0, secrets_total=0, crypts=0)
+    assert RunMap.model_validate(data).public_data() == data
+
+
+@pytest.mark.parametrize("field,value", [("elapsed_ms", 15001), ("ticks", 301), ("crypts", 4)])
+def test_map_stats_must_match_the_completed_pb(field, value):
+    body = dict(
+        version=2,
+        attempt_id="a" * 43,
+        nonce="b" * 43,
+        sequence=3,
+        elapsed_ms=15000,
+        ticks=300,
+        roster=[UUID],
+        dead=False,
+        valid=True,
+        evidence=HIGH,
+        complete=True,
+        map=timed_map(),
+    )
+    assert SoloProgress.model_validate(body).map.version == 2
+    if field == "crypts":
+        body["evidence"] = {**HIGH, "crypts": value}
+    else:
+        body[field] = value
+    with pytest.raises(ValidationError, match="completion observation"):
+        SoloProgress.model_validate(body)
 
 
 def complete(api, data=None, ticks=300, dead=False):
@@ -196,7 +274,7 @@ def test_public_reader_rejects_unknown_ids_and_bounded_decompression(api):
 
 def test_larger_body_allowance_is_confined_to_solo_progress(api):
     client, _, _, headers, _ = api
-    padding = " " * 5000
+    padding = " " * 40000
     # Whitespace is valid JSON padding, but does not make an invalid body valid.
     response = client.post("/api/v1/records/solo-progress", headers=headers, content=padding + "{}")
     assert response.status_code == 422
@@ -210,7 +288,7 @@ def test_larger_body_allowance_is_confined_to_solo_progress(api):
     )
     assert (
         client.post(
-            "/api/v1/records/solo-progress", headers=headers, content=" " * 32769
+            "/api/v1/records/solo-progress", headers=headers, content=" " * (640 * 1024 + 1)
         ).status_code
         == 413
     )

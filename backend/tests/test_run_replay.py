@@ -1,0 +1,129 @@
+import base64
+import copy
+import json
+import struct
+from pathlib import Path
+
+import pytest
+from mithril_web.auth import COOKIE
+from mithril_web.run_maps import MAP_LIMIT, RunMap
+from mithril_web.run_replay import RunReplay
+from pydantic import ValidationError
+from test_record_evidence_api import api as api
+from test_run_maps import complete, read, timed_map
+
+
+def fixture():
+    return json.loads((Path(__file__).parents[2] / "contracts/run-replay-v1.json").read_text())
+
+
+def points():
+    return list(struct.iter_unpack("<IhhBBH", base64.b64decode(fixture()["samples"])))
+
+
+def encoded(values):
+    return dict(
+        version=1,
+        samples=base64.b64encode(b"".join(struct.pack("<IhhBBH", *p) for p in values)).decode(),
+    )
+
+
+def test_shared_replay_retention(api):
+    client, app, _, _, _ = api
+    data = timed_map()
+    data["replay"] = fixture()
+    record = complete(api, data)["record_id"]
+    assert read(client, record).json()["map"] == data
+    # No replay payload is duplicated in retained progress evidence.
+    assert all(
+        "replay" not in row[0]
+        for row in app.state.records.db.execute("SELECT body FROM solo_samples")
+    )
+    complete(api, ticks=294)
+    assert read(client, record).json()["map"] is None
+    assert app.state.records.db.execute("SELECT COUNT(*) FROM pb_maps").fetchone()[0] == 0
+
+
+def test_record_erasure_removes_replay_with_its_map(api):
+    client, app, _, _, session = api
+    data = timed_map()
+    data["replay"] = fixture()
+    record = complete(api, data)["record_id"]
+    client.cookies.set(COOKIE, session)
+    assert (
+        client.post(
+            "/api/v1/auth/erase",
+            headers={"Origin": "https://mithril.foo"},
+            json=dict(version=1, scope="records", confirmation="DELETE"),
+        ).status_code
+        == 200
+    )
+    assert read(client, record).status_code == 404
+    assert app.state.records.db.execute("SELECT COUNT(*) FROM pb_maps").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("field,value", [(0, 100), (1, -3201), (2, 0), (4, 4), (5, 3601)])
+def test_replay_invalid_start_coordinates_flags_or_counters(field, value):
+    changed = [list(point) for point in points()]
+    changed[0][field] = value
+    with pytest.raises(ValueError):
+        RunReplay.model_validate(encoded(changed)).validate_timeline(15000)
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        lambda p: p[1].__setitem__(0, 0),
+        lambda p: p[1].__setitem__(0, 199),
+        lambda p: p[4].__setitem__(1, -2960),
+        lambda p: p[4].__setitem__(4, 2),
+        lambda p: p[5].__setitem__(5, 2),
+        lambda p: p[-1].__setitem__(0, 15001),
+        lambda p: p.pop(),
+        lambda p: p[0].__setitem__(4, 0),
+    ],
+)
+def test_replay_rejects_nonmonotonic_incomplete_or_invalid_timelines(change):
+    changed = [list(point) for point in points()]
+    change(changed)
+    with pytest.raises(ValueError):
+        RunReplay.model_validate(encoded(changed)).validate_timeline(15000)
+
+
+@pytest.mark.parametrize("raw", [b"x" * 25, b"x" * 12])
+def test_replay_rejects_partial_or_single_samples(raw):
+    with pytest.raises(ValueError):
+        RunReplay.model_validate(
+            dict(version=1, samples=base64.b64encode(raw).decode())
+        ).validate_timeline(15000)
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        lambda r: r.update(version=2),
+        lambda r: r.update(samples="!" * 32),
+        lambda r: r.update(samples="A" * (36002 * 16 + 1)),
+        lambda r: r.update(images=[]),
+    ],
+)
+def test_map_rejects_unknown_replay_schema_or_encoding(change):
+    data = timed_map()
+    data["replay"] = fixture()
+    change(data["replay"])
+    with pytest.raises(ValidationError):
+        RunMap.model_validate(data)
+
+
+def test_longest_replay_fits_request_storage_and_known_duration():
+    data = timed_map()
+    data["stats"].update(elapsed_ms=7_200_000, transit_ms=7_186_000)
+    data["replay"] = encoded(
+        (ms, -2960, -2960, 0, 1 if ms == 0 else 0, 0) for ms in range(0, 7_200_001, 200)
+    )
+    parsed = RunMap.model_validate(data)
+    assert len(json.dumps(parsed.public_data()).encode()) < MAP_LIMIT < 640 * 1024
+    changed = copy.deepcopy(data)
+    changed["stats"].update(elapsed_ms=7_199_999, transit_ms=7_185_999)
+    with pytest.raises(ValidationError):
+        RunMap.model_validate(changed)
