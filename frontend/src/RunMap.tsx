@@ -37,6 +37,15 @@ const colors: Record<string, string> = {
   PUZZLE: "#9b7bbb",
   TRAP: "#c5824b",
 };
+const doorColors: Record<string, string> = {
+  WITHER: "#d6b4e8",
+  BLOOD: "#f07b87",
+};
+const markers: Record<string, string> = {
+  COMPLETE: "✓",
+  CLEARED: "•",
+  FAILED: "×",
+};
 const coordinate = (tile: number) => ({
   x: (tile % 6) * 60 + 10,
   y: Math.floor(tile / 6) * 60 + 10,
@@ -97,7 +106,7 @@ export function RunMap({ recordId }: Readonly<{ recordId: string }>) {
         <p role="alert">{error}</p>
       </>
     );
-  if (!run) return <p role="status">Loading run…</p>;
+  if (!run) return <output>Loading run…</output>;
   const name = run.record.name || run.record.uuid;
   return (
     <section className="run-page">
@@ -153,13 +162,7 @@ function DungeonMap({ data }: Readonly<{ data: MapData }>) {
                   y1={a.y + 24 + (horizontal ? 0 : 24)}
                   x2={b.x + 24 - (horizontal ? 24 : 0)}
                   y2={b.y + 24 - (horizontal ? 0 : 24)}
-                  stroke={
-                    door.type === "WITHER"
-                      ? "#d6b4e8"
-                      : door.type === "BLOOD"
-                        ? "#f07b87"
-                        : "#aaa39b"
-                  }
+                  stroke={doorColors[door.type] ?? "#aaa39b"}
                   strokeWidth="8"
                 >
                   <title>{label(door.type)} door</title>
@@ -218,13 +221,7 @@ function DungeonMap({ data }: Readonly<{ data: MapData }>) {
                         {count(entry)}
                       </text>
                       <text x={p.x + 24} y={p.y + 40} className="map-marker">
-                        {entry.state === "COMPLETE"
-                          ? "✓"
-                          : entry.state === "CLEARED"
-                            ? "•"
-                            : entry.state === "FAILED"
-                              ? "×"
-                              : ""}
+                        {markers[entry.state] ?? ""}
                       </text>
                     </g>
                   );
