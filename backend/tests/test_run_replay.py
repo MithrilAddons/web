@@ -28,10 +28,11 @@ def encoded(values):
     )
 
 
-def test_shared_replay_retention(api):
+@pytest.mark.parametrize("name", ["run-replay-v1.json", "run-replay-room-secrets-v1.json"])
+def test_shared_replay_retention(api, name):
     client, app, _, _, _ = api
     data = timed_map()
-    data["replay"] = fixture()
+    data["replay"] = json.loads((Path(__file__).parents[2] / "contracts" / name).read_text())
     record = complete(api, data)["record_id"]
     assert read(client, record).json()["map"] == data
     # No replay payload is duplicated in retained progress evidence.
@@ -129,3 +130,85 @@ def test_longest_replay_fits_request_storage_and_known_duration():
     changed["stats"].update(elapsed_ms=7_199_999, transit_ms=7_185_999)
     with pytest.raises(ValidationError):
         RunMap.model_validate(changed)
+
+
+def room_events(events):
+    return base64.b64encode(b"".join(struct.pack("<IBB", *e) for e in events)).decode()
+
+
+@pytest.mark.parametrize(
+    "events",
+    [
+        [(15001, 0, 1)],
+        [(200, 1, 1)],
+        [(200, 35, 1)],
+        [(200, 0, 0)],
+        [(200, 0, 4)],
+        [(200, 7, 1)],
+        [(200, 0, 1), (199, 0, 2)],
+        [(200, 0, 1), (400, 0, 1)],
+        [(200, 0, 2), (400, 0, 1)],
+    ],
+)
+def test_invalid_room_counter_timeline(events):
+    data = timed_map()
+    data["replay"] = dict(fixture(), room_secrets=room_events(events))
+    with pytest.raises(ValidationError):
+        RunMap.model_validate(data)
+
+
+@pytest.mark.parametrize("value", ["!", "AAAA", "A" * 28801, 2, []])
+def test_room_counter_encoding_is_bounded_and_strict(value):
+    data = timed_map()
+    data["replay"] = dict(fixture(), room_secrets=value)
+    with pytest.raises(ValidationError):
+        RunMap.model_validate(data)
+
+
+def test_empty_timeline_is_distinct_from_legacy_missing_timeline():
+    data = timed_map()
+    data["replay"] = dict(fixture(), room_secrets="")
+    assert RunMap.model_validate(data).public_data()["replay"]["room_secrets"] == ""
+    data["replay"] = fixture()
+    assert "room_secrets" not in RunMap.model_validate(data).public_data()["replay"]
+
+
+def test_room_counter_changes_allow_same_time_different_rooms_and_cutoff():
+    data = timed_map()
+    data["rooms"][1].update(secrets_found=2, secrets_total=2)
+    data["stats"].update(secrets_found=5, secrets_total=7)
+    data["replay"] = dict(
+        fixture(), room_secrets=room_events([(200, 0, 1), (200, 7, 2), (15000, 0, 3)])
+    )
+    assert RunMap.model_validate(data).public_data()["replay"] == data["replay"]
+
+
+def test_maximum_position_and_room_timelines_fit_storage_and_upload():
+    data = timed_map()
+    data["rooms"] = [
+        dict(
+            data["rooms"][0],
+            tiles=[tile],
+            secrets_found=100,
+            secrets_total=100,
+            elapsed_ms=0,
+            ticks=0,
+        )
+        for tile in range(36)
+    ]
+    data["doors"] = []
+    data["stats"].update(
+        elapsed_ms=7_200_000,
+        transit_ms=7_200_000,
+        transit_ticks=300,
+        secrets_found=3600,
+        secrets_total=3600,
+    )
+    data["replay"] = encoded(
+        (ms, -2960, -2960, 0, 1 if ms == 0 else 0, 0) for ms in range(0, 7_200_001, 200)
+    )
+    data["replay"]["room_secrets"] = room_events(
+        (found * 200, tile, found) for found in range(1, 101) for tile in range(36)
+    )
+    parsed = RunMap.model_validate(data).public_data()
+    assert len(json.dumps(parsed).encode()) < MAP_LIMIT < 640 * 1024

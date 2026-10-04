@@ -2,6 +2,13 @@
 
 ## Solo-clear maps
 
+Run link previews require the `/runs/` nginx proxy and the built
+`frontend/dist/index.html` beside the backend. The backend injects Open Graph
+metadata into that template; `/api/v1/records/solo/{id}/preview.png` renders a
+1200×630 PNG with Pillow directly from the retained map. No generated images or
+extra database rows are stored. Both routes reuse public-record eligibility and
+return no-store responses. External chat services may retain their own previews.
+
 Map capture adds the idempotent `pb_maps` table to records.sqlite3. Back up the
 database and deploy the backend/frontend plus updated nginx configuration before
 the mod and bot. Only `/api/v1/records/solo-progress` has a 640 KiB body allowance;
@@ -195,3 +202,11 @@ Install the nginx upstream `keepalive_timeout 3s` setting so pooled connections 
 retired before Uvicorn's five-second idle timeout. Validate nginx before reload.
 Exact retries retain the original evidence timestamp and do not recreate erased
 or moderated records. Existing authentication and live-evidence limits still apply.
+
+## Replay room counters
+
+Deploy support for the optional replay `room_secrets` stream before releasing a
+client that sends it. The former strict reader rejects this field. This adds no
+database schema and retains older replay formats. The stored-map read bound is
+620 KiB; the existing 640 KiB solo-progress request allowance is sufficient for
+maximum position and room-counter streams. Keep a compatible reader deployed.

@@ -2,10 +2,14 @@ import { expect, it } from "vitest";
 import fixture from "../../contracts/run-replay-v1.json";
 import {
   decodeReplay,
+  decodeRoomSecrets,
+  replayRoomSecrets,
   replayCoordinate,
   replayPosition,
   replayTime,
 } from "./runReplayData";
+
+import roomFixture from "../../contracts/run-replay-room-secrets-v1.json";
 
 const points = decodeReplay({ ...fixture, version: 1 });
 
@@ -44,4 +48,19 @@ it("aligns world positions to rooms and door gaps and formats elapsed time", () 
   expect(replayCoordinate(-168.5)).toBe(64);
   expect(replayCoordinate(-168)).toBe(70);
   expect(replayTime(61123.9)).toBe("1:01.123");
+});
+
+it("decodes recorded room counters, including backward seeks and empty timelines", () => {
+  const rooms = decodeRoomSecrets({ ...roomFixture, version: 1 })!;
+  expect(replayRoomSecrets(rooms, 0, 199)).toBe(0);
+  expect(replayRoomSecrets(rooms, 0, 200)).toBe(1);
+  expect(replayRoomSecrets(rooms, 0, 999)).toBe(2);
+  expect(replayRoomSecrets(rooms, 0, 15000)).toBe(3);
+  expect(replayRoomSecrets(rooms, 0, 599)).toBe(1);
+  expect(replayRoomSecrets(rooms, 7, 15000)).toBe(0);
+  expect(decodeRoomSecrets({ ...fixture, version: 1 })).toBeNull();
+  expect(decodeRoomSecrets()).toBeNull();
+  expect(
+    decodeRoomSecrets({ ...fixture, version: 1, room_secrets: "" })?.size,
+  ).toBe(0);
 });

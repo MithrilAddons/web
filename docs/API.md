@@ -1,5 +1,16 @@
 # API v1
 
+## Run link previews
+
+`GET /runs/{record_id}` serves the built application with server-rendered Open
+Graph metadata: floor, PB time, player and an optional map image. `GET
+/api/v1/records/solo/{record_id}/preview.png` generates a 1200×630 PNG from the
+retained 300-score snapshot in memory. Both support HEAD, need no login, and
+reuse the public solo-record eligibility rules. Missing, erased or hidden records
+return 404; retired/missing maps omit the image metadata and return 404 from the
+image route. There is no additional image storage or server cache. Other sites
+can cache a preview after fetching it.
+
 ## Optional Discord foundation API
 
 `GET /internal/v1/leaderboards` returns the synthetic shape in
@@ -475,7 +486,7 @@ Version 2 `POST /api/v1/records/solo-progress` accepts an optional `map` on a
 completion report only. Capture freezes at the same 300-score observation as the
 PB. Existing clients can omit it. This route allows a 640 KiB request; all other
 request body limits remain 4 KiB. Map metadata is bounded to 16 KiB of UTF-8 JSON;
-the complete map including replay is bounded to 600 KiB when read from storage.
+the complete map including replay is bounded to 620 KiB when read from storage.
 
 The v1 map contains `version:1`, `rooms` (1–36), and `doors` (0–60). Room `tiles`
 are unique, connected indices on a 6×6 grid (row-major 0–35, up to four per room).
@@ -515,6 +526,22 @@ snapshot. Replay uses real elapsed time over the final map; it does not reconstr
 room states over time. Secret increases indicate when the global counter update
 was observed, which may lag or combine pickups. Retention and erasure are shared
 with the map, with no additional copy in progress evidence.
+
+New replays optionally include `room_secrets`, a base64 stream of little-endian
+six-byte events: elapsed milliseconds (uint32), the room's first tile (uint8),
+and its observed collected count (uint8). Events are ordered by time through the
+300-score cutoff and strictly increase per room, from an initial zero. Each must
+refer to a room in the saved map and cannot exceed its known final or total count.
+There are at most 3,600 events (28,800 base64 characters). Empty means recorded
+with no increases; omission means the older client did not record this timeline.
+Multi-tile observations collapse to one room; repeat visits do not double-count.
+`contracts/run-replay-room-secrets-v1.json` is shared with the mod and frontend.
+The browser seeks these counters independently of position samples, updating map
+labels, selected-room details and the room list. Old replays retain final counts;
+no room history is inferred from global pickups or player positions. Observation
+times may lag or group actual pickups; final room states and dungeon totals stay
+labelled as the 300-score snapshot. The optional stream shares map retention and
+erasure, with no additional table or copy. The 640 KiB upload allowance is unchanged.
 
 `GET /api/v1/records/solo/{record_id}` is public and returns
 `{version:1,record:{id,uuid,name,floor,real_ms,ticks,created},map}` for an eligible
