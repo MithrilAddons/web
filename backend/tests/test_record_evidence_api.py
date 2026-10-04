@@ -94,3 +94,20 @@ def test_legacy_route_cannot_create_untracked_records(api):
     )
     assert response.status_code == 410
     assert app.state.records.read(UUID) == []
+
+
+def test_exact_progress_retry_still_requires_current_authorization(api):
+    from test_record_evidence import progress_body
+
+    client, app, now, headers, session = api
+    path = "/api/v1/records/solo-progress"
+    attempt = client.post("/api/v1/records/solo-start", headers=headers, json=start_body()).json()
+    body = progress_body(attempt, 1).model_dump(mode="json")
+    now[0] += 5
+    first = client.post(path, headers=headers, json=body)
+    assert first.status_code == 200
+    assert client.post(path, headers=headers, json=body).json() == first.json()
+    client.cookies.set(COOKIE, session)
+    client.post("/api/v1/auth/logout", headers={"Origin": "https://mithril.foo"})
+    assert client.post(path, headers=headers, json=body).status_code == 401
+    assert app.state.records.db.execute("SELECT COUNT(*) FROM solo_samples").fetchone()[0] == 1

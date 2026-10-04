@@ -186,3 +186,12 @@ Normal startup also replays the ledger before serving requests. If the current l
 is lost, do not serve restored personal data until deletions can be reconciled.
 A routine code rollback never restores databases or the ledger. Verify an isolated
 synthetic backup/erase/restore exercise before enabling production erasure.
+
+## Live PB connection recovery
+
+Deploy the exact-progress retry backend before the corresponding client. No schema
+migration is needed; older evidence without a request digest cannot be retried.
+Install the nginx upstream `keepalive_timeout 3s` setting so pooled connections are
+retired before Uvicorn's five-second idle timeout. Validate nginx before reload.
+Exact retries retain the original evidence timestamp and do not recreate erased
+or moderated records. Existing authentication and live-evidence limits still apply.
