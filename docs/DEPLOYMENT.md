@@ -195,3 +195,11 @@ Install the nginx upstream `keepalive_timeout 3s` setting so pooled connections 
 retired before Uvicorn's five-second idle timeout. Validate nginx before reload.
 Exact retries retain the original evidence timestamp and do not recreate erased
 or moderated records. Existing authentication and live-evidence limits still apply.
+
+## Replay room counters
+
+Deploy support for the optional replay `room_secrets` stream before releasing a
+client that sends it. The former strict reader rejects this field. This adds no
+database schema and retains older replay formats. The stored-map read bound is
+620 KiB; the existing 640 KiB solo-progress request allowance is sufficient for
+maximum position and room-counter streams. Keep a compatible reader deployed.

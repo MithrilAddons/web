@@ -7,7 +7,13 @@ import {
 } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import fixture from "../../contracts/run-replay-v1.json";
-import { RunReplay } from "./RunReplay";
+import { RunReplay as Replay } from "./RunReplay";
+import { useState, type ComponentProps } from "react";
+
+function RunReplay(props: Omit<ComponentProps<typeof Replay>, "ms" | "setMs">) {
+  const [ms, setMs] = useState(0);
+  return <Replay {...props} ms={ms} setMs={setMs} />;
+}
 
 afterEach(() => {
   cleanup();

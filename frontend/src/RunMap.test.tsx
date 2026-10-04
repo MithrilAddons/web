@@ -2,6 +2,8 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { RunMap } from "./RunMap";
 import { App } from "./App";
+import replay from "../../contracts/run-replay-room-secrets-v1.json";
+import legacyReplay from "../../contracts/run-replay-v1.json";
 import timedMap from "../../contracts/run-map-v2.json";
 
 const id = "a".repeat(43);
@@ -209,4 +211,49 @@ it("fills the center of a two by two room", async () => {
   expect(
     document.querySelector('rect[width="108"][height="108"]'),
   ).toBeTruthy();
+});
+
+it("updates map labels, room details and room list from recorded counters when seeking", async () => {
+  mock({ ...data, map: { ...timedMap, replay } });
+  render(<RunMap recordId={id} />);
+  await screen.findByRole("slider");
+  const assertCount = (value: string) => {
+    expect(
+      screen.getByRole("link", { name: `Room: ${value}/5 secrets` }),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("Secrets", { selector: "dt" }).nextElementSibling
+        ?.textContent,
+    ).toBe(`${value}/5`);
+    expect(
+      screen.getByRole("button", {
+        name: `Room 0:06.000 · ${value}/5 secrets · Cleared`,
+      }),
+    ).toBeTruthy();
+  };
+  assertCount("0");
+  fireEvent.change(screen.getByRole("slider"), { target: { value: "600" } });
+  assertCount("2");
+  fireEvent.change(screen.getByRole("slider"), { target: { value: "15000" } });
+  assertCount("3");
+  fireEvent.change(screen.getByRole("slider"), { target: { value: "200" } });
+  assertCount("1");
+  fireEvent.change(screen.getByRole("slider"), { target: { value: "0" } });
+  assertCount("0");
+  expect(
+    screen.getByText(/Room secrets follow recorded counter updates/),
+  ).toBeTruthy();
+  expect(
+    screen.getByLabelText("Dungeon totals at 300 score").textContent,
+  ).toContain("Secrets collected3");
+});
+
+it("keeps legacy replay room counts static without inventing a timeline", async () => {
+  mock({ ...data, map: { ...timedMap, replay: legacyReplay } });
+  render(<RunMap recordId={id} />);
+  await screen.findByRole("slider");
+  expect(screen.getByRole("link", { name: "Room: 3/5 secrets" })).toBeTruthy();
+  fireEvent.change(screen.getByRole("slider"), { target: { value: "600" } });
+  expect(screen.getByRole("link", { name: "Room: 3/5 secrets" })).toBeTruthy();
+  expect(screen.getByText(/no room-counter timeline/)).toBeTruthy();
 });

@@ -11,7 +11,14 @@ import {
 export function RunReplay({
   data,
   children,
-}: Readonly<{ data?: ReplayData; children: ReactNode }>) {
+  ms,
+  setMs,
+}: Readonly<{
+  data?: ReplayData;
+  children: ReactNode;
+  ms: number;
+  setMs: React.Dispatch<React.SetStateAction<number>>;
+}>) {
   const points = useMemo(() => (data ? decodeReplay(data) : []), [data]);
   const events = useMemo(
     () =>
@@ -21,7 +28,6 @@ export function RunReplay({
       }),
     [points],
   );
-  const [ms, setMs] = useState(0);
   const [playing, setPlaying] = useState(false);
   const duration = points.at(-1)?.ms ?? 0;
   useEffect(() => {
@@ -36,7 +42,7 @@ export function RunReplay({
     };
     frame = requestAnimationFrame(advance);
     return () => cancelAnimationFrame(frame);
-  }, [playing, duration]);
+  }, [playing, duration, setMs]);
   useEffect(() => {
     if (ms >= duration && playing) setPlaying(false);
   }, [ms, duration, playing]);
@@ -109,8 +115,10 @@ export function RunReplay({
           {observed} secrets observed{!player && " · Position not captured"}
         </p>
         <p className="run-caption">
-          Elapsed time · Secret indicators are approximate. The map shows its
-          state at 300 score.
+          Elapsed time · Secret indicators are approximate.{" "}
+          {data.room_secrets === undefined
+            ? "Room counts and states are from 300 score; this replay has no room-counter timeline."
+            : "Room secrets follow recorded counter updates. Room states are from 300 score."}
         </p>
       </div>
     </>

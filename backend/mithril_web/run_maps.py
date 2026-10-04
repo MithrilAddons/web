@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from .run_replay import RunReplay
 
 Tile = Annotated[int, Field(ge=0, le=35)]
-MAP_LIMIT = 600 * 1024
+MAP_LIMIT = 620 * 1024
 
 
 class StrictMap(BaseModel):
@@ -96,6 +96,7 @@ class RunMap(StrictMap):
             raise ValueError("Version 2 requires complete room timing and run stats")
         if self.replay is not None:
             self.replay.validate_timeline(self.stats.elapsed_ms)
+            self.replay.validate_rooms(self.rooms, self.stats.elapsed_ms)
         for field, transit in (("elapsed_ms", "transit_ms"), ("ticks", "transit_ticks")):
             if sum(getattr(room, field) for room in timed) + getattr(
                 self.stats, transit

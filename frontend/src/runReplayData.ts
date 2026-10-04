@@ -1,4 +1,35 @@
-export type ReplayData = { version: 1; samples: string };
+export type ReplayData = { version: 1; samples: string; room_secrets?: string };
+type RoomSecret = { ms: number; found: number };
+
+export function decodeRoomSecrets(
+  data?: ReplayData,
+): Map<number, RoomSecret[]> | null {
+  if (data?.room_secrets === undefined) return null;
+  const bytes = Uint8Array.from(atob(data.room_secrets), (value) =>
+    value.codePointAt(0)!,
+  );
+  const view = new DataView(bytes.buffer);
+  const rooms = new Map<number, RoomSecret[]>();
+  for (let offset = 0; offset < bytes.length; offset += 6) {
+    const tile = view.getUint8(offset + 4);
+    const events = rooms.get(tile) ?? [];
+    events.push({
+      ms: view.getUint32(offset, true),
+      found: view.getUint8(offset + 5),
+    });
+    rooms.set(tile, events);
+  }
+  return rooms;
+}
+
+export function replayRoomSecrets(
+  rooms: Map<number, RoomSecret[]>,
+  tile: number,
+  ms: number,
+): number {
+  const events = rooms.get(tile) ?? [];
+  return events[replayIndex(events, ms)]?.found ?? 0;
+}
 export type ReplayPoint = {
   ms: number;
   x: number;

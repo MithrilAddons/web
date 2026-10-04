@@ -1,7 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import "./runMap.css";
 import { RunReplay } from "./RunReplay";
-import type { ReplayData } from "./runReplayData";
+import {
+  decodeRoomSecrets,
+  replayRoomSecrets,
+  type ReplayData,
+} from "./runReplayData";
 
 type Room = {
   tiles: number[];
@@ -66,8 +70,6 @@ const coordinate = (tile: number) => ({
   y: Math.floor(tile / 6) * 60 + 10,
 });
 const label = (value: string) => value.charAt(0) + value.slice(1).toLowerCase();
-const count = (room: Room) =>
-  `${room.secrets_found ?? "?"}/${room.secrets_total ?? "?"}`;
 
 function time(ticks: number) {
   const ms = ticks * 50;
@@ -159,6 +161,18 @@ export function RunMap({ recordId }: Readonly<{ recordId: string }>) {
 
 function DungeonMap({ data }: Readonly<{ data: MapData }>) {
   const [selected, setSelected] = useState(0);
+  const [ms, setMs] = useState(0);
+  const roomSecrets = useMemo(
+    () => decodeRoomSecrets(data.replay),
+    [data.replay],
+  );
+  const count = (entry: Room) => {
+    const found =
+      roomSecrets === null
+        ? entry.secrets_found
+        : replayRoomSecrets(roomSecrets, entry.tiles[0]!, ms);
+    return `${found ?? "?"}/${entry.secrets_total ?? "?"}`;
+  };
   const room = data.rooms[selected];
   return (
     <>
@@ -197,7 +211,7 @@ function DungeonMap({ data }: Readonly<{ data: MapData }>) {
       )}
       <div className="run-map-layout">
         <div className="run-map-canvas">
-          <RunReplay data={data.replay}>
+          <RunReplay data={data.replay} ms={ms} setMs={setMs}>
             <svg
               viewBox="0 0 370 370"
               role="img"
