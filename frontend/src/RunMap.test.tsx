@@ -1,4 +1,10 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { RunMap } from "./RunMap";
 import { App } from "./App";
@@ -55,6 +61,7 @@ const data = {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   window.history.replaceState(null, "", "/");
 });
 
@@ -65,7 +72,7 @@ function mock(value: unknown = data, status = 200) {
   );
 }
 
-it("renders a public linked PB with geometry and room details", async () => {
+it("renders final geometry with no default selection and accessible room controls", async () => {
   mock();
   render(<RunMap recordId={id} />);
   await screen.findByRole("heading", { name: "1:30.050 by Synthetic" });
@@ -73,34 +80,39 @@ it("renders a public linked PB with geometry and room details", async () => {
     `/api/v1/records/solo/${id}`,
     expect.objectContaining({ cache: "no-store" }),
   );
-  expect(
-    screen.getByRole("img", { name: "Dungeon layout at 300 score" }),
-  ).toBeTruthy();
-  expect(screen.getByText("3 tiles")).toBeTruthy();
-  const door = document.querySelector("line");
-  expect(door?.getAttribute("x1")).toBe("118");
-  expect(door?.getAttribute("x2")).toBe("130");
-  fireEvent.click(
-    screen.getByRole("button", { name: "Puzzle 0/0 secrets · Complete" }),
-  );
+  expect(screen.getByRole("heading", { name: "Run summary" })).toBeTruthy();
+  expect(screen.queryByText("Size")).toBeNull();
+  const map = screen.getByRole("group", {
+    name: "Dungeon layout at 300 score",
+  });
+  expect(map.querySelector("line")?.getAttribute("x1")).toBe("118");
+  expect(map.querySelector("line")?.getAttribute("x2")).toBe("130");
+  const length = history.length;
+  const room = screen.getByRole("button", { name: "Puzzle: 0/0 secrets" });
+  fireEvent.keyDown(room, { key: " " });
+  expect(room.getAttribute("aria-pressed")).toBe("true");
+  expect(location.hash).toBe("#room-2");
+  expect(history.length).toBe(length);
   expect(screen.getByRole("heading", { name: "Puzzle" })).toBeTruthy();
-  expect(screen.getByText("1 tile")).toBeTruthy();
-  fireEvent.click(screen.getByRole("link", { name: "Unknown: ?/? secrets" }));
+  expect(room.querySelector("title")?.textContent).toContain("Puzzle");
+  fireEvent.keyDown(
+    screen.getByRole("button", { name: "Unknown room: ?/? secrets" }),
+    { key: "Enter" },
+  );
   expect(
     screen.getByText("Part of this room’s secret counter was not captured."),
   ).toBeTruthy();
 });
-
 it("routes map URLs and explains retired or missing maps", async () => {
   mock({ ...data, map: null });
-  window.history.replaceState(null, "", `/runs/${id}`);
+  history.replaceState(null, "", `/runs/${id}`);
   render(<App />);
   expect(
     await screen.findByRole("heading", { name: "Map unavailable" }),
   ).toBeTruthy();
   expect(screen.getByText(/Maps are kept only/)).toBeTruthy();
+  expect(document.querySelector("main")?.className).toBe("run-page-main");
 });
-
 it.each([
   [404, "This run is unavailable."],
   [503, "Could not load this run. Try again shortly."],
@@ -109,7 +121,6 @@ it.each([
   render(<RunMap recordId={id} />);
   expect((await screen.findByRole("alert")).textContent).toBe(message);
 });
-
 it("rejects unsupported maps and escapes room labels", async () => {
   mock({ ...data, map: { ...data.map, version: 3 } });
   render(<RunMap recordId={id} />);
@@ -121,44 +132,49 @@ it("rejects unsupported maps and escapes room labels", async () => {
   changed.map.rooms[0]!.name = "<script>bad()</script>";
   mock(changed);
   render(<RunMap recordId={id} />);
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: "<script>bad()</script>: 3/5 secrets",
+    }),
+  );
   expect(
-    await screen.findByRole("heading", { name: "<script>bad()</script>" }),
+    screen.getByRole("heading", { name: "<script>bad()</script>" }),
   ).toBeTruthy();
   expect(document.querySelector("script")).toBeNull();
 });
-
-it("shows frozen dungeon totals and room plus transit times matching the PB", async () => {
+it("shows compact totals, proportional timing bars and sortable room times", async () => {
   mock({ ...data, record: { ...data.record, ticks: 300 }, map: timedMap });
   render(<RunMap recordId={id} />);
   await screen.findByRole("heading", { name: "0:15.000 by Synthetic" });
-  expect(screen.getByLabelText("Dungeon totals at 300 score").textContent).toBe(
-    "Secrets collected3Total secrets5Crypts killed5",
+  const totals = screen.getByLabelText("Dungeon totals at 300 score");
+  expect(totals.textContent).toContain("Secrets3 / 5");
+  expect(totals.textContent).toContain("Crypts killed5");
+  expect(totals.textContent).toContain("Rooms 14 sTransit 1 s");
+  expect(screen.getByRole("progressbar").getAttribute("value")).toBe("3");
+  fireEvent.change(screen.getByRole("combobox", { name: "Sort by" }), {
+    target: { value: "time" },
+  });
+  expect(document.querySelector(".run-room-row button")?.textContent).toContain(
+    "Puzzle",
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Room: 3/5 secrets" }));
+  expect(screen.getByText("Time in room").nextElementSibling?.textContent).toBe(
+    "6 s",
+  );
+  expect(screen.getByText("Share of run").nextElementSibling?.textContent).toBe(
+    "40.0%",
   );
   expect(
-    screen.getByText(/Rooms/, { selector: ".run-timing" }).textContent,
-  ).toBe("Rooms 0:14.000 + Transit / unmapped 0:01.000 = Run 0:15.000");
-  expect(screen.getByText("Time in room").nextElementSibling?.textContent).toBe(
-    "0:06.000",
+    screen.getByText("Secrets per minute").nextElementSibling?.textContent,
+  ).toBe("30.0");
+  expect(screen.getByText("Entered at").nextElementSibling?.textContent).toBe(
+    "Not recorded",
   );
-  fireEvent.click(
-    screen.getByRole("button", {
-      name: "Puzzle 0:08.000 · 0/0 secrets · Complete",
-    }),
-  );
-  expect(screen.getByText("Time in room").nextElementSibling?.textContent).toBe(
-    "0:08.000",
-  );
-  expect(screen.getByText(/include repeat visits/)).toBeTruthy();
+  expect(
+    screen.getByText(/include repeat visits/).closest("details")?.open,
+  ).toBe(false);
 });
-
-it("distinguishes old maps and missing counters from measured zeros", async () => {
-  mock();
-  render(<RunMap recordId={id} />);
-  await screen.findByText(
-    "Room timing and dungeon totals were not recorded for this run.",
-  );
-  expect(screen.getByText("Not recorded")).toBeTruthy();
-  cleanup();
+it("distinguishes missing counters from measured zeros", async () => {
   mock({
     ...data,
     map: {
@@ -172,7 +188,7 @@ it("distinguishes old maps and missing counters from measured zeros", async () =
     },
   });
   render(<RunMap recordId={id} />);
-  expect(await screen.findAllByText("Not captured")).toHaveLength(3);
+  expect(await screen.findAllByText("Not captured")).toHaveLength(2);
   cleanup();
   mock({
     ...data,
@@ -190,8 +206,7 @@ it("distinguishes old maps and missing counters from measured zeros", async () =
   await screen.findByLabelText("Dungeon totals at 300 score");
   expect(screen.queryByText("Not captured")).toBeNull();
 });
-
-it("handles a network failure without leaving a loading page", async () => {
+it("handles network failures", async () => {
   vi.stubGlobal(
     "fetch",
     vi.fn().mockRejectedValue(new DOMException("aborted", "AbortError")),
@@ -201,59 +216,136 @@ it("handles a network failure without leaving a loading page", async () => {
     "Try again shortly",
   );
 });
-
 it("fills the center of a two by two room", async () => {
   const changed = structuredClone(data);
   changed.map.rooms[0]!.tiles = [0, 1, 6, 7];
   mock(changed);
   render(<RunMap recordId={id} />);
-  await screen.findByText("4 tiles");
+  await screen.findByRole("heading", { name: "Run summary" });
   expect(
     document.querySelector('rect[width="108"][height="108"]'),
   ).toBeTruthy();
 });
-
-it("updates map labels, room details and room list from recorded counters when seeking", async () => {
+it("opens with final counters, follows seeks and hides unreached rooms and markers", async () => {
+  mock({ ...data, map: { ...timedMap, replay } });
+  render(<RunMap recordId={id} />);
+  const slider = await screen.findByRole("slider");
+  expect(slider.getAttribute("value")).toBe("15000");
+  expect(screen.getByRole("heading", { name: "Run summary" })).toBeTruthy();
+  expect(
+    screen.getByRole("button", { name: "Room: 3/5 secrets" }),
+  ).toBeTruthy();
+  fireEvent.change(slider, { target: { value: "0" } });
+  expect(
+    screen
+      .getByRole("button", { name: "Room: 0/5 secrets" })
+      .getAttribute("aria-pressed"),
+  ).toBe("true");
+  const puzzle = screen.getByRole("button", { name: "Puzzle: not reached" });
+  expect(puzzle.querySelector(".map-room-label")).toBeNull();
+  expect(
+    screen
+      .getByRole("button", { name: "Room: 0/5 secrets" })
+      .querySelector(".map-marker"),
+  ).toBeNull();
+  fireEvent.change(slider, { target: { value: "600" } });
+  expect(
+    screen.getByRole("button", { name: "Room: 2/5 secrets" }),
+  ).toBeTruthy();
+  expect(
+    screen.getByText("Secrets", { selector: ".run-room-details dt" })
+      .nextElementSibling?.textContent,
+  ).toBe("2/5");
+  expect(location.hash).toBe("#t=0.6");
+  fireEvent.change(slider, { target: { value: "15000" } });
+  expect(
+    screen.getByRole("button", { name: "Room: 3/5 secrets" }),
+  ).toBeTruthy();
+  expect(
+    screen
+      .getByRole("button", { name: "Puzzle: 0/0 secrets" })
+      .querySelector(".map-marker"),
+  ).toBeTruthy();
+  fireEvent.change(slider, { target: { value: "200" } });
+  expect(
+    screen.getByRole("button", { name: "Room: 1/5 secrets" }),
+  ).toBeTruthy();
+});
+it("pins a map selection without seeking; list selection pauses and seeks first entry", async () => {
+  mock({ ...data, map: { ...timedMap, replay } });
+  render(<RunMap recordId={id} />);
+  const slider = await screen.findByRole("slider");
+  fireEvent.click(screen.getByRole("button", { name: "Room: 3/5 secrets" }));
+  expect(slider.getAttribute("value")).toBe("15000");
+  expect(screen.getByText("Visits").nextElementSibling?.textContent).toBe("2");
+  fireEvent.click(
+    screen.getByRole("button", { name: "Room, 6 s, 3/5 secrets, Cleared" }),
+  );
+  expect(slider.getAttribute("value")).toBe("0");
+  expect(screen.getByRole("button", { name: "Play replay" })).toBeTruthy();
+  expect(location.hash).toBe("#room-0");
+  expect(document.querySelector(".run-inline-details")).toBeTruthy();
+  fireEvent.change(slider, { target: { value: "900" } });
+  expect(screen.getByText("Transit / unmapped position")).toBeTruthy();
+  expect(document.querySelector(".run-inline-details")).toBeNull();
+});
+it.each([
+  ["#room-7", "Puzzle", "15000"],
+  ["#t=0.6", "Room", "600"],
+  ["#room-99", "Run summary", "15000"],
+  ["#t=9999", "Room", "15000"],
+])("loads deep link %s", async (hash, heading, position) => {
+  history.replaceState(null, "", `/runs/${id}${hash}`);
+  mock({ ...data, map: { ...timedMap, replay } });
+  render(<RunMap recordId={id} />);
+  expect(await screen.findByRole("heading", { name: heading })).toBeTruthy();
+  expect(screen.getByRole("slider").getAttribute("value")).toBe(position);
+});
+it("keeps legacy replay counters static without prematurely showing final markers", async () => {
+  mock({ ...data, map: { ...timedMap, replay: legacyReplay } });
+  render(<RunMap recordId={id} />);
+  const slider = await screen.findByRole("slider");
+  fireEvent.change(slider, { target: { value: "600" } });
+  const room = screen.getByRole("button", { name: "Room: 3/5 secrets" });
+  expect(room).toBeTruthy();
+  expect(room.querySelector(".map-marker")).toBeNull();
+  expect(screen.getByText(/no room-counter timeline/)).toBeTruthy();
+});
+it("keeps a manually picked room pinned during playback and resumes following on Play", async () => {
+  const frames = vi.fn<(callback: FrameRequestCallback) => number>(() => 1);
+  vi.stubGlobal("requestAnimationFrame", frames);
+  vi.stubGlobal("cancelAnimationFrame", vi.fn());
+  vi.spyOn(performance, "now").mockReturnValue(0);
   mock({ ...data, map: { ...timedMap, replay } });
   render(<RunMap recordId={id} />);
   await screen.findByRole("slider");
-  const assertCount = (value: string) => {
-    expect(
-      screen.getByRole("link", { name: `Room: ${value}/5 secrets` }),
-    ).toBeTruthy();
-    expect(
-      screen.getByText("Secrets", { selector: "dt" }).nextElementSibling
-        ?.textContent,
-    ).toBe(`${value}/5`);
-    expect(
-      screen.getByRole("button", {
-        name: `Room 0:06.000 · ${value}/5 secrets · Cleared`,
-      }),
-    ).toBeTruthy();
-  };
-  assertCount("0");
-  fireEvent.change(screen.getByRole("slider"), { target: { value: "600" } });
-  assertCount("2");
-  fireEvent.change(screen.getByRole("slider"), { target: { value: "15000" } });
-  assertCount("3");
-  fireEvent.change(screen.getByRole("slider"), { target: { value: "200" } });
-  assertCount("1");
-  fireEvent.change(screen.getByRole("slider"), { target: { value: "0" } });
-  assertCount("0");
+  fireEvent.click(screen.getByRole("button", { name: "Play replay" }));
+  fireEvent.click(screen.getByRole("button", { name: "Puzzle: not reached" }));
+  act(() => frames.mock.calls.at(-1)![0](300));
   expect(
-    screen.getByText(/Room secrets follow recorded counter updates/),
-  ).toBeTruthy();
+    screen
+      .getByRole("button", { name: "Puzzle: not reached" })
+      .getAttribute("aria-pressed"),
+  ).toBe("true");
+  fireEvent.click(screen.getByRole("button", { name: "Pause replay" }));
+  fireEvent.click(screen.getByRole("button", { name: "Play replay" }));
   expect(
-    screen.getByLabelText("Dungeon totals at 300 score").textContent,
-  ).toContain("Secrets collected3");
+    screen
+      .getByRole("button", { name: "Room: 2/5 secrets" })
+      .getAttribute("aria-pressed"),
+  ).toBe("true");
 });
-
-it("keeps legacy replay room counts static without inventing a timeline", async () => {
-  mock({ ...data, map: { ...timedMap, replay: legacyReplay } });
+it("seeks from room details without moving mobile details to the list", async () => {
+  mock({ ...data, map: { ...timedMap, replay } });
   render(<RunMap recordId={id} />);
-  await screen.findByRole("slider");
-  expect(screen.getByRole("link", { name: "Room: 3/5 secrets" })).toBeTruthy();
-  fireEvent.change(screen.getByRole("slider"), { target: { value: "600" } });
-  expect(screen.getByRole("link", { name: "Room: 3/5 secrets" })).toBeTruthy();
-  expect(screen.getByText(/no room-counter timeline/)).toBeTruthy();
+  const slider = await screen.findByRole("slider");
+  fireEvent.click(screen.getByRole("button", { name: "Room: 3/5 secrets" }));
+  fireEvent.click(screen.getByRole("button", { name: "0:00.000" }));
+  expect(slider.getAttribute("value")).toBe("0");
+  expect(document.querySelector(".run-inline-details")).toBeNull();
+  expect(
+    screen
+      .getByRole("button", { name: "Room: 0/5 secrets" })
+      .getAttribute("aria-pressed"),
+  ).toBe("true");
 });

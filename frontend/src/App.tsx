@@ -88,6 +88,7 @@ export function App() {
 }
 
 function pageClass(path: string, workspace: boolean) {
+  if (/^\/runs\/[A-Za-z0-9_-]{43}$/.test(path)) return "run-page-main";
   if (workspace || path === "/profile") return "workspace-page";
   return path === "/" ? "home-page" : "content-page";
 }
