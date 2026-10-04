@@ -142,7 +142,7 @@ export function inferRoomSecrets(
     previous = Math.max(previous, point.secrets);
     const tile = replayTile(point);
     const room = tile === null ? undefined : tiles.get(tile);
-    if (!room || room.secrets_found === null || !increase) continue;
+    if (room?.secrets_found == null || !increase) continue;
     const key = room.tiles[0]!;
     const timeline = events.get(key) ?? [];
     const before = timeline.at(-1)?.found ?? 0;
