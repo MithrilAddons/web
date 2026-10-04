@@ -150,11 +150,6 @@
   stroke: #161c24;
   stroke-width: 3px;
 }
-.run-replay:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 5px;
-  border-radius: 4px;
-}
 .run-replay-bar {
   display: flex;
   align-items: center;
@@ -293,7 +288,8 @@
 .map-room:hover .map-room-shape {
   filter: brightness(1.2);
 }
-.map-room.selected:hover .map-room-shape {
+.map-room.selected:hover .map-room-shape,
+.map-room:focus-visible .map-room-shape {
   filter: url(#room-outline);
 }
 .map-room-label {
