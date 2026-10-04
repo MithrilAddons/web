@@ -59,7 +59,8 @@ def test_run_html_and_png_are_public_without_javascript(api):
     assert len(image.content) < 100_000
     for path in (f"/runs/{record}", tags["og:image"]):
         head = client.head(path)
-        assert head.status_code == 200 and not head.content
+        assert head.status_code == 200
+        assert not head.content
 
 
 def test_metadata_escapes_names_and_missing_name_uses_uuid(api):
