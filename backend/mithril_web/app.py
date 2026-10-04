@@ -30,6 +30,7 @@ from .privacy import Privacy
 from .privacy_api import register_privacy
 from .records import RecordStore, Submission, with_mod_records
 from .releases import ReleaseCache
+from .run_maps import public_record
 from .skins import SkinCache
 from .slayer_market import SlayerMarket
 from .solo_evidence import SoloProgress, SoloStart, TerminalReport
@@ -175,10 +176,11 @@ def create_app(
         ):
             # Nginx also bounds streaming requests; do not accept chunked auth bodies.
             length = request.headers.get("content-length", "0")
+            maximum = 32768 if request.url.path == "/api/v1/records/solo-progress" else 4096
             if (
                 len(length) > 6
                 or not length.isdigit()
-                or int(length) > 4096
+                or int(length) > maximum
                 or "transfer-encoding" in request.headers
             ):
                 return Response(status_code=413)
@@ -441,13 +443,32 @@ def create_app(
         request.app.state.moderation.check(
             user["uuid"], request.client.host if request.client else None, remember=True
         )
-        return user["uuid"]
+        return user
 
     def submit_record(request, method, body):
         # Authenticate again under the write lock: revocation/erasure cannot race a submission.
         with app.state.records.lock:
-            uuid = record_user(request)
-            return uuid, getattr(app.state.records, method)(uuid, body)
+            user = record_user(request)
+            uuid = user["uuid"]
+            result = getattr(app.state.records, method)(uuid, body)
+            if result.get("status") == "accepted":
+                with app.state.records.db:
+                    app.state.records.db.execute(
+                        "INSERT OR REPLACE INTO record_names VALUES (?,?)", (uuid, user["name"])
+                    )
+            return uuid, result
+
+    @app.get(
+        "/api/v1/records/solo/{record_id}",
+        responses={
+            404: {"description": "Record unavailable"},
+            503: {"description": "Map unavailable"},
+        },
+    )
+    def solo_record(record_id: str):
+        if not re.fullmatch(r"[A-Za-z0-9_-]{43}", record_id):
+            raise HTTPException(404, "Record unavailable")
+        return public_record(app.state.records, record_id)
 
     @app.post("/api/v1/records/solo-start")
     async def solo_start(body: SoloStart, request: Request):

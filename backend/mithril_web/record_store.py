@@ -8,6 +8,8 @@ import time
 
 from fastapi import HTTPException
 
+from .run_maps import retain_current
+
 DAY = 86400
 
 
@@ -24,6 +26,11 @@ class RecordStore:
                 real_ms INTEGER NOT NULL, ticks INTEGER NOT NULL, created REAL NOT NULL,
                 source TEXT NOT NULL, status TEXT NOT NULL, evidence_id TEXT);
             CREATE INDEX IF NOT EXISTS pb_account ON pb_records(uuid, status);
+            CREATE TABLE IF NOT EXISTS record_names (
+                uuid TEXT PRIMARY KEY, name TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS pb_maps (
+                uuid TEXT NOT NULL, floor TEXT NOT NULL, record_id TEXT NOT NULL UNIQUE,
+                data BLOB NOT NULL, PRIMARY KEY(uuid,floor));
             CREATE TABLE IF NOT EXISTS solo_attempts (
                 id TEXT PRIMARY KEY, uuid TEXT NOT NULL, floor TEXT NOT NULL, started REAL NOT NULL,
                 last_received REAL NOT NULL, sequence INTEGER NOT NULL, nonce TEXT NOT NULL,
@@ -85,6 +92,8 @@ class RecordStore:
                 evidence,
             ),
         )
+        if kind == "solo_clear":
+            retain_current(self.db, uuid, floor)
         return record_id
 
     def read(self, uuid):
@@ -166,7 +175,7 @@ class RecordStore:
                     row["id"],
                     row["sequence"] + 1,
                     now,
-                    body.model_dump_json(exclude={"nonce", "attempt_id"}),
+                    body.model_dump_json(exclude={"nonce", "attempt_id", "map"}),
                 ),
             )
             if reason:
@@ -204,6 +213,7 @@ class RecordStore:
                 result["record_id"] = self._record(
                     uuid, row["floor"], "solo_clear", body.elapsed_ms, body.ticks, "live", row["id"]
                 )
+                retain_current(self.db, uuid, row["floor"], result["record_id"], body.map)
             return result
 
     @staticmethod

@@ -2,6 +2,27 @@
 
 ## Optional Discord foundation API
 
+`GET /internal/v1/leaderboards` returns the synthetic shape in
+`contracts/discord-leaderboards-v1.json`: `version:1`, `updated_at` and three boards
+(`f7_solo`, `m7_solo`, `m7_terminals`). Each row contains UUID, nullable last
+authenticated Minecraft name, rank, real_ms and ticks from one eligible observation.
+Each player contributes their best record per category. Solo ranks use ticks only
+and UUID for deterministic ties, returning ten players. M7 terminals sort by real_ms
+then ticks and use ten dense ranks, including all players tied at rank ten.
+F7 terminal records never participate. Existing eligible legacy, manual and
+single-report records remain eligible; active account/network bans and invalidated
+records are excluded. No new client submission or Discord link is required.
+
+Record names are retained alongside PB summaries, captured from accepted mod
+submissions and backfilled from authenticated sessions (never pending proof names).
+They are erased atomically with PB/account deletion.
+Unknown names remain null and are displayed as UUIDs. This introduces the additive
+`record_names` table. The bot refreshes once per minute and removes stale content
+on backend failure. Record deletion/moderation affects the next successful refresh;
+Discord access failures may delay this. The endpoint remains authenticated,
+loopback-only and no-store. Each board is bounded at 1,000 players; overflow returns
+503 rather than truncating a tie group. No gameplay evidence or credentials are exposed.
+
 The Discord bot uses a separate authenticated loopback listener on `127.0.0.1:8781`,
 never the public API or nginx. `GET /internal/v1/summary` returns service time,
 aggregate open-party/search counts for F7/M7, the latest known mod version and
@@ -437,10 +458,42 @@ saved in the account/record databases. No additional cookies are used.
 
 ## Operations and limits
 
+### Solo-clear map snapshots
+
+Version 2 `POST /api/v1/records/solo-progress` accepts an optional `map` on a
+completion report only. Capture freezes at the same 300-score observation as the
+PB. Existing clients can omit it. This route allows a 32 KiB request; all other
+request body limits remain 4 KiB. The map itself is bounded to 16 KiB of UTF-8 JSON.
+
+The v1 map contains `version:1`, `rooms` (1–36), and `doors` (0–60). Room `tiles`
+are unique, connected indices on a 6×6 grid (row-major 0–35, up to four per room).
+Each room includes optional `name` (64 characters maximum), `type`, `state`,
+`secrets_found` and `secrets_total` (0–100 or null on capture failure). Room types
+are UNKNOWN, NORMAL, RARE, ENTRANCE, BLOOD, FAIRY, CHAMPION, PUZZLE or TRAP;
+states are UNKNOWN, UNOPENED, DISCOVERED, CLEARED, COMPLETE or FAILED. Doors
+join adjacent tiles in distinct rooms with ordered `a < b` and type UNKNOWN,
+NORMAL, WITHER, BLOOD or ENTRANCE. Overlaps, duplicate doors and excess fields
+are rejected. No pixels, player coordinates or individual secret positions are sent.
+
+`GET /api/v1/records/solo/{record_id}` is public and returns
+`{version:1,record:{id,uuid,name,floor,real_ms,ticks,created},map}` for an eligible
+solo record. Missing/ineligible/banned records return 404. `/runs/{record_id}`
+renders these observations as SVG. Maps are client observations, not attestations.
+The Discord leaderboard's solo rows optionally include `map_id` for a retained
+map; it is the record's 43-character ID, never an arbitrary URL.
+
+Only the current best by ticks, then creation time and ID, keeps a map per UUID
+and floor. Faster PBs, including submissions without a map, discard the previous
+map. Slower/equal submissions are not retained. Invalidation/correction prunes maps;
+restoring a record does not restore discarded data. Erasure removes maps too.
+Old eligible run links return `map:null`. Snapshots are compressed separately in
+`pb_maps`, never duplicated into the expiring live-attempt evidence.
+
 Use one backend process: parties/searches/cooldowns/notices are in memory, bounded
 at 4000 players/800 parties, and do not survive restarts. Auth and PBs use locked
 SQLite stores. Mod presence has a 60-second freshness window. HTTP requests are
-bounded at 4 KiB; mod handoff responses at 16 KiB and chat responses at 256 KiB.
+bounded at 4 KiB (32 KiB for solo-progress); mod handoff responses at 16 KiB and
+chat responses at 256 KiB.
 Reverse-proxy limits and rollback are in DEPLOYMENT.md. Restart recovery does not
 silently restore a closed finder party.
 

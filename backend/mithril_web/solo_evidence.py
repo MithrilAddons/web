@@ -3,7 +3,9 @@
 import math
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from .run_maps import RunMap
 
 Account = Annotated[str, Field(pattern=r"^[0-9a-f]{32}$")]
 Nonce = Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]{43}$")]
@@ -97,6 +99,13 @@ class SoloProgress(Strict):
     valid: bool
     evidence: ScoreEvidence
     complete: bool
+    map: RunMap | None = None
+
+    @model_validator(mode="after")
+    def completion_map(self):
+        if self.map is not None and not self.complete:
+            raise ValueError("Map requires a completion report")
+        return self
 
 
 class TerminalReport(Strict):

@@ -1,6 +1,28 @@
 # Deployment
 
+## Solo-clear maps
+
+Map capture adds the idempotent `pb_maps` table to records.sqlite3. Back up the
+database and deploy the backend/frontend plus updated nginx configuration before
+the mod and bot. Only `/api/v1/records/solo-progress` has a 32 KiB body allowance;
+other requests retain 4 KiB. Validate nginx before reload. Verify a synthetic
+map upload, current-best replacement, public page, ban/invalidation and erasure.
+Do not seed production with synthetic player records.
+
+The map-aware erasure path must remain deployed while maps exist. Recover with
+a compatible forward fix; do not restore an older writer/deletion implementation
+or stale database. Keep the independent current erasure ledger during recovery.
+At most two compressed maps are retained per player (one per floor). Deleted
+SQLite pages are reused; file size need not shrink immediately. Normal seven-day
+backup expiration and erasure replay also apply to these snapshots.
+
 ## Optional Discord listener
+
+Leaderboard support adds an idempotent `record_names` table to records.sqlite3;
+back it up with existing records. Deploy the updated backend before enabling the
+bot's leaderboard channel. Verify ranked clocks, equal terminal groups and removal
+after invalidation or erasure. The new privacy erasure path must remain deployed
+while retained record names exist; use a compatible forward fix for backend recovery.
 
 Deploy the matching tested/public source before enabling the Discord bot. Install
 `deploy/discord-listener.conf` as a drop-in for `mithril-web.service`; the existing
