@@ -2,6 +2,13 @@
 
 ## Solo-clear maps
 
+Run link previews require the `/runs/` nginx proxy and the built
+`frontend/dist/index.html` beside the backend. The backend injects Open Graph
+metadata into that template; `/api/v1/records/solo/{id}/preview.png` renders a
+1200×630 PNG with Pillow directly from the retained map. No generated images or
+extra database rows are stored. Both routes reuse public-record eligibility and
+return no-store responses. External chat services may retain their own previews.
+
 Map capture adds the idempotent `pb_maps` table to records.sqlite3. Back up the
 database and deploy the backend/frontend plus updated nginx configuration before
 the mod and bot. Only `/api/v1/records/solo-progress` has a 640 KiB body allowance;

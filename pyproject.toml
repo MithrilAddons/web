@@ -5,7 +5,7 @@ description = "MithrilPF website backend foundation"
 license = "AGPL-3.0-only"
 license-files = ["LICENSE"]
 requires-python = ">=3.12,<3.15"
-dependencies = ["fastapi==0.141.1", "uvicorn==0.54.0"]
+dependencies = ["fastapi==0.141.1", "pillow==12.3.0", "uvicorn==0.54.0"]
 
 [dependency-groups]
 dev = [

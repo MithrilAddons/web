@@ -1,5 +1,16 @@
 # API v1
 
+## Run link previews
+
+`GET /runs/{record_id}` serves the built application with server-rendered Open
+Graph metadata: floor, PB time, player and an optional map image. `GET
+/api/v1/records/solo/{record_id}/preview.png` generates a 1200×630 PNG from the
+retained 300-score snapshot in memory. Both support HEAD, need no login, and
+reuse the public solo-record eligibility rules. Missing, erased or hidden records
+return 404; retired/missing maps omit the image metadata and return 404 from the
+image route. There is no additional image storage or server cache. Other sites
+can cache a preview after fetching it.
+
 ## Optional Discord foundation API
 
 `GET /internal/v1/leaderboards` returns the synthetic shape in
