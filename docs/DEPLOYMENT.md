@@ -2,6 +2,12 @@
 
 ## Solo-clear maps
 
+Teleport-aware replay clients set a first-sample capability bit and pack teleport
+kinds/counts into the existing flags byte. Deploy the matching validator and
+frontend before publishing such a mod build; earlier validators reject flags above 3. No schema migration, new payload bytes or extra samples are needed. Keep the
+accepting validator deployed once these recordings exist. Legacy replay inference
+works immediately, while new zero-event recordings explicitly disable inference.
+
 Run link previews require the `/runs/` nginx proxy and the built
 `frontend/dist/index.html` beside the backend. The backend injects Open Graph
 metadata into that template; `/api/v1/records/solo/{id}/preview.png` renders a

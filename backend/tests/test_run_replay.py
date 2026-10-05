@@ -28,7 +28,10 @@ def encoded(values):
     )
 
 
-@pytest.mark.parametrize("name", ["run-replay-v1.json", "run-replay-room-secrets-v1.json"])
+@pytest.mark.parametrize(
+    "name",
+    ["run-replay-v1.json", "run-replay-room-secrets-v1.json", "run-replay-teleports-v1.json"],
+)
 def test_shared_replay_retention(api, name):
     client, app, _, _, _ = api
     data = timed_map()
@@ -70,6 +73,45 @@ def test_replay_invalid_start_coordinates_flags_or_counters(field, value):
     replay = RunReplay.model_validate(encoded(changed))
     with pytest.raises(ValueError):
         replay.validate_timeline(15000)
+
+
+@pytest.mark.parametrize("flags", [5, 9, 13, 17, 73, 101, 105, 109, 113])
+def test_teleport_kinds_and_saturated_counts(flags):
+    changed = [list(point) for point in points()]
+    changed[0][4] = 129
+    changed[2][4] = flags
+    RunReplay.model_validate(encoded(changed)).validate_timeline(15000)
+
+
+@pytest.mark.parametrize(
+    "index,flags",
+    [
+        (1, 128),
+        (1, 129),
+        (1, 21),
+        (1, 25),
+        (1, 29),
+        (0, 5),
+        (0, 133),
+        (1, 4),
+        (4, 7),
+        (1, 32),
+        (1, 65),
+        (0, 161),
+    ],
+)
+def test_rejects_reserved_or_misplaced_teleport_flags(index, flags):
+    changed = [list(point) for point in points()]
+    changed[index][4] = flags
+    with pytest.raises(ValueError, match="Invalid replay"):
+        RunReplay.model_validate(encoded(changed)).validate_timeline(15000)
+
+
+def test_capability_marker_accepts_unmapped_start_without_teleports():
+    changed = [list(point) for point in points()]
+    changed[0][1:3] = [0, 0]
+    changed[0][4] = 131
+    RunReplay.model_validate(encoded(changed)).validate_timeline(15000)
 
 
 @pytest.mark.parametrize(

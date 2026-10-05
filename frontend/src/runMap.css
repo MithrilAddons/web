@@ -136,6 +136,45 @@
   stroke-width: 2.5;
   stroke-linecap: round;
 }
+.replay-route {
+  opacity: 0.25;
+}
+.replay-route-walk {
+  fill: none;
+  stroke: #d4dbe5;
+  stroke-width: 1;
+}
+.replay-teleport-path {
+  fill: none;
+  stroke-width: 1.3;
+  stroke-dasharray: 3 3;
+}
+.replay-teleport-label {
+  font-size: 9px;
+  font-weight: 600;
+}
+.teleport-static {
+  display: none;
+}
+.run-legend i.teleport-swatch {
+  width: 18px;
+  height: 0;
+  border-top: 2px dashed;
+  border-radius: 0;
+  background: none;
+}
+.run-teleport-summary {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+@media (prefers-reduced-motion: reduce) {
+  .teleport-motion {
+    display: none;
+  }
+  .teleport-static {
+    display: block;
+  }
+}
 .replay-secret {
   fill: #66e4bb55;
   stroke: #66e4bb;

@@ -76,6 +76,10 @@ it("rewinds, plays at default 2x, pauses, changes speed, and stops at the cutoff
 it("supports scoped keyboard navigation, preserving button activation", () => {
   render(<RunReplay />);
   const slider = screen.getByRole("slider");
+  fireEvent.click(screen.getByRole("button", { name: "Show route" }));
+  expect(document.querySelector(".replay-route")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Show route" }));
+  expect(document.querySelector(".replay-route")).toBeNull();
   fireEvent.keyDown(slider, { key: "Home" });
   expect(slider.getAttribute("value")).toBe("0");
   fireEvent.keyDown(slider, { key: "ArrowLeft" });

@@ -77,6 +77,7 @@ it("decodes the mod wire fixture with positions, yaw, counters and exact cutoff"
     yaw: 90,
     flags: 0,
     secrets: 1,
+    teleport: null,
   });
   expect(points.at(-1)?.ms).toBe(15000);
 });

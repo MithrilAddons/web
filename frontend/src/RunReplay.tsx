@@ -14,6 +14,8 @@ import {
   type ReplayPoint,
   type RoomVisit,
 } from "./runReplayData";
+import { replayRoute, replayTeleports } from "./replayTeleports";
+import { TeleportOverlay } from "./TeleportOverlay";
 
 export function RunReplay({
   points,
@@ -37,6 +39,9 @@ export function RunReplay({
   onFollow: () => void;
 }>) {
   const [speed, setSpeed] = useState(2);
+  const [showRoute, setShowRoute] = useState(false);
+  const teleports = useMemo(() => replayTeleports(points), [points]);
+  const route = useMemo(() => replayRoute(points), [points]);
   const [hoverMs, setHoverMs] = useState<number | null>(null);
   const duration = points.at(-1)?.ms ?? 0;
   const events = useMemo(
@@ -109,6 +114,13 @@ export function RunReplay({
           viewBox="0 0 370 370"
           aria-hidden="true"
         >
+          <TeleportOverlay
+            events={teleports}
+            paths={route}
+            ms={ms}
+            speed={speed}
+            showRoute={showRoute}
+          />
           {trail.slice(1).map((point, index) => {
             const previous = trail[index]!;
             if (point.flags & 3 || previous.flags & 2 || point.ms <= ms - 3000)
@@ -163,6 +175,14 @@ export function RunReplay({
               </button>
             ))}
           </fieldset>
+          <button
+            type="button"
+            aria-pressed={showRoute}
+            onClick={() => setShowRoute(!showRoute)}
+            onKeyDown={keyboard}
+          >
+            Show route
+          </button>
         </div>
         <div className="run-timeline" onPointerLeave={() => setHoverMs(null)}>
           <div className="run-timeline-track" aria-hidden="true">

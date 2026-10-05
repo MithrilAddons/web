@@ -520,6 +520,28 @@ also set. Mapped coordinates are bounded to the dungeon grid. The first sample
 is at zero with bit 0 set; timestamps strictly increase and finish exactly at
 `stats.elapsed_ms`. Interior samples are at least 200 ms apart; the final sample
 can be sooner. At most 36,002 samples are accepted. Secret counts cannot decrease.
+Bits 2–4 carry teleport kind: 0 none, 1 etherwarp, 2 instant transmission,
+3 wither impact, 4 other/mixed; 5–7 are reserved. For a nonzero kind, bits 5–6
+store count minus one, saturated at 3 (four or more). A mixed-kind chain is
+other/mixed, never attributed entirely to its last ability. A nonzero kind requires
+a mapped noninitial sample with bit 0 set. Count bits without a kind are invalid.
+Bit 7 is a capability marker allowed only on the first sample; new writers set it
+even for runs with no teleports. This keeps zero-event recordings distinct from
+legacy recordings without adding bytes or changing replay version 1.
+
+The browser infers legacy teleports only when neither the capability marker nor
+any explicit kind is present: mapped endpoints, a break, at most 400 ms between
+samples, and 3–60 blocks of horizontal displacement. Inferred counts say "about";
+saturated counts say "+". Counts are attributed to landing rooms, including short
+passes. New mod labels match a main-hand ability use less than 500 ms before the
+packet and consume that hint once. Endpoints are sampled, not exact teleport
+locations. Small displacements below 1.5 blocks, unmapped samples and gaps over
+one second do not acquire teleport kinds. Unlabelled eight-block sample jumps
+are other/mixed. Same-millisecond endpoint replacement preserves an existing
+teleport kind unless the replacement has its own or becomes unmapped.
+`contracts/run-replay-teleports-v1.json` is shared across all three implementations.
+Deploy the accepting backend before distributing a mod that writes these flags.
+
 `contracts/run-replay-v1.json` checks the mod encoder, backend and browser decoder.
 Encoding happens on the mod's sync worker; database compression covers the entire
 snapshot. Replay uses real elapsed time over the final map; it does not reconstruct

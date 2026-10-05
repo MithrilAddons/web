@@ -277,7 +277,8 @@ it("pins a map selection without seeking; list selection pauses and seeks first 
   const slider = await screen.findByRole("slider");
   fireEvent.click(screen.getByRole("button", { name: "Room: 3/5 secrets" }));
   expect(slider.getAttribute("value")).toBe("15000");
-  expect(screen.getByText("Visits").nextElementSibling?.textContent).toBe("2");
+  expect(screen.getByText("Visits").nextElementSibling?.textContent).toBe("1");
+  expect(document.querySelectorAll(".run-visit")).toHaveLength(1);
   fireEvent.click(
     screen.getByRole("button", { name: "Room, 6 s, 3/5 secrets, Cleared" }),
   );

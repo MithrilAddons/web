@@ -2,6 +2,14 @@ import { useEffect, useMemo, useState } from "react";
 import "./runMap.css";
 import { RunReplay } from "./RunReplay";
 import {
+  landingRoom,
+  replayTeleports,
+  teleportColors,
+  teleportKinds,
+  teleportNames,
+  teleportSummary,
+} from "./replayTeleports";
+import {
   decodeRoomSecrets,
   inferRoomSecrets,
   decodeReplay,
@@ -181,6 +189,18 @@ function DungeonMap({ data }: Readonly<{ data: MapData }>) {
     [data.rooms],
   );
   const visits = useMemo(() => replayVisits(points, tiles), [points, tiles]);
+  const countedVisits = useMemo(
+    () => visits.filter((v) => v.end - v.start >= 1000),
+    [visits],
+  );
+  const teleports = useMemo(() => replayTeleports(points), [points]);
+  const roomTeleports = useMemo(
+    () =>
+      data.rooms.map((_, i) =>
+        teleports.filter((e) => landingRoom(e, tiles) === i),
+      ),
+    [data.rooms, teleports, tiles],
+  );
   const byRoom = useMemo(
     () => data.rooms.map((_, i) => visits.filter((v) => v.room === i)),
     [data.rooms, visits],
@@ -278,6 +298,7 @@ function DungeonMap({ data }: Readonly<{ data: MapData }>) {
       count={count(data.rooms[index]!)}
       state={state(index)}
       runTicks={data.stats?.ticks}
+      teleports={points.length ? teleportSummary(roomTeleports[index]!) : null}
       seek={() => selectRoom(index, true, fromList)}
     />
   );
@@ -337,7 +358,7 @@ function DungeonMap({ data }: Readonly<{ data: MapData }>) {
         <div className="run-map-canvas">
           <RunReplay
             points={points}
-            visits={visits}
+            visits={countedVisits}
             rooms={data.rooms.map((r) => ({
               name: roomName(r),
               color: colors[r.type] ?? "#68717a",
@@ -501,6 +522,17 @@ function DungeonMap({ data }: Readonly<{ data: MapData }>) {
                   {label(type)}
                 </span>
               ))}
+            {teleportKinds
+              .filter((kind) => teleports.some((e) => e.kind === kind))
+              .map((kind) => (
+                <span key={kind}>
+                  <i
+                    className="teleport-swatch"
+                    style={{ borderColor: teleportColors[kind] }}
+                  />
+                  {teleportNames[kind]}
+                </span>
+              ))}
           </div>
         </div>
         <section className="run-room-details" aria-label="Room details">
@@ -527,6 +559,11 @@ function DungeonMap({ data }: Readonly<{ data: MapData }>) {
           )}
         </section>
       </div>
+      {points.length > 0 && (
+        <p className="run-teleport-summary">
+          <strong>Run teleports:</strong> {teleportSummary(teleports)}
+        </p>
+      )}
       <div className="run-rooms-heading">
         <h2>Rooms</h2>
         <label>
@@ -598,10 +635,20 @@ function DungeonMap({ data }: Readonly<{ data: MapData }>) {
         <p>
           Times use server ticks, include repeat visits, and stop at 300 score.
           Transit includes doorways and unmapped positions. Room and transit
-          times add up to the PB.
+          times add up to the PB. Visits count stays of at least one second.
+          Shorter passes appear as transit on the replay timeline; recorded
+          room-time totals still include them.
         </p>
         {data.replay && (
           <>
+            <p>
+              Teleport types are matched to recent ability use. Other / mixed
+              includes unclassified teleports and chains of different types; 4+
+              indicates a saturated count. Legacy teleports are inferred from
+              short position jumps and labelled approximate. Endpoints are
+              sampled positions, not exact ability locations, and vertical-only
+              jumps are not shown.
+            </p>
             <p>
               Replay uses elapsed time. Secret indicators are approximate.{" "}
               {data.replay.room_secrets === undefined
@@ -637,6 +684,7 @@ function RoomDetails({
   state,
   runTicks,
   seek,
+  teleports,
 }: Readonly<{
   room: Room;
   visits: RoomVisit[] | null;
@@ -644,6 +692,7 @@ function RoomDetails({
   state: string;
   runTicks?: number;
   seek: () => void;
+  teleports: string | null;
 }>) {
   return (
     <>
@@ -684,7 +733,15 @@ function RoomDetails({
         </div>
         <div>
           <dt>Visits</dt>
-          <dd>{visits ? visits.length : "Not recorded"}</dd>
+          <dd>
+            {visits
+              ? visits.filter((v) => v.end - v.start >= 1000).length
+              : "Not recorded"}
+          </dd>
+        </div>
+        <div>
+          <dt>Teleports</dt>
+          <dd>{teleports ?? "Not recorded"}</dd>
         </div>
         <div>
           <dt>Share of run</dt>

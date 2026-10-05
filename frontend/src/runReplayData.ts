@@ -30,6 +30,11 @@ export function replayRoomSecrets(
   const events = rooms.get(tile) ?? [];
   return events[replayIndex(events, ms)]?.found ?? 0;
 }
+export type Teleport = {
+  kind: 1 | 2 | 3 | 4;
+  count: number;
+  inferred: boolean;
+};
 export type ReplayPoint = {
   ms: number;
   x: number;
@@ -37,6 +42,7 @@ export type ReplayPoint = {
   yaw: number;
   flags: number;
   secrets: number;
+  teleport: Teleport | null;
 };
 
 export function decodeReplay(data: ReplayData): ReplayPoint[] {
@@ -46,13 +52,38 @@ export function decodeReplay(data: ReplayData): ReplayPoint[] {
   const view = new DataView(bytes.buffer);
   const points: ReplayPoint[] = [];
   for (let offset = 0; offset < bytes.length; offset += 12) {
+    const flags = view.getUint8(offset + 9);
+    const kind = (flags >> 2) & 7;
     points.push({
       ms: view.getUint32(offset, true),
       x: view.getInt16(offset + 4, true) / 16,
       z: view.getInt16(offset + 6, true) / 16,
       yaw: (view.getUint8(offset + 8) * 360) / 256,
-      flags: view.getUint8(offset + 9),
+      flags,
+      teleport:
+        kind >= 1 && kind <= 4
+          ? {
+              kind: kind as Teleport["kind"],
+              count: ((flags >> 5) & 3) + 1,
+              inferred: false,
+            }
+          : null,
       secrets: view.getUint16(offset + 10, true),
+    });
+  }
+  if (!(points[0]!.flags & 128) && !points.some((p) => p.teleport)) {
+    points.forEach((point, i) => {
+      const previous = points[i - 1];
+      if (
+        !previous ||
+        !(point.flags & 1) ||
+        (point.flags | previous.flags) & 2 ||
+        point.ms - previous.ms > 400
+      )
+        return;
+      const distance = Math.hypot(point.x - previous.x, point.z - previous.z);
+      if (distance >= 3 && distance <= 60)
+        point.teleport = { kind: 4, count: 1, inferred: true };
     });
   }
   return points;
@@ -85,6 +116,7 @@ export function replayPosition(
   const rotation = ((next.yaw - point.yaw + 540) % 360) - 180;
   return {
     ...point,
+    teleport: null,
     x: point.x + (next.x - point.x) * fraction,
     z: point.z + (next.z - point.z) * fraction,
     yaw: point.yaw + rotation * fraction,
@@ -197,6 +229,7 @@ export function replayTrail(
   const first = replayPosition(points, start),
     last = replayPosition(points, ms);
   if (first) trail.unshift({ ...first, ms: start, flags: 0 });
-  if (last && trail.at(-1)?.ms !== ms) trail.push({ ...last, ms, flags: 0 });
+  if (last && trail.at(-1)?.ms !== ms)
+    trail.push({ ...last, ms, flags: 0, teleport: null });
   return trail;
 }

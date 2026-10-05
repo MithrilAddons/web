@@ -54,12 +54,23 @@ class RunReplay(BaseModel):
                 or (index == 0 and (elapsed != 0 or not flags & 1))
                 or (0 < index < count - 1 and elapsed - previous_time < 200)
                 or (index == count - 1 and elapsed != duration)
-                or flags > 3
                 or not previous_secrets <= secrets <= 3600
             ):
                 raise ValueError("Invalid replay timeline")
+            validate_flags(flags, index)
             validate_position(x, z, flags)
             previous_time, previous_secrets = elapsed, secrets
+
+
+def validate_flags(flags, index):
+    kind = (flags >> 2) & 7
+    if (
+        (flags & 0x80 and index != 0)
+        or kind > 4
+        or (kind and (index == 0 or not flags & 1 or flags & 2))
+        or (not kind and flags & 0x60)
+    ):
+        raise ValueError("Invalid replay teleport flags")
 
 
 def validate_position(x, z, flags):
