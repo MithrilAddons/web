@@ -103,8 +103,9 @@ def test_teleport_kinds_and_saturated_counts(flags):
 def test_rejects_reserved_or_misplaced_teleport_flags(index, flags):
     changed = [list(point) for point in points()]
     changed[index][4] = flags
+    replay = RunReplay.model_validate(encoded(changed))
     with pytest.raises(ValueError, match="Invalid replay"):
-        RunReplay.model_validate(encoded(changed)).validate_timeline(15000)
+        replay.validate_timeline(15000)
 
 
 def test_capability_marker_accepts_unmapped_start_without_teleports():
