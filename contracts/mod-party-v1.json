@@ -9,11 +9,36 @@
     "full": true,
     "invited": false,
     "members": [
-      { "name": "Alpha", "online": true, "accepted": false },
-      { "name": "Beta", "online": true, "accepted": false },
-      { "name": "Gamma", "online": true, "accepted": false },
-      { "name": "Delta", "online": true, "accepted": false },
-      { "name": "Epsilon", "online": true, "accepted": false }
+      {
+        "name": "Alpha",
+        "uuid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "online": true,
+        "accepted": false
+      },
+      {
+        "name": "Beta",
+        "uuid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "online": true,
+        "accepted": false
+      },
+      {
+        "name": "Gamma",
+        "uuid": "cccccccccccccccccccccccccccccccc",
+        "online": true,
+        "accepted": false
+      },
+      {
+        "name": "Delta",
+        "uuid": "dddddddddddddddddddddddddddddddd",
+        "online": true,
+        "accepted": false
+      },
+      {
+        "name": "Epsilon",
+        "uuid": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "online": true,
+        "accepted": false
+      }
     ]
   }
 }
