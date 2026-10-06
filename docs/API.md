@@ -395,7 +395,9 @@ only by a member whose website or mod is currently present; otherwise the party 
 - `POST party/mod/presence {version, online}`: online means connected to Hypixel,
   not a title screen/private server. Returns `{version, interval_seconds, party}`.
   Party is null or a compact view with `party_id`, `handoff_id`, `leader`, `you_lead`,
-  `full`, `invited`, and members `{name, online, accepted}`. No arbitrary commands.
+  `full`, `invited`, and members `{name, uuid, online, accepted}`. `uuid` is the
+  undashed Minecraft UUID, so the mod can match Hypixel Mod API party info; older
+  mods ignore it. No arbitrary commands.
   Presence only tracks accounts already using the finder.
   Presence, roster and invite replies also include optional `activity`: null when
   idle, or `{floor, leader, members}` for the authenticated player's own Discord

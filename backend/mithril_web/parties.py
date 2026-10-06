@@ -612,6 +612,7 @@ class Finder:
             "members": [
                 {
                     "name": self.players[member].name,
+                    "uuid": member,
                     "online": self.players[member].in_game
                     and self.players[member].mod_seen > now - PRESENCE_GRACE,
                     "accepted": member in party.accepted,
