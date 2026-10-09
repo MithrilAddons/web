@@ -100,11 +100,12 @@ def test_catalog_filters_guesses_and_answers():
         "not an item",
     ]
     entries = catalog(items)
-    assert "TEST_SWORD" not in entries and "NO_TIER" not in entries and "HIDDEN" not in entries
+    assert not {"TEST_SWORD", "NO_TIER", "HIDDEN"} & entries.keys()
     candidates = {identifier for identifier, entry in entries.items() if entry["candidate"]}
     assert candidates == {"SYNTHESIZER_V2", "SYNTHESIZER_V3"}
     assert entries["SYNTHESIZER_V2"]["family"] == entries["SYNTHESIZER_V3"]["family"]
-    assert entries["SKIN"]["cosmetic"] and entries["SNOW_PERSONALITY"]["cosmetic"]
+    assert entries["SKIN"]["cosmetic"]
+    assert entries["SNOW_PERSONALITY"]["cosmetic"]
     names = guess_names(entries)
     assert names["Daedalus Blade"] == "BLADE_A"
     assert names["Twin One"] == "TWIN_A"

@@ -67,6 +67,14 @@ def requirement(entry):
     return key, None if kind in ("ANY_OF", "ONE_OF") else level
 
 
+def museum_category(item):
+    museum = item.get("museum_data")
+    if isinstance(museum, dict):
+        return museum.get("category")
+    # Special items like the Ancient Elevator are flagged without museum data.
+    return "SPECIAL" if item.get("museum") is True else None
+
+
 def clues(item):
     """The clue values of one items-list entry, market value excluded."""
     museum = item.get("museum_data")
@@ -79,9 +87,7 @@ def clues(item):
     return {
         "rarity": item.get("tier"),
         "type": item.get("category"),
-        "museum": museum.get("category")
-        if isinstance(museum, dict)
-        else ("SPECIAL" if item.get("museum") is True else None),
+        "museum": museum_category(item),
         "stage": museum.get("game_stage") if isinstance(museum, dict) else None,
         "requirements": requirements,
         "soulbound": item.get("soulbound"),
@@ -209,20 +215,22 @@ def requirements(guess, answer):
     return result
 
 
+def soulbound(guess, answer):
+    if guess == answer:
+        return {"match": "exact"}
+    # Solo and Co-op are both soulbound, just to a different owner.
+    return {"match": "partial" if guess and answer else "none"}
+
+
 def compare(guess, answer, guess_market=None, answer_market=None):
     """Feedback per column for one guess; an up arrow means the answer is higher."""
-    soulbound = guess["soulbound"], answer["soulbound"]
     return {
         "rarity": ordered(guess["rarity"], answer["rarity"], RANK),
         "type": {"match": "exact" if guess["type"] == answer["type"] else "none"},
         "museum": {"match": "exact" if guess["museum"] == answer["museum"] else "none"},
         "stage": ordered(guess["stage"], answer["stage"], STAGE_RANK),
         "requirements": requirements(guess["requirements"], answer["requirements"]),
-        "soulbound": {
-            "match": "exact"
-            if soulbound[0] == soulbound[1]
-            else ("partial" if all(soulbound) else "none")
-        },
+        "soulbound": soulbound(guess["soulbound"], answer["soulbound"]),
         "origin": {"match": "exact" if guess["origin"] == answer["origin"] else "none"},
         "market": numeric(guess_market, answer_market),
         "npc": numeric(guess["npc"], answer["npc"]),
