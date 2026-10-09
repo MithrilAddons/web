@@ -473,6 +473,39 @@ only in process memory: leaving/expiry of the last member, disbanding or a backe
 restart deletes it. It is not logged or
 saved in the account/record databases. No additional cookies are used.
 
+## Curator
+
+The mod's Games screen plays Curator with its device session (`Authorization: Bearer`,
+no Origin header). Banned accounts get 403. Each UTC day has one answer, frozen with a
+market snapshot when the day starts; until then `today` reports `state: "preparing"`.
+Synthetic responses are in `contracts/curator-v1.json`.
+
+`GET /api/v1/games/curator/catalog?version=` returns `catalog` (a version string) and
+`items`, a list of `[item_id, name]` pairs with each name once, for autocomplete. When
+`version` matches, the response is `{"unchanged": true}` instead of the list.
+
+`GET /api/v1/games/curator/today` returns the day, its number (#1 on launch day), the
+state (preparing, playing, solved or failed), the 10-guess limit, `resets_at` (Unix
+seconds, next 00:00 UTC) and the player's guesses. Each guess has the item, its name,
+its clue `values` (rarity, type, museum, stage, requirements, soulbound, origin, market,
+npc, length), per-column `feedback` (`match`: exact, partial or none, plus an optional
+`arrow`: up or down, pointing towards the answer) and `family`, true when the guess is
+another tier of the answer's upgrade chain. Finished rounds add `answer` (item, name,
+values and an `icon` with the legacy material, durability and head texture when known)
+and all-time `stats` (played, solved, streak, best_streak).
+
+`POST /api/v1/games/curator/guess` takes `version`, `day` and `item` and returns the same
+shape as `today`. It answers 404 for an unknown item and 409 when the day has changed
+("A new item is ready"), the day is still being prepared, the item was already guessed
+or the round is over. Rejected guesses never use up one of the ten.
+
+`GET /api/v1/games/curator/leaderboard` ranks the current calendar-month season by
+points (11 minus guesses used for a solve, 0 otherwise), then fewer total guesses. It
+returns the top 10, the player's own row as `you` when outside them, the number of
+players and the player's season `stats` (points, rank, played, solved, average guesses
+per solve, a 10-slot histogram of solves by guesses used, failed rounds and streaks).
+Banned accounts are left out.
+
 ## Operations and limits
 
 Release metadata for the Discord bot may include an optional `checks` object:

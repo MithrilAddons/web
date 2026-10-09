@@ -29,6 +29,11 @@ class RecordStore:
             CREATE INDEX IF NOT EXISTS pb_account ON pb_records(uuid, status);
             CREATE TABLE IF NOT EXISTS record_names (
                 uuid TEXT PRIMARY KEY, name TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS curator_results (
+                day TEXT NOT NULL, uuid TEXT NOT NULL, name TEXT NOT NULL,
+                guesses TEXT NOT NULL, solved INTEGER NOT NULL, finished REAL,
+                PRIMARY KEY(day, uuid));
+            CREATE INDEX IF NOT EXISTS curator_player ON curator_results(uuid, day);
             CREATE TABLE IF NOT EXISTS pb_maps (
                 uuid TEXT NOT NULL, floor TEXT NOT NULL, record_id TEXT NOT NULL UNIQUE,
                 data BLOB NOT NULL, PRIMARY KEY(uuid,floor));

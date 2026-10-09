@@ -97,6 +97,17 @@ def clues(item):
     }
 
 
+def icon(item):
+    """What the mod needs to draw the item: its legacy material and any head texture."""
+    skin = item.get("skin")
+    result = {
+        "material": item.get("material"),
+        "durability": item.get("durability"),
+        "skin": skin.get("value") if isinstance(skin, dict) else None,
+    }
+    return {key: value for key, value in result.items() if isinstance(value, str | int)}
+
+
 def cosmetic(item):
     identifier, name = item.get("id", ""), clean(item.get("name"))
     return (
@@ -156,6 +167,7 @@ def catalog(items):
             "admin": item.get("tier") == "SPECIAL"
             and item.get("museum") is True
             and item.get("has_uuid") is True,
+            "icon": icon(item),
         }
         for item in items
     }

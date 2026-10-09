@@ -21,8 +21,9 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.responses import JSONResponse
 
 from .auth import COOKIE, DAY, AuthAttempts, AuthStore, CodeAttempts, mojang_profile
-from .curator_api import register_curator
+from .curator_api import register_curator, register_curator_game
 from .curator_data import CuratorData
+from .curator_game import CuratorGame
 from .link_previews import register_previews
 from .moderation import Moderation
 from .moderation_api import register_moderation
@@ -139,6 +140,7 @@ def create_app(
         app.state.curator = CuratorData(
             Path(path).with_name("curator.sqlite3"), loader=curator_loader, clock=clock or time.time
         )
+        app.state.curator_game = CuratorGame(app.state.curator, app.state.records)
 
         async def cleanup():
             while True:
@@ -181,7 +183,13 @@ def create_app(
     @app.middleware("http")
     async def limits(request, call_next):
         if request.url.path.startswith(
-            ("/api/v1/auth/", "/api/v1/party/", "/api/v1/records/", "/api/v1/moderation/")
+            (
+                "/api/v1/auth/",
+                "/api/v1/party/",
+                "/api/v1/records/",
+                "/api/v1/moderation/",
+                "/api/v1/games/",
+            )
         ):
             # Nginx also bounds streaming requests; do not accept chunked auth bodies.
             length = request.headers.get("content-length", "0")
@@ -656,6 +664,7 @@ def create_app(
     register_previews(app)
     register_moderation(app, browser, name_lookup)
     register_curator(app, browser)
+    register_curator_game(app, device_user)
     register_privacy(app, browser, skins, cards, device_user)
 
     app.add_middleware(
