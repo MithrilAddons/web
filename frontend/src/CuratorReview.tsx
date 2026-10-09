@@ -131,7 +131,7 @@ export function CuratorReview() {
             }}
           >
             <label>
-              Too popular above (auction sales in 30 days)
+              Too popular above (auction sales in 30 days){" "}
               <input
                 type="number"
                 min={0}
@@ -213,7 +213,7 @@ export function CuratorReview() {
             }}
           >
             <label>
-              Day
+              Day{" "}
               <select
                 required
                 value={day}
@@ -228,7 +228,7 @@ export function CuratorReview() {
               </select>
             </label>
             <label>
-              Item ID
+              Item ID{" "}
               <input
                 required
                 maxLength={128}
@@ -250,7 +250,7 @@ export function CuratorReview() {
             }}
           >
             <label>
-              Group
+              Group{" "}
               <select
                 value={group}
                 onChange={(e) => {
@@ -267,7 +267,7 @@ export function CuratorReview() {
               </select>
             </label>
             <label>
-              Search
+              Search{" "}
               <input
                 value={query}
                 maxLength={64}

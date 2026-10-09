@@ -78,7 +78,8 @@ def test_review_groups_search_and_pages(store):
     assert data.review("admin")["total"] == 1
     assert data.review("pool", "filler 99")["total"] == 11
     page = data.review("pool", offset=50)
-    assert page["total"] == 1002 and len(page["items"]) == 50
+    assert page["total"] == 1002
+    assert len(page["items"]) == 50
     data.set_list("SKIN", "allow", OWNER)
     data.set_list("HYPED", "block", OWNER)
     assert [row["id"] for row in data.review("allowed")["items"]] == ["SKIN"]
@@ -102,7 +103,8 @@ def test_queue_fills_thirty_days_without_repeats_and_keeps_plans(store):
     data, _, now = store
     queue = data.queue(random.Random(1))
     assert len(queue) == 30
-    assert queue[0]["day"] == day(NOW) and queue[0]["locked"]
+    assert queue[0]["day"] == day(NOW)
+    assert queue[0]["locked"]
     assert not any(entry["locked"] for entry in queue[1:])
     items = [entry["item"] for entry in queue]
     assert len(set(items)) == 30
@@ -190,7 +192,8 @@ def test_review_api_is_owner_only_and_same_origin(api):
     assert client.get("/api/v1/moderation/curator", headers=headers[USER]).status_code == 403
     assert client.get("/api/v1/moderation/curator", headers=headers[MOD]).status_code == 403
     overview = client.get("/api/v1/moderation/curator", headers=headers[OWNER]).json()
-    assert len(overview["queue"]) == 30 and overview["sales_cutoff"] == 100
+    assert len(overview["queue"]) == 30
+    assert overview["sales_cutoff"] == 100
     foreign = {**headers[OWNER], "Origin": "https://example.invalid"}
     body = {"version": 1, "sales_cutoff": 10}
     assert (
@@ -228,4 +231,5 @@ def test_review_api_changes(api):
     assert post("day", version=1, day=queue[1]["day"], item="TWIN_A").status_code == 409
     assert post("reviewed", version=1).status_code == 200
     queue = client.get("/api/v1/moderation/curator", headers=owner).json()["queue"]
-    assert queue[1]["item"] == "GAME_BREAKER" and queue[1]["name"] == "Game Breaker"
+    assert queue[1]["item"] == "GAME_BREAKER"
+    assert queue[1]["name"] == "Game Breaker"

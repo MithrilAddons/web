@@ -173,5 +173,5 @@ it("shows request failures", async () => {
       }),
   );
   fireEvent.click(screen.getAllByRole("button", { name: "Reroll" })[0]!);
-  await screen.findByText("No other item is available");
+  expect(await screen.findByText("No other item is available")).toBeTruthy();
 });
