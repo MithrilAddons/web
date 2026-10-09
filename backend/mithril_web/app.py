@@ -21,6 +21,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.responses import JSONResponse
 
 from .auth import COOKIE, DAY, AuthAttempts, AuthStore, CodeAttempts, mojang_profile
+from .curator_data import CuratorData
 from .link_previews import register_previews
 from .moderation import Moderation
 from .moderation_api import register_moderation
@@ -115,6 +116,7 @@ def create_app(
     name_lookup=mojang_uuid,
     release_loader=None,
     slayer_loader=None,
+    curator_loader=None,
     owner_uuid=None,
     network_key=None,
 ) -> FastAPI:
@@ -133,6 +135,9 @@ def create_app(
         )
         app.state.privacy = Privacy(app.state.auth, app.state.moderation, Path(path).resolve())
         slayer_market.history_path = Path(path).with_name("pet-prices.sqlite3")
+        app.state.curator = CuratorData(
+            Path(path).with_name("curator.sqlite3"), loader=curator_loader, clock=clock or time.time
+        )
 
         async def cleanup():
             while True:
@@ -146,6 +151,7 @@ def create_app(
             asyncio.create_task(cleanup()),
             asyncio.create_task(sweep_parties()),
             asyncio.create_task(slayer_market.run()),
+            asyncio.create_task(app.state.curator.run()),
         ]
         try:
             yield
@@ -156,6 +162,7 @@ def create_app(
                     await task
             app.state.auth.close()
             app.state.records.close()
+            app.state.curator.close()
 
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
     # Anonymous links cannot occupy the capacity reserved for existing linked users.
