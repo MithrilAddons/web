@@ -40,6 +40,11 @@ export function PrivacyPolicy() {
         saved by other people cannot be recalled.
       </p>
       <p>
+        Curator, the daily item game in the mod, stores your guesses and results
+        with your Minecraft name. Other MithrilPF players see your name, points
+        and streak on its monthly leaderboard.
+      </p>
+      <p>
         New solo-clear PBs can include a public dungeon map frozen at 300 score:
         room names, layout, connections, clear states, room times, secret counts
         and crypts. An optional 2D replay records the player's dungeon position,
@@ -60,6 +65,7 @@ export function PrivacyPolicy() {
           Credentials are stored hashed on the server.
         </li>
         <li>PB summaries: until you delete them.</li>
+        <li>Curator results: until you delete your synced PBs or account.</li>
         <li>
           Solo-clear maps: only the current best per player and floor, until
           replaced, invalidated or deleted with your synced PBs. Older run links
@@ -235,7 +241,7 @@ export function AccountPrivacy() {
           <p>
             {scope === "account"
               ? "Deletes browser links and signs out every linked client."
-              : "Removes your synced PBs from party requirements."}{" "}
+              : "Removes your synced PBs from party requirements and deletes your Curator results."}{" "}
             Local Minecraft records remain. Active restrictions and required
             review evidence follow the <a href="/privacy">retention policy</a>.
           </p>

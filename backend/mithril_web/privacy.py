@@ -99,6 +99,7 @@ class Privacy:
         self.db.execute("DELETE FROM pb_records WHERE uuid=?", (uuid,))
         self.db.execute("DELETE FROM record_names WHERE uuid=?", (uuid,))
         self.db.execute("DELETE FROM pb_maps WHERE uuid=?", (uuid,))
+        self.db.execute("DELETE FROM curator_results WHERE uuid=?", (uuid,))
         self.db.execute(
             "DELETE FROM solo_samples WHERE attempt_id IN (SELECT id FROM solo_attempts "
             "WHERE uuid=? "

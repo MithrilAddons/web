@@ -1,0 +1,238 @@
+{
+  "playing": {
+    "version": 1,
+    "day": "2027-01-15",
+    "number": 1,
+    "state": "playing",
+    "limit": 10,
+    "resets_at": 1800057600,
+    "guesses": [
+      {
+        "family": true,
+        "feedback": {
+          "length": {
+            "match": "exact"
+          },
+          "market": {
+            "arrow": "up",
+            "match": "none"
+          },
+          "museum": {
+            "match": "exact"
+          },
+          "npc": {
+            "arrow": "up",
+            "match": "none"
+          },
+          "origin": {
+            "match": "exact"
+          },
+          "rarity": {
+            "match": "exact"
+          },
+          "requirements": {
+            "match": "exact"
+          },
+          "soulbound": {
+            "match": "exact"
+          },
+          "stage": {
+            "arrow": "up",
+            "match": "none"
+          },
+          "type": {
+            "match": "exact"
+          }
+        },
+        "item": "SYNTHESIZER_V2",
+        "name": "Synthesizer v2",
+        "values": {
+          "length": 14,
+          "market": 3100000.0,
+          "museum": "COMBAT",
+          "npc": 9280,
+          "origin": null,
+          "rarity": "EPIC",
+          "requirements": {
+            "SKILL:COMBAT": 22
+          },
+          "soulbound": null,
+          "stage": "EXPERT",
+          "type": "NECKLACE"
+        }
+      }
+    ]
+  },
+  "solved": {
+    "version": 1,
+    "day": "2027-01-15",
+    "number": 1,
+    "state": "solved",
+    "limit": 10,
+    "resets_at": 1800057600,
+    "guesses": [
+      {
+        "family": true,
+        "feedback": {
+          "length": {
+            "match": "exact"
+          },
+          "market": {
+            "arrow": "up",
+            "match": "none"
+          },
+          "museum": {
+            "match": "exact"
+          },
+          "npc": {
+            "arrow": "up",
+            "match": "none"
+          },
+          "origin": {
+            "match": "exact"
+          },
+          "rarity": {
+            "match": "exact"
+          },
+          "requirements": {
+            "match": "exact"
+          },
+          "soulbound": {
+            "match": "exact"
+          },
+          "stage": {
+            "arrow": "up",
+            "match": "none"
+          },
+          "type": {
+            "match": "exact"
+          }
+        },
+        "item": "SYNTHESIZER_V2",
+        "name": "Synthesizer v2",
+        "values": {
+          "length": 14,
+          "market": 3100000.0,
+          "museum": "COMBAT",
+          "npc": 9280,
+          "origin": null,
+          "rarity": "EPIC",
+          "requirements": {
+            "SKILL:COMBAT": 22
+          },
+          "soulbound": null,
+          "stage": "EXPERT",
+          "type": "NECKLACE"
+        }
+      },
+      {
+        "family": false,
+        "feedback": {
+          "length": {
+            "match": "exact"
+          },
+          "market": {
+            "match": "exact"
+          },
+          "museum": {
+            "match": "exact"
+          },
+          "npc": {
+            "match": "exact"
+          },
+          "origin": {
+            "match": "exact"
+          },
+          "rarity": {
+            "match": "exact"
+          },
+          "requirements": {
+            "match": "exact"
+          },
+          "soulbound": {
+            "match": "exact"
+          },
+          "stage": {
+            "match": "exact"
+          },
+          "type": {
+            "match": "exact"
+          }
+        },
+        "item": "SYNTHESIZER_V3",
+        "name": "Synthesizer v3",
+        "values": {
+          "length": 14,
+          "market": 5400000.0,
+          "museum": "COMBAT",
+          "npc": 17440,
+          "origin": null,
+          "rarity": "EPIC",
+          "requirements": {
+            "SKILL:COMBAT": 22
+          },
+          "soulbound": null,
+          "stage": "PROFESSIONAL",
+          "type": "NECKLACE"
+        }
+      }
+    ],
+    "answer": {
+      "item": "SYNTHESIZER_V3",
+      "name": "Synthesizer v3",
+      "values": {
+        "length": 14,
+        "market": 5400000.0,
+        "museum": "COMBAT",
+        "npc": 17440,
+        "origin": null,
+        "rarity": "EPIC",
+        "requirements": {
+          "SKILL:COMBAT": 22
+        },
+        "soulbound": null,
+        "stage": "PROFESSIONAL",
+        "type": "NECKLACE"
+      },
+      "icon": {
+        "material": "PAPER"
+      }
+    },
+    "stats": {
+      "played": 1,
+      "solved": 1,
+      "streak": 1,
+      "best_streak": 1
+    }
+  },
+  "leaderboard": {
+    "version": 1,
+    "season": "2027-01",
+    "day": 15,
+    "days": 31,
+    "players": 1,
+    "top": [
+      {
+        "rank": 1,
+        "name": "Alice",
+        "points": 9,
+        "solved": 1,
+        "played": 1,
+        "streak": 1,
+        "you": true
+      }
+    ],
+    "you": null,
+    "stats": {
+      "points": 9,
+      "rank": 1,
+      "played": 1,
+      "solved": 1,
+      "average": 2.0,
+      "histogram": [0, 1, 0, 0, 0, 0, 0, 0, 0, 0],
+      "failed": 0,
+      "streak": 1,
+      "best_streak": 1
+    }
+  }
+}

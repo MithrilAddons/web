@@ -12,18 +12,19 @@ import sqlite3
 import threading
 import time
 import zlib
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 
 from . import slayer_market
 from .curator import catalog
 
-PERIODS = {"sales": 60, "catalog": 6 * 3600}
+PERIODS = {"sales": 60, "catalog": 6 * 3600, "lock": 60}
 SALES_DAYS = 60
 QUEUE_DAYS = 30
 DEFAULT_CUTOFF = 100
 # Bumped when stored catalog columns change, so the next refresh rewrites every item.
-CATALOG_VERSION = 2
+CATALOG_VERSION = 3
 POOL = ("eligible", "allowed")
 FAILURES = (
     OSError,
@@ -79,6 +80,15 @@ class CuratorData:
                 self.db.execute(
                     f"ALTER TABLE curator_items ADD COLUMN {column} INTEGER NOT NULL DEFAULT 0"
                 )
+        if "icon" not in columns:
+            self.db.execute("ALTER TABLE curator_items ADD COLUMN icon TEXT NOT NULL DEFAULT '{}'")
+        self.db.execute("""CREATE TABLE IF NOT EXISTS curator_prices (
+            day TEXT NOT NULL, item TEXT NOT NULL, price REAL NOT NULL,
+            PRIMARY KEY (day, item))""")
+        # The answer and its clues are frozen when the day starts.
+        self.db.execute("""CREATE TABLE IF NOT EXISTS curator_locks (
+            day TEXT PRIMARY KEY, item TEXT NOT NULL, values_json TEXT NOT NULL,
+            at REAL NOT NULL)""")
         self.db.execute("""CREATE TABLE IF NOT EXISTS curator_lists (
             item TEXT PRIMARY KEY, list TEXT NOT NULL, actor TEXT NOT NULL, at REAL NOT NULL)""")
         self.db.execute("""CREATE TABLE IF NOT EXISTS curator_days (
@@ -125,11 +135,11 @@ class CuratorData:
             self.db.executemany(
                 """INSERT INTO curator_items
                 (id, name, clues, family, guessable, candidate, first_seen, cosmetic,
-                unique_clues, admin) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
+                unique_clues, admin, icon) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET name=excluded.name, clues=excluded.clues,
                 family=excluded.family, guessable=1, candidate=excluded.candidate,
                 cosmetic=excluded.cosmetic, unique_clues=excluded.unique_clues,
-                admin=excluded.admin""",
+                admin=excluded.admin, icon=excluded.icon""",
                 [
                     (
                         identifier,
@@ -141,6 +151,7 @@ class CuratorData:
                         int(entry["cosmetic"]),
                         int(entry["unique"]),
                         int(entry["admin"]),
+                        json.dumps(entry["icon"], sort_keys=True),
                     )
                     for identifier, entry in entries.items()
                 ],
@@ -386,3 +397,132 @@ class CuratorData:
             and (needle in row["name"].casefold() or needle in row["id"].casefold())
         ]
         return {"version": 1, "total": len(rows), "items": rows[offset : offset + limit]}
+
+    def load_lock(self):
+        """At the start of each UTC day: take the market snapshot and freeze the answer."""
+        today = day(self.clock())
+        with self.lock:
+            if self.db.execute("SELECT 1 FROM curator_locks WHERE day=?", (today,)).fetchone():
+                return
+        answer = self.queue()[0]["item"]
+        if not answer:
+            raise ValueError("No item is available for today")
+        prices = market_prices(self.loader)
+        with self.lock, self.db:
+            row = self.db.execute(
+                "SELECT clues FROM curator_items WHERE id=?", (answer,)
+            ).fetchone()
+            values = {**json.loads(row["clues"]), "market": prices.get(answer)}
+            self.db.execute("DELETE FROM curator_prices WHERE day<?", (today,))
+            self.db.executemany(
+                "INSERT OR REPLACE INTO curator_prices VALUES (?, ?, ?)",
+                [(today, item, price) for item, price in prices.items()],
+            )
+            self.db.execute(
+                "INSERT INTO curator_locks VALUES (?, ?, ?, ?)",
+                (today, answer, json.dumps(values, sort_keys=True), self.clock()),
+            )
+
+    def locked(self, date):
+        """The frozen answer of one day, or None while it is still being prepared."""
+        with self.lock:
+            row = self.db.execute(
+                "SELECT l.item, l.values_json, i.name, i.family, i.icon FROM curator_locks l "
+                "JOIN curator_items i ON i.id=l.item WHERE l.day=?",
+                (date,),
+            ).fetchone()
+            first = self.db.execute("SELECT MIN(day) FROM curator_locks").fetchone()[0]
+        if not row:
+            return None
+        return {
+            "item": row["item"],
+            "name": row["name"],
+            "family": row["family"],
+            "values": json.loads(row["values_json"]),
+            "icon": json.loads(row["icon"]),
+            "number": (date_of(date) - date_of(first)).days + 1,
+        }
+
+    def guessable(self, item, date):
+        """One guessable item with its clues and that day's market value."""
+        with self.lock:
+            row = self.db.execute(
+                "SELECT name, clues, family FROM curator_items WHERE id=? AND guessable=1",
+                (item,),
+            ).fetchone()
+            if not row:
+                return None
+            price = self.db.execute(
+                "SELECT price FROM curator_prices WHERE day=? AND item=?", (date, item)
+            ).fetchone()
+        return {
+            "item": item,
+            "name": row["name"],
+            "family": row["family"],
+            "values": {**json.loads(row["clues"]), "market": price[0] if price else None},
+        }
+
+    def guess_list(self):
+        """Every guessable name once, for autocomplete, with the catalog version."""
+        with self.lock:
+            version = self._meta("catalog_updated", "")
+            rows = self.db.execute(
+                "SELECT id, name FROM curator_items WHERE guessable=1 ORDER BY id"
+            ).fetchall()
+        names = {}
+        for row in rows:
+            names.setdefault(row["name"], row["id"])
+        return version, sorted(([item, name] for name, item in names.items()), key=lambda r: r[1])
+
+
+def date_of(text):
+    return datetime.fromisoformat(text).date()
+
+
+def bin_price(auction):
+    """The item ID and per-item price of one BIN listing, or None."""
+    price = auction.get("starting_bid")
+    if auction.get("bin") is not True or not slayer_market.positive(price):
+        return None
+    try:
+        tag, count = slayer_market.decode_item(auction.get("item_bytes"), with_count=True)
+        item = tag["ExtraAttributes"]["id"]
+    except (ValueError, OSError, EOFError, zlib.error, KeyError, IndexError, TypeError):
+        return None
+    if not isinstance(item, str) or not isinstance(count, int) or not 1 <= count <= 64:
+        return None
+    return item, price / count
+
+
+def collect_bins(page, number, first, prices):
+    if page["page"] != number or page["lastUpdated"] != first["lastUpdated"]:
+        raise ValueError("Auction snapshot changed; retry later")
+    auctions = page["auctions"]
+    if not isinstance(auctions, list) or len(auctions) > 1000:
+        raise ValueError("Invalid auction page")
+    for listing in filter(None, map(bin_price, auctions)):
+        item, price = listing
+        prices[item] = min(prices.get(item, price), price)
+
+
+def market_prices(loader):
+    """Lowest BIN per item ID across the Auction House, overridden by Bazaar buy prices."""
+    first = loader("skyblock/auctions?page=0")
+    pages = first["totalPages"]
+    if not isinstance(pages, int) or not 1 <= pages <= 200:
+        raise ValueError("Invalid auction page count")
+    prices = {}
+    collect_bins(first, 0, first, prices)
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        numbers = range(1, pages)
+        for number, page in zip(
+            numbers,
+            pool.map(lambda n: loader(f"skyblock/auctions?page={n}"), numbers),
+            strict=True,
+        ):
+            collect_bins(page, number, first, prices)
+    for item, product in loader("skyblock/bazaar")["products"].items():
+        price = (product.get("quick_status") or {}).get("buyPrice")
+        if isinstance(item, str) and slayer_market.positive(price):
+            prices[item] = price
+    return prices

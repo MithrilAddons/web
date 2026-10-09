@@ -6,6 +6,7 @@ from fastapi import HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from .auth import COOKIE
+from .curator_game import GameError
 
 ItemId = Annotated[str, Field(pattern=r"^[A-Za-z0-9_:;.\-]{1,128}$")]
 Day = Annotated[str, Field(pattern=r"^\d{4}-\d{2}-\d{2}$")]
@@ -24,6 +25,11 @@ class ListChange(CuratorBody):
 class DayChange(CuratorBody):
     day: Day
     item: ItemId | None
+
+
+class Guess(CuratorBody):
+    day: Day
+    item: ItemId
 
 
 class Settings(CuratorBody):
@@ -91,3 +97,36 @@ def register_curator(app, browser):
     @app.post("/api/v1/moderation/curator/reviewed")
     def reviewed(body: CuratorBody, request: Request):
         return change(request, lambda _: app.state.curator.mark_reviewed())
+
+
+def register_curator_game(app, device_user):
+    """Mod routes for playing Curator; a linked device session identifies the player."""
+
+    def player(request):
+        row = device_user(request)
+        app.state.moderation.check(row["uuid"], request.client.host if request.client else None)
+        return row
+
+    @app.get("/api/v1/games/curator/catalog")
+    def catalog(request: Request, version: Annotated[str, Query(max_length=64)] = ""):
+        player(request)
+        current, items = app.state.curator.guess_list()
+        if version and version == current:
+            return {"version": 1, "catalog": current, "unchanged": True}
+        return {"version": 1, "catalog": current, "items": items}
+
+    @app.get("/api/v1/games/curator/today")
+    def today(request: Request):
+        return app.state.curator_game.state(player(request)["uuid"])
+
+    @app.post("/api/v1/games/curator/guess")
+    def guess(body: Guess, request: Request):
+        row = player(request)
+        try:
+            return app.state.curator_game.guess(row["uuid"], row["name"], body.day, body.item)
+        except GameError as error:
+            raise HTTPException(error.status, error.detail) from None
+
+    @app.get("/api/v1/games/curator/leaderboard")
+    def leaderboard(request: Request):
+        return app.state.curator_game.leaderboard(player(request)["uuid"])
