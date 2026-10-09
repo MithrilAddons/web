@@ -70,7 +70,9 @@ class CuratorData:
         self.db.commit()
 
     def close(self):
-        self.db.close()
+        # A refresh thread may still be running; it must never use a closing connection.
+        with self.lock:
+            self.db.close()
 
     async def run(self):
         while True:
