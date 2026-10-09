@@ -152,6 +152,10 @@ def catalog(items):
             "clues": clues(item),
             "family": family.get(item["id"]),
             "cosmetic": cosmetic(item),
+            # Admin giveaways: unique copies of museum Special items, like the Game Breaker.
+            "admin": item.get("tier") == "SPECIAL"
+            and item.get("museum") is True
+            and item.get("has_uuid") is True,
         }
         for item in items
     }
@@ -162,11 +166,8 @@ def catalog(items):
         looks[key] = looks.get(key, 0) + 1
     for entry in entries.values():
         # A shared name can't be told apart by typing it; identical clues can't by playing.
-        entry["candidate"] = (
-            not entry["cosmetic"]
-            and names[entry["name"]] == 1
-            and looks[signature(entry["clues"])] == 1
-        )
+        entry["unique"] = names[entry["name"]] == 1 and looks[signature(entry["clues"])] == 1
+        entry["candidate"] = entry["unique"] and not entry["cosmetic"]
     return entries
 
 

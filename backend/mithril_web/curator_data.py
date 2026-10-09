@@ -7,6 +7,7 @@ beyond the auction IDs needed to avoid counting a sale twice.
 import asyncio
 import http.client
 import json
+import random
 import sqlite3
 import threading
 import time
@@ -19,6 +20,11 @@ from .curator import catalog
 
 PERIODS = {"sales": 60, "catalog": 6 * 3600}
 SALES_DAYS = 60
+QUEUE_DAYS = 30
+DEFAULT_CUTOFF = 100
+# Bumped when stored catalog columns change, so the next refresh rewrites every item.
+CATALOG_VERSION = 2
+POOL = ("eligible", "allowed")
 FAILURES = (
     OSError,
     sqlite3.Error,
@@ -67,6 +73,16 @@ class CuratorData:
         self.db.execute(
             "CREATE TABLE IF NOT EXISTS curator_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
         )
+        columns = {row[1] for row in self.db.execute("PRAGMA table_info(curator_items)")}
+        for column in ("cosmetic", "unique_clues", "admin"):
+            if column not in columns:
+                self.db.execute(
+                    f"ALTER TABLE curator_items ADD COLUMN {column} INTEGER NOT NULL DEFAULT 0"
+                )
+        self.db.execute("""CREATE TABLE IF NOT EXISTS curator_lists (
+            item TEXT PRIMARY KEY, list TEXT NOT NULL, actor TEXT NOT NULL, at REAL NOT NULL)""")
+        self.db.execute("""CREATE TABLE IF NOT EXISTS curator_days (
+            day TEXT PRIMARY KEY, item TEXT NOT NULL, actor TEXT, at REAL NOT NULL)""")
         self.db.commit()
 
     def close(self):
@@ -91,7 +107,8 @@ class CuratorData:
 
     def load_catalog(self):
         response = self.loader("resources/skyblock/items")
-        updated, items = response["lastUpdated"], response["items"]
+        updated = f"{CATALOG_VERSION}:{response['lastUpdated']}"
+        items = response["items"]
         if not isinstance(items, list) or not 1000 <= len(items) <= 50000:
             raise ValueError("Invalid items list")
         with self.lock:
@@ -106,9 +123,13 @@ class CuratorData:
             # Items Hypixel removes stay known, but can no longer be guessed or picked.
             self.db.execute("UPDATE curator_items SET guessable=0, candidate=0")
             self.db.executemany(
-                """INSERT INTO curator_items VALUES (?, ?, ?, ?, 1, ?, ?)
+                """INSERT INTO curator_items
+                (id, name, clues, family, guessable, candidate, first_seen, cosmetic,
+                unique_clues, admin) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET name=excluded.name, clues=excluded.clues,
-                family=excluded.family, guessable=1, candidate=excluded.candidate""",
+                family=excluded.family, guessable=1, candidate=excluded.candidate,
+                cosmetic=excluded.cosmetic, unique_clues=excluded.unique_clues,
+                admin=excluded.admin""",
                 [
                     (
                         identifier,
@@ -117,6 +138,9 @@ class CuratorData:
                         entry["family"],
                         int(entry["candidate"]),
                         now,
+                        int(entry["cosmetic"]),
+                        int(entry["unique"]),
+                        int(entry["admin"]),
                     )
                     for identifier, entry in entries.items()
                 ],
@@ -176,3 +200,189 @@ class CuratorData:
             }
             for row in rows
         }
+
+    def _meta(self, key, default):
+        row = self.db.execute("SELECT value FROM curator_meta WHERE key=?", (key,)).fetchone()
+        return row["value"] if row else default
+
+    def _rows(self):
+        """Every guessable item with its curation status; the caller holds the lock."""
+        sales = {
+            row["item"]: row["total"]
+            for row in self.db.execute(
+                "SELECT item, SUM(count) AS total FROM curator_sales WHERE day>? GROUP BY item",
+                (day(self.clock() - 30 * 86400),),
+            )
+        }
+        lists = dict(self.db.execute("SELECT item, list FROM curator_lists").fetchall())
+        cutoff = int(self._meta("sales_cutoff", DEFAULT_CUTOFF))
+        reviewed = float(self._meta("reviewed_at", 0))
+        rows = []
+        for row in self.db.execute("SELECT * FROM curator_items WHERE guessable=1 ORDER BY name"):
+            listed, count = lists.get(row["id"]), sales.get(row["id"], 0)
+            if listed == "block":
+                status = "blocked"
+            elif not row["unique_clues"]:
+                # Not even the allowlist helps: players couldn't tell it apart.
+                status = "not_unique"
+            elif listed == "allow":
+                status = "allowed"
+            elif row["cosmetic"]:
+                status = "cosmetic"
+            else:
+                status = "popular" if count > cutoff else "eligible"
+            clues = json.loads(row["clues"])
+            rows.append(
+                {
+                    "id": row["id"],
+                    "name": row["name"],
+                    "rarity": clues["rarity"],
+                    "museum": clues["museum"],
+                    "sales": count,
+                    "list": listed,
+                    "status": status,
+                    "admin": bool(row["admin"]),
+                    "family": row["family"],
+                    "new": row["first_seen"] > reviewed,
+                }
+            )
+        return rows
+
+    def _pick(self, rows, avoid, rng):
+        pool = [row for row in rows if row["status"] in POOL and row["id"] not in avoid]
+        if not pool:
+            return None
+        # Rarely traded items are the point; heavily traded ones are still possible.
+        return rng.choices(pool, [1 / (1 + row["sales"]) for row in pool])[0]["id"]
+
+    def queue(self, rng=None):
+        """Answers for today and the next 29 days; missing days are picked now."""
+        rng = rng or random.SystemRandom()
+        now = self.clock()
+        days = [day(now + n * 86400) for n in range(QUEUE_DAYS)]
+        with self.lock, self.db:
+            planned = dict(
+                self.db.execute(
+                    "SELECT day, item FROM curator_days WHERE day>=?", (days[0],)
+                ).fetchall()
+            )
+            used = {row[0] for row in self.db.execute("SELECT item FROM curator_days")}
+            rows = self._rows()
+            for date in days:
+                if date not in planned:
+                    # Once every item has had its day, repeats start, but never within the queue.
+                    item = self._pick(rows, used, rng) or self._pick(
+                        rows, set(planned.values()), rng
+                    )
+                    if item:
+                        self.db.execute(
+                            "INSERT INTO curator_days VALUES (?, ?, NULL, ?)", (date, item, now)
+                        )
+                        planned[date] = item
+                        used.add(item)
+            known = {row["id"]: row for row in rows}
+            return [
+                {
+                    "day": date,
+                    "item": planned.get(date),
+                    "name": known.get(planned.get(date), {}).get("name"),
+                    "sales": known.get(planned.get(date), {}).get("sales"),
+                    "locked": date == days[0],
+                }
+                for date in days
+            ]
+
+    def _changeable(self, date):
+        now = self.clock()
+        if not day(now) < date <= day(now + (QUEUE_DAYS - 1) * 86400):
+            raise ValueError("Only the coming days in the queue can change")
+
+    def reroll(self, date, actor, rng=None):
+        rng = rng or random.SystemRandom()
+        self._changeable(date)
+        with self.lock, self.db:
+            used = {row[0] for row in self.db.execute("SELECT item FROM curator_days")}
+            item = self._pick(self._rows(), used, rng)
+            if not item:
+                raise LookupError("No other item is available")
+            self.db.execute(
+                "INSERT OR REPLACE INTO curator_days VALUES (?, ?, ?, ?)",
+                (date, item, actor, self.clock()),
+            )
+
+    def schedule(self, date, item, actor):
+        self._changeable(date)
+        with self.lock, self.db:
+            row = self.db.execute(
+                "SELECT unique_clues FROM curator_items WHERE id=? AND guessable=1", (item,)
+            ).fetchone()
+            if not row:
+                raise LookupError("Unknown item")
+            if not row["unique_clues"]:
+                raise ValueError("Players couldn't tell this item apart from another")
+            self.db.execute(
+                "INSERT OR REPLACE INTO curator_days VALUES (?, ?, ?, ?)",
+                (date, item, actor, self.clock()),
+            )
+
+    def set_list(self, item, listed, actor):
+        with self.lock, self.db:
+            if not self.db.execute("SELECT 1 FROM curator_items WHERE id=?", (item,)).fetchone():
+                raise LookupError("Unknown item")
+            if listed is None:
+                self.db.execute("DELETE FROM curator_lists WHERE item=?", (item,))
+            else:
+                self.db.execute(
+                    "INSERT OR REPLACE INTO curator_lists VALUES (?, ?, ?, ?)",
+                    (item, listed, actor, self.clock()),
+                )
+
+    def set_cutoff(self, cutoff):
+        with self.lock, self.db:
+            self.db.execute(
+                "INSERT OR REPLACE INTO curator_meta VALUES ('sales_cutoff', ?)", (cutoff,)
+            )
+
+    def mark_reviewed(self):
+        with self.lock, self.db:
+            self.db.execute(
+                "INSERT OR REPLACE INTO curator_meta VALUES ('reviewed_at', ?)", (self.clock(),)
+            )
+
+    def overview(self):
+        queue = self.queue()
+        with self.lock:
+            rows = self._rows()
+            since = self.db.execute("SELECT MIN(day) FROM curator_sales").fetchone()[0]
+            cutoff = int(self._meta("sales_cutoff", DEFAULT_CUTOFF))
+        counts = {}
+        for row in rows:
+            counts[row["status"]] = counts.get(row["status"], 0) + 1
+        return {
+            "version": 1,
+            "sales_cutoff": cutoff,
+            "sales_since": since,
+            "counts": counts,
+            "new": sum(row["new"] for row in rows),
+            "queue": queue,
+        }
+
+    def review(self, group, query="", offset=0, limit=50):
+        with self.lock:
+            rows = self._rows()
+        groups = {
+            "pool": lambda row: row["status"] in POOL,
+            "admin": lambda row: row["admin"],
+            "new": lambda row: row["new"],
+            "allowed": lambda row: row["list"] == "allow",
+            "blocked": lambda row: row["list"] == "block",
+            "all": lambda row: True,
+        }
+        needle = query.strip().casefold()
+        rows = [
+            row
+            for row in rows
+            if groups[group](row)
+            and (needle in row["name"].casefold() or needle in row["id"].casefold())
+        ]
+        return {"version": 1, "total": len(rows), "items": rows[offset : offset + limit]}

@@ -174,3 +174,11 @@
 .evidence-items {
   padding-left: 20px;
 }
+.curator-actions {
+  display: flex;
+  gap: 8px;
+}
+.curator-review code {
+  font-size: 0.85em;
+  color: var(--muted);
+}
