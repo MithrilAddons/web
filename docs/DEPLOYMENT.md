@@ -68,7 +68,8 @@ with the backend bound to loopback behind nginx. Keep other hosted services unch
 - `/opt/mithril-web/releases/<release>/`: root-owned source, frontend build and venv.
 - `/opt/mithril-web/current`: active release symlink.
 - `deploy/mithril-web.service`: unprivileged mithril-web service, loopback port 8780.
-- `/var/lib/mithril-web/`: persistent auth.sqlite3, records.sqlite3 and pet-prices.sqlite3.
+- `/var/lib/mithril-web/`: persistent auth.sqlite3, records.sqlite3, pet-prices.sqlite3 and
+  curator.sqlite3.
 - `/etc/nginx/sites-available/mithril.foo`: installed deploy/nginx.conf.
 - `/var/www/mithril-web-acme`: certificate challenge webroot.
 
@@ -117,6 +118,12 @@ include it in SQLite backups once present. Preserve it across releases and code
 rollbacks. Existing auth/record schemas, credentials and dependencies are unchanged.
 After deployment, verify that aggregate history is collected without page visits,
 survives a service restart and returns provisional quotes while the week builds.
+
+Curator data creates its own `curator.sqlite3` beside the auth database. It holds the
+SkyBlock item catalog and daily auction sale counts per item ID, collected from the
+keyless items list every six hours and the ended-auctions feed every minute; no player
+data is stored. Include it in SQLite backups and preserve it across releases. After
+deployment, verify that the catalog loads and that sale counts grow without page visits.
 
 API responses are not publicly cached. Authentication has an nginx limit of
 30 requests/minute/IP (burst 15), party routes 60/minute/IP (burst 30).
