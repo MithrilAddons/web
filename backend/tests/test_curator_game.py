@@ -163,7 +163,9 @@ def test_market_prices_take_the_lowest_unit_bin_and_bazaar_buy_price():
 def test_streaks_and_points():
     assert streaks([]) == (0, 0)
     assert streaks(["2027-01-01", "2027-01-02", "2027-01-04"]) == (1, 2)
-    assert points(1, True) == 10 and points(10, True) == 1 and points(3, False) == 0
+    assert points(1, True) == 10
+    assert points(10, True) == 1
+    assert points(3, False) == 0
 
 
 def test_round_is_prepared_then_played_to_a_solve(game):
@@ -287,13 +289,17 @@ def test_leaderboard_ranks_the_season_and_pins_your_row(game):
     assert board["players"] == 12
     assert [row["points"] for row in board["top"][:3]] == [10, 10, 10]
     assert board["top"][0]["name"] == "Player0"
-    assert board["you"]["name"] == "Alice" and board["you"]["rank"] == 12
-    assert board["you"]["points"] == 8 and board["you"]["played"] == 2
+    assert board["you"]["name"] == "Alice"
+    assert board["you"]["rank"] == 12
+    assert board["you"]["points"] == 8
+    assert board["you"]["played"] == 2
     stats = board["stats"]
-    assert stats["histogram"][2] == 1 and stats["failed"] == 1
+    assert stats["histogram"][2] == 1
+    assert stats["failed"] == 1
     assert (stats["points"], stats["average"], stats["streak"]) == (8, 3.0, 1)
     top = client.get("/api/v1/games/curator/leaderboard", headers=headers[BOB]).json()
-    assert top["you"] is None and top["stats"]["rank"] is None
+    assert top["you"] is None
+    assert top["stats"]["rank"] is None
 
 
 def test_erasing_records_removes_curator_results(game):

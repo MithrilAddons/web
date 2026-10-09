@@ -22,6 +22,12 @@ def points(guesses, solved):
     return GUESSES + 1 - guesses if solved else 0
 
 
+def round_state(solved, finished):
+    if solved:
+        return "solved"
+    return "failed" if finished else "playing"
+
+
 def streaks(days):
     """Current and best runs of consecutive solved days, from sorted solved days."""
     best = run = 0
@@ -66,7 +72,7 @@ class CuratorGame:
             "version": 1,
             "day": today,
             "number": answer["number"],
-            "state": "solved" if solved else ("failed" if finished else "playing"),
+            "state": round_state(solved, finished),
             "limit": GUESSES,
             "resets_at": self.resets_at(),
             "guesses": guesses,

@@ -479,6 +479,32 @@ def date_of(text):
     return datetime.fromisoformat(text).date()
 
 
+def bin_price(auction):
+    """The item ID and per-item price of one BIN listing, or None."""
+    price = auction.get("starting_bid")
+    if auction.get("bin") is not True or not slayer_market.positive(price):
+        return None
+    try:
+        tag, count = slayer_market.decode_item(auction.get("item_bytes"), with_count=True)
+        item = tag["ExtraAttributes"]["id"]
+    except (ValueError, OSError, EOFError, zlib.error, KeyError, IndexError, TypeError):
+        return None
+    if not isinstance(item, str) or not isinstance(count, int) or not 1 <= count <= 64:
+        return None
+    return item, price / count
+
+
+def collect_bins(page, number, first, prices):
+    if page["page"] != number or page["lastUpdated"] != first["lastUpdated"]:
+        raise ValueError("Auction snapshot changed; retry later")
+    auctions = page["auctions"]
+    if not isinstance(auctions, list) or len(auctions) > 1000:
+        raise ValueError("Invalid auction page")
+    for listing in filter(None, map(bin_price, auctions)):
+        item, price = listing
+        prices[item] = min(prices.get(item, price), price)
+
+
 def market_prices(loader):
     """Lowest BIN per item ID across the Auction House, overridden by Bazaar buy prices."""
     first = loader("skyblock/auctions?page=0")
@@ -486,26 +512,7 @@ def market_prices(loader):
     if not isinstance(pages, int) or not 1 <= pages <= 200:
         raise ValueError("Invalid auction page count")
     prices = {}
-
-    def collect(page, number):
-        if page["page"] != number or page["lastUpdated"] != first["lastUpdated"]:
-            raise ValueError("Auction snapshot changed; retry later")
-        auctions = page["auctions"]
-        if not isinstance(auctions, list) or len(auctions) > 1000:
-            raise ValueError("Invalid auction page")
-        for auction in auctions:
-            price = auction.get("starting_bid")
-            if auction.get("bin") is not True or not slayer_market.positive(price):
-                continue
-            try:
-                tag, count = slayer_market.decode_item(auction.get("item_bytes"), with_count=True)
-                item = tag["ExtraAttributes"]["id"]
-            except (ValueError, OSError, EOFError, zlib.error, KeyError, IndexError, TypeError):
-                continue
-            if isinstance(item, str) and isinstance(count, int) and 1 <= count <= 64:
-                prices[item] = min(prices.get(item, price / count), price / count)
-
-    collect(first, 0)
+    collect_bins(first, 0, first, prices)
     with ThreadPoolExecutor(max_workers=4) as pool:
         numbers = range(1, pages)
         for number, page in zip(
@@ -513,7 +520,7 @@ def market_prices(loader):
             pool.map(lambda n: loader(f"skyblock/auctions?page={n}"), numbers),
             strict=True,
         ):
-            collect(page, number)
+            collect_bins(page, number, first, prices)
     for item, product in loader("skyblock/bazaar")["products"].items():
         price = (product.get("quick_status") or {}).get("buyPrice")
         if isinstance(item, str) and slayer_market.positive(price):
