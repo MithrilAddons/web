@@ -21,6 +21,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.responses import JSONResponse
 
 from .auth import COOKIE, DAY, AuthAttempts, AuthStore, CodeAttempts, mojang_profile
+from .curator_api import register_curator
 from .curator_data import CuratorData
 from .link_previews import register_previews
 from .moderation import Moderation
@@ -654,6 +655,7 @@ def create_app(
 
     register_previews(app)
     register_moderation(app, browser, name_lookup)
+    register_curator(app, browser)
     register_privacy(app, browser, skins, cards, device_user)
 
     app.add_middleware(

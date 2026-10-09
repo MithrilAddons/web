@@ -635,6 +635,25 @@ Removed text is scrubbed from retained chat and retry receipts; mod history omit
 Previously rendered Minecraft chat cannot be recalled. Report text expires after
 30 days unless a case hold applies; audit entries do not copy the message text.
 
+### Curator review
+
+Owner-only routes manage the daily item answers for Curator. They need the owner's
+browser session; POSTs need the exact web Origin and a v1 JSON body but no reason.
+`GET curator` returns the sales cut-off, the first day with collected auction sales,
+item counts per status, the number of items added since the last review and the
+answer queue for today and the next 29 UTC days. Missing days are picked on read,
+weighted towards items with fewer auction sales and avoiding earlier answers.
+`GET curator/items?group=&query=&offset=` pages 50 items at a time; groups are pool,
+admin, new, allowed, blocked and all.
+
+`POST curator/list` takes item and list (allow, block or null). Allowed items skip the
+cosmetic and popularity filters; blocked items never become answers. Items whose name
+or clues match another guessable item stay out of the pool either way.
+`POST curator/day` takes a day and an item ID, or null to pick another item; only
+coming days in the queue can change. `POST curator/settings` sets sales_cutoff, the
+30-day auction sales above which an item is too popular, and `POST curator/reviewed`
+marks every current item as reviewed.
+
 Evidence holds follow temporary restriction expiry, or 30 days after a permanent
 restriction. An open appeal holds evidence until it closes, then the original
 expiry applies. Late appeals cannot recover deleted detail. Unrestricted accepted
