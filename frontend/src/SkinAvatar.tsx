@@ -6,12 +6,12 @@ export function SkinAvatar({
   uuid,
   image,
   className,
-}: {
+}: Readonly<{
   name: string;
   uuid?: string;
   image?: string | null;
   className: string;
-}) {
+}>) {
   const [loaded, setLoaded] = useState<{
     uuid: string;
     image: string | null;

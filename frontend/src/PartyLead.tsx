@@ -63,12 +63,12 @@ export function LeaderView({
   run,
   busy,
   onEdit,
-}: {
+}: Readonly<{
   state: PartyState;
   run: Run;
   busy: boolean;
   onEdit: () => void;
-}) {
+}>) {
   const party = state.party!;
   const [removing, setRemoving] = useState<number | null>(null);
   const [closing, setClosing] = useState(false);
@@ -144,7 +144,7 @@ export function LeaderView({
             floor={party.floor}
             you={state.you.name}
             stats={null}
-            openNote={(_, role) =>
+            renderOpenNote={(_, role) =>
               matching?.roles[role] && (
                 <span className="accent small">
                   {" "}
@@ -152,7 +152,7 @@ export function LeaderView({
                 </span>
               )
             }
-            action={(slot) => {
+            renderAction={(slot) => {
               const member = party.members.find((entry) => entry.slot === slot);
               if (!member || member.name === state.you.name) return null;
               if (removing !== slot)
@@ -278,12 +278,12 @@ function RemoveChoice({
   busy,
   onRemove,
   onCancel,
-}: {
+}: Readonly<{
   name: string;
   busy: boolean;
   onRemove: (block: boolean) => void;
   onCancel: () => void;
-}) {
+}>) {
   return (
     <span className="remove-choice" role="group" aria-label={`Remove ${name}`}>
       <button
@@ -324,6 +324,37 @@ function draftFrom(rules: Rules): Draft {
   return draft;
 }
 
+type Parse = (key: string, metric: Metric) => number | null | undefined;
+type InvalidRule = { column: string; metric: Metric };
+
+/** Rules from the draft, or the first field that does not parse. */
+function buildRules(
+  columns: Role[],
+  exempt: Role[],
+  parse: Parse,
+): { rules: Rules; invalid?: undefined } | { invalid: InvalidRule } {
+  const rules: Rules = { shared: {}, per_class: {}, exempt };
+  for (const column of [EVERY, ...columns])
+    for (const metric of METRIC_ORDER) {
+      const value = parse(`${column}:${metric}`, metric);
+      if (value === undefined) return { invalid: { column, metric } };
+      if (value === null) continue;
+      if (column === EVERY) {
+        rules.shared[metric] = value;
+      } else {
+        const role = column as Role;
+        const thresholds = rules.per_class[role] ?? {};
+        rules.per_class[role] = thresholds;
+        thresholds[metric] = value;
+      }
+    }
+  return { rules };
+}
+
+function columnName(column: string) {
+  return column === EVERY ? "every slot" : CLASS_NAMES[column as Role];
+}
+
 export function PartyForm({
   mode,
   state,
@@ -331,14 +362,14 @@ export function PartyForm({
   run,
   busy,
   onDone,
-}: {
+}: Readonly<{
   mode: "create" | "edit";
   state: PartyState;
   floor: Floor;
   run: Run;
   busy: boolean;
   onDone: (notice?: string) => void;
-}) {
+}>) {
   const party = mode === "edit" ? state.party : null;
   const leaderSlot = party?.members.find(
     (member) => member.name === state.you.name,
@@ -404,27 +435,19 @@ export function PartyForm({
   const columns = [
     ...new Set(slotRoles.filter((_, index) => index !== leaderIndex)),
   ] as Role[];
-  const parsed = (key: string, metric: Metric) =>
-    parseMetric(metric, draft[key] ?? "");
+  const parsed: Parse = (key, metric) => parseMetric(metric, draft[key] ?? "");
   const newNames = names.split(/[\s,]+/).filter(Boolean);
-  const badName = newNames.find((name) => !/^[A-Za-z0-9_]{1,16}$/.test(name));
+  const badName = newNames.find((name) => !/^\w{1,16}$/.test(name));
 
   const submit = async () => {
-    const rules: Rules = { shared: {}, per_class: {}, exempt };
-    for (const column of [EVERY, ...columns])
-      for (const metric of METRIC_ORDER) {
-        const value = parsed(`${column}:${metric}`, metric);
-        if (value === undefined) {
-          focusInvalid();
-          setProblem(
-            `Check ${METRICS[metric].label} for ${column === EVERY ? "every slot" : CLASS_NAMES[column as Role]}.`,
-          );
-          return;
-        }
-        if (value === null) continue;
-        if (column === EVERY) rules.shared[metric] = value;
-        else (rules.per_class[column as Role] ??= {})[metric] = value;
-      }
+    const built = buildRules(columns, exempt, parsed);
+    if (built.invalid) {
+      const { column, metric } = built.invalid;
+      focusInvalid();
+      setProblem(`Check ${METRICS[metric].label} for ${columnName(column)}.`);
+      return;
+    }
+    const rules = built.rules;
     if (badName) {
       focusInvalid();
       setProblem(`“${badName}” isn’t a valid Minecraft name.`);
@@ -435,26 +458,23 @@ export function PartyForm({
       return;
     }
     setProblem("");
-    const done =
+    const save = () =>
       mode === "create"
-        ? await run(() =>
-            partyApi.publish({
-              version: 1,
-              floor,
-              leader_class: leaderClass,
-              roles: slotRoles,
-              allow_duplicates: duplicates,
-              rules,
-              block_names: newNames,
-            }),
-          )
-        : await run(() =>
-            partyApi.edit(
-              rules,
-              kept.map((entry) => entry.uuid),
-              newNames,
-            ),
+        ? partyApi.publish({
+            version: 1,
+            floor,
+            leader_class: leaderClass,
+            roles: slotRoles,
+            allow_duplicates: duplicates,
+            rules,
+            block_names: newNames,
+          })
+        : partyApi.edit(
+            rules,
+            kept.map((entry) => entry.uuid),
+            newNames,
           );
+    const done = await run(save);
     if (done) {
       const remembered = savePartyRules(state.you.uuid, floor, rules);
       onDone(
@@ -500,7 +520,7 @@ export function PartyForm({
             ))}
           </div>
           <label className="stack-field">
-            Your class
+            {"Your class"}
             <select
               value={leaderClass}
               onChange={(event) => setLeaderClass(event.target.value as Role)}
@@ -518,7 +538,7 @@ export function PartyForm({
               checked={duplicates}
               onChange={(event) => setDuplicates(event.target.checked)}
             />
-            Allow duplicate classes
+            {"Allow duplicate classes"}
           </label>
         </fieldset>
       )}
@@ -701,7 +721,7 @@ export function PartyForm({
             </ul>
           )}
           <label className="stack-field blocked-names">
-            Add Minecraft names, separated by spaces or commas
+            {"Add Minecraft names, separated by spaces or commas"}
             <input
               value={names}
               aria-invalid={Boolean(badName)}

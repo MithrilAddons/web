@@ -66,6 +66,13 @@ it("keeps the fallback if the request fails", async () => {
   vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("Offline")));
   render(<ModDownload />);
   await screen.findByText("Check GitHub for downloads.");
+  expect(screen.getByRole("status").textContent).toBe(
+    "Check GitHub for downloads.",
+  );
+  expect(
+    screen.getByRole("link", { name: "View releases" }).getAttribute("href"),
+  ).toBe("https://github.com/MithrilAddons/mithrilpf/releases");
+  expect(screen.queryByRole("link", { name: /Download mod/ })).toBeNull();
 });
 
 it("offers published prereleases and clearly labels the beta", async () => {

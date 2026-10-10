@@ -249,7 +249,7 @@ def validate_blocked(blocked):
     for uuid, name in blocked.items():
         if not isinstance(uuid, str) or not re.fullmatch(r"[0-9a-f]{32}", uuid):
             raise PartyError("invalid_blocked")
-        if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9_]{1,16}", name):
+        if not isinstance(name, str) or not re.fullmatch(r"\w{1,16}", name, flags=re.ASCII):
             raise PartyError("invalid_blocked")
     return dict(blocked)
 
@@ -727,53 +727,57 @@ class Finder:
         now = self.clock()
         refill = set()
         for player in list(self.players.values()):
-            if player.banned_until and player.banned_until <= now:
-                player.banned_until = 0
-                self._touch(player)
-            in_game = player.in_game and player.mod_seen > now - PRESENCE_GRACE
-            if in_game != player.in_game:
-                player.in_game = in_game
-                self._touch(player)
-            if not self._present(player, now):
-                if player.looking:
-                    self._stop_looking(player)
-                    self._notice(player, "stopped_looking", now, reason="offline")
-                party = self.parties.get(player.party)
-                # Once full, the five-minute join window decides instead (with a ban).
-                if party and (
-                    party.completed or party.full_since is None or party.invited_at is not None
-                ):
-                    self._vacate(party, player.uuid, now, "offline")
-                    refill.add(party.id)
-                elif (
-                    not party
-                    and not player.looking
-                    and player.banned_until <= now
-                    and max(player.web_seen, player.mod_seen) <= now - IDLE_FORGET
-                ):
-                    del self.players[player.uuid]
-                    self.changed.discard(player.uuid)
+            self._sweep_player(player, now, refill)
         for party in list(self.parties.values()):
-            if party.full_since is None:
-                continue
-            self._check_joined(party, now)
-            if (
-                not party.completed
-                and party.invited_at is None
-                and now >= party.full_since + JOIN_WINDOW
-            ):
-                # Collect first: vacating reopens the party and clears the joined flags.
-                missing = [s["member"] for s in party.slots if not s["joined"]]
-                for uuid in missing:
-                    self.players[uuid].banned_until = now + NO_SHOW_BAN
-                    if party.id in self.parties:
-                        self._vacate(party, uuid, now, "no_show")
-                    else:
-                        self.players[uuid].party = None
-                refill.add(party.id)
+            if party.full_since is not None:
+                self._sweep_full_party(party, now, refill)
         for party_id in refill:
             if party := self.parties.get(party_id):
                 self._fill_party(party, now)
+        self._recount_due(now)
+
+    def _sweep_player(self, player, now, refill):
+        if player.banned_until and player.banned_until <= now:
+            player.banned_until = 0
+            self._touch(player)
+        in_game = player.in_game and player.mod_seen > now - PRESENCE_GRACE
+        if in_game != player.in_game:
+            player.in_game = in_game
+            self._touch(player)
+        if self._present(player, now):
+            return
+        if player.looking:
+            self._stop_looking(player)
+            self._notice(player, "stopped_looking", now, reason="offline")
+        party = self.parties.get(player.party)
+        # Once full, the five-minute join window decides instead (with a ban).
+        if party and (party.completed or party.full_since is None or party.invited_at is not None):
+            self._vacate(party, player.uuid, now, "offline")
+            refill.add(party.id)
+        elif (
+            not party
+            and not player.looking
+            and player.banned_until <= now
+            and max(player.web_seen, player.mod_seen) <= now - IDLE_FORGET
+        ):
+            del self.players[player.uuid]
+            self.changed.discard(player.uuid)
+
+    def _sweep_full_party(self, party, now, refill):
+        self._check_joined(party, now)
+        if party.completed or party.invited_at is not None or now < party.full_since + JOIN_WINDOW:
+            return
+        # Collect first: vacating reopens the party and clears the joined flags.
+        missing = [s["member"] for s in party.slots if not s["joined"]]
+        for uuid in missing:
+            self.players[uuid].banned_until = now + NO_SHOW_BAN
+            if party.id in self.parties:
+                self._vacate(party, uuid, now, "no_show")
+            else:
+                self.players[uuid].party = None
+        refill.add(party.id)
+
+    def _recount_due(self, now):
         due = [
             party
             for party in self.parties.values()

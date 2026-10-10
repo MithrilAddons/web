@@ -256,10 +256,12 @@ def test_transport_bounds_redirects_errors_and_closes(monkeypatch, status, encod
         closed = False
 
         def __init__(self, host, timeout):
-            assert host == "api.hypixel.net" and timeout == 4
+            assert host == "api.hypixel.net"
+            assert timeout == 4
 
         def request(self, method, path, headers):
-            assert method == "GET" and path == f"/v2/skyblock/profiles?uuid={UUID}"
+            assert method == "GET"
+            assert path == f"/v2/skyblock/profiles?uuid={UUID}"
             assert headers["API-Key"] == "synthetic-test-key"
             assert "synthetic-test-key" not in path
 

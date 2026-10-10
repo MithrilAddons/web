@@ -1,7 +1,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import fixture from "../../contracts/health-v1.json";
-import { App } from "./App";
+import { App, trimTrailingSlashes } from "./App";
 
 beforeEach(() => {
   window.history.replaceState(null, "", "/party-finder");
@@ -196,4 +196,23 @@ it("cancels the request on unmount", () => {
   )?.[1].signal as AbortSignal;
   view.unmount();
   expect(signal.aborted).toBe(true);
+});
+
+it("trims trailing slashes like the previous pattern", () => {
+  const cases: [string, string][] = [
+    ["", ""],
+    ["/", ""],
+    ["///", ""],
+    ["/link", "/link"],
+    ["/link/", "/link"],
+    ["/link///", "/link"],
+    ["/runs/a/", "/runs/a"],
+    ["/a//b", "/a//b"],
+    ["////x", "////x"],
+    ["x/", "x"],
+    [`${"/".repeat(5000)}x`, `${"/".repeat(5000)}x`],
+    [`/party-finder${"/".repeat(5000)}`, "/party-finder"],
+  ];
+  for (const [input, expected] of cases)
+    expect(trimTrailingSlashes(input)).toBe(expected);
 });

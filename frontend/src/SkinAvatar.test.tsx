@@ -43,7 +43,7 @@ it("shares one same-origin lookup across repeated chat messages", async () => {
     </>,
   );
   await waitFor(() =>
-    expect(view.container.querySelectorAll("img").length).toBe(4),
+    expect(view.container.querySelectorAll("img")).toHaveLength(4),
   );
   expect(fetcher).toHaveBeenCalledExactlyOnceWith(
     `/api/v1/party/skin/${"a".repeat(32)}`,

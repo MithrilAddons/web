@@ -187,7 +187,8 @@ def test_per_account_rate_limit_and_retained_history_are_bounded(chat):
         now[0] += 61
         finder.send_chat(IDS[0], party, f"{i:016d}", "hello", "web")
     messages = finder.personal(IDS[0])["party"]["messages"]
-    assert len(messages) == 100 and messages[0]["id"] == "26"
+    assert len(messages) == 100
+    assert messages[0]["id"] == "26"
     assert len(finder.parties[party].chat.receipts) <= 11
 
 
@@ -201,7 +202,8 @@ def test_mod_chat_uses_scoped_credentials_and_loses_access_when_removed(chat):
         client.post(send, headers=mods[0], json=body(party)).json()["message"]["source"] == "game"
     )
     result = client.post(read, headers=mods[1], json=payload).json()
-    assert result["latest"] == 1 and len(result["messages"]) == 1
+    assert result["latest"] == 1
+    assert len(result["messages"]) == 1
     assert client.post(read, headers=mods[2], json=payload).status_code == 409
     client.post("/api/v1/party/leave", headers=sessions[1], json={})
     assert client.post(read, headers=mods[1], json=payload).status_code == 409
@@ -220,7 +222,8 @@ def test_private_chat_survives_handoff_without_relisting_and_expires(chat):
     assert finder.handoff(IDS[0]) is None
     assert finder.personal(IDS[0])["party"]["join_deadline"] is None
     finder.leave(IDS[1])
-    assert party.completed and not finder.visible(party, finder.players[IDS[5]])
+    assert party.completed
+    assert not finder.visible(party, finder.players[IDS[5]])
     assert (
         client.get("/api/v1/party/listings?floor=M7", headers=sessions[5]).json()["parties"] == []
     )

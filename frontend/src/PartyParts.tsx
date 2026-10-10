@@ -39,7 +39,10 @@ export function andList(roles: Role[]) {
     : (names[0] ?? "");
 }
 
-export function ClassTile({ role, kind }: { role: Role; kind: ChipKind }) {
+export function ClassTile({
+  role,
+  kind,
+}: Readonly<{ role: Role; kind: ChipKind }>) {
   return (
     <span className={`chip chip-${kind}`} aria-hidden="true">
       {LETTER[role]}
@@ -50,10 +53,10 @@ export function ClassTile({ role, kind }: { role: Role; kind: ChipKind }) {
 export function Roster({
   chips,
   label = "Roster",
-}: {
+}: Readonly<{
   chips: Chip[];
   label?: string;
-}) {
+}>) {
   return (
     <ul className="roster" aria-label={label}>
       {chips.map((chip, index) => (
@@ -87,6 +90,11 @@ export function memberChips(party: Detail, you: string): Chip[] {
 
 type Extra = (slot: number, role: Role) => ReactNode;
 
+function tileKind(mine: boolean, filled: boolean): ChipKind {
+  if (mine) return "you";
+  return filled ? "filled" : "open";
+}
+
 /**
  * Members with their stats; open slots show each rule's threshold and, for classes
  * the viewer plays, the viewer's own value.
@@ -97,17 +105,17 @@ export function DetailTable({
   you,
   stats,
   playing = [],
-  openNote,
-  action,
-}: {
+  renderOpenNote,
+  renderAction,
+}: Readonly<{
   party: Detail;
   floor: Floor;
   you: string;
   stats: Stats | null;
   playing?: Role[];
-  openNote?: Extra;
-  action?: Extra;
-}) {
+  renderOpenNote?: Extra;
+  renderAction?: Extra;
+}>) {
   const metrics = METRIC_ORDER.filter(
     (metric) =>
       ["catacombs", "class_level", "s_plus_ms"].includes(metric) ||
@@ -128,7 +136,7 @@ export function DetailTable({
                 {metric === "class_level" ? "Class lvl" : METRICS[metric].short}
               </th>
             ))}
-            {action && (
+            {renderAction && (
               <th scope="col">
                 <span className="sr-only">Action</span>
               </th>
@@ -147,7 +155,7 @@ export function DetailTable({
                   <span className="slot-name">
                     <ClassTile
                       role={slot.role}
-                      kind={mine ? "you" : member ? "filled" : "open"}
+                      kind={tileKind(mine, Boolean(member))}
                     />
                     {CLASS_NAMES[slot.role]}
                   </span>
@@ -162,7 +170,7 @@ export function DetailTable({
                   ) : (
                     <span className="open-slot">
                       Open
-                      {openNote?.(index, slot.role)}
+                      {renderOpenNote?.(index, slot.role)}
                     </span>
                   )}
                 </td>
@@ -202,8 +210,10 @@ export function DetailTable({
                     </td>
                   );
                 })}
-                {action && (
-                  <td className="row-action">{action(index, slot.role)}</td>
+                {renderAction && (
+                  <td className="row-action">
+                    {renderAction(index, slot.role)}
+                  </td>
                 )}
               </tr>
             );
@@ -214,16 +224,49 @@ export function DetailTable({
   );
 }
 
+type FullPhase = "completed" | "invited" | "joining";
+
+function fullPhase(party: {
+  completed?: boolean;
+  invited?: boolean;
+}): FullPhase {
+  if (party.completed) return "completed";
+  return party.invited ? "invited" : "joining";
+}
+
+function fullTitle(inGame: boolean, waiting: string[]) {
+  if (!inGame) return "Party full · get in game";
+  return waiting.length
+    ? `You’re in · waiting for ${waiting.join(", ")}`
+    : "Everyone is in game";
+}
+
+function fullNextStep(phase: FullPhase, leader: string) {
+  if (phase === "completed")
+    return "This private party stays off the finder. Leave here when you’re done.";
+  if (phase === "invited")
+    return `Accept ${leader}’s invite in Minecraft. The leader can use /mithrilpfreinvite to invite missing players again.`;
+  return "Once everyone is on Hypixel, the leader’s mod sends one round of invites. It won’t automatically retry.";
+}
+
+const FULL_FOOTER: Record<FullPhase, string> = {
+  completed: "Leaving here does not leave your Minecraft party.",
+  invited:
+    "This listing stays hidden until everyone has joined the Minecraft party.",
+  joining:
+    "If you’re not in game when the timer ends, you’re removed from the party and can’t reserve or look for parties for an hour.",
+};
+
 /** The five-minute window after a party fills. */
 export function FullPanel({
   state,
   onLeave,
   busy,
-}: {
+}: Readonly<{
   state: PartyState;
   onLeave: () => void;
   busy: boolean;
-}) {
+}>) {
   const party = state.party!;
   const left = useCountdown(party.join_deadline, state.server_time);
   const waiting = party.slots
@@ -236,30 +279,29 @@ export function FullPanel({
     left === null
       ? ""
       : `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
+  const phase = fullPhase(party);
   return (
     <section className="held-panel full-panel" aria-labelledby="full-title">
       <div className="held-heading">
         <h2 id="full-title" aria-live="polite">
           {party.completed
             ? "Your party"
-            : state.you.in_game
-              ? waiting.length
-                ? `You’re in · waiting for ${waiting.join(", ")}`
-                : "Everyone is in game"
-              : "Party full · get in game"}
+            : fullTitle(state.you.in_game, waiting)}
         </h2>
         <span className="quiet-label">
           {party.floor} · {party.leader}’s party
         </span>
       </div>
-      {party.completed ? (
+      {phase === "completed" && (
         <p>Connected in Minecraft · chat stays open here.</p>
-      ) : party.invited ? (
+      )}
+      {phase === "invited" && (
         <p>
           Invites requested · {party.accepted?.filter(Boolean).length ?? 0} of 5
           in the party
         </p>
-      ) : (
+      )}
+      {phase === "joining" && (
         <p className="countdown">
           <span>{minutes}</span> left to join Hypixel · {inGame} of 5 in game
         </p>
@@ -293,21 +335,9 @@ export function FullPanel({
           );
         })}
       </ul>
-      <p>
-        {party.completed
-          ? "This private party stays off the finder. Leave here when you’re done."
-          : party.invited
-            ? `Accept ${party.leader}’s invite in Minecraft. The leader can use /mithrilpfreinvite to invite missing players again.`
-            : "Once everyone is on Hypixel, the leader’s mod sends one round of invites. It won’t automatically retry."}
-      </p>
+      <p>{fullNextStep(phase, party.leader)}</p>
       <div className="held-footer">
-        <p className="quiet-label">
-          {party.completed
-            ? "Leaving here does not leave your Minecraft party."
-            : party.invited
-              ? "This listing stays hidden until everyone has joined the Minecraft party."
-              : "If you’re not in game when the timer ends, you’re removed from the party and can’t reserve or look for parties for an hour."}
-        </p>
+        <p className="quiet-label">{FULL_FOOTER[phase]}</p>
         <button className="secondary" onClick={onLeave} disabled={busy}>
           Leave party
         </button>

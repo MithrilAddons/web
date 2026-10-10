@@ -115,9 +115,11 @@ def test_player_stats_merge_selected_profile_and_mod_records():
     assert result["catacombs"] == 51.2  # overflow past 50
     assert overflow_level(97_559_640) == catacombs_level(97_559_640)
     assert overflow_level(None) is None
-    assert result["class_levels"]["healer"] == 51.5 and result["class_levels"]["tank"] is None
+    assert result["class_levels"]["healer"] == 51.5
+    assert result["class_levels"]["tank"] is None
     assert result["s_plus_ms"] == {"F7": None, "M7": 330_000}
-    assert result["solo_ms"]["M7"] == 360_000 and result["terminals_ms"]["F7"] == 40_000
+    assert result["solo_ms"]["M7"] == 360_000
+    assert result["terminals_ms"]["F7"] == 40_000
     assert result["ss_ms"] is None
 
 
@@ -169,7 +171,8 @@ def test_team_limit_skips_slow_parties_but_manual_reserve_still_works(world):
     assert finder.players[picky].party is None
     assert finder.players[picky].looking
     finder.reserve(picky, slow, "healer")
-    assert finder.players[picky].party == slow and finder.players[picky].looking is None
+    assert finder.players[picky].party == slow
+    assert finder.players[picky].looking is None
 
 
 def test_publishing_fills_waiting_lookers_in_look_order(world):
@@ -183,7 +186,8 @@ def test_publishing_fills_waiting_lookers_in_look_order(world):
     assert finder.players[early].party == party
     assert finder.players[late].party == party
     roles = {slot["member"]: slot["role"] for slot in finder.parties[party].slots}
-    assert roles[early] == "healer" and roles[late] == "tank"
+    assert roles[early] == "healer"
+    assert roles[late] == "tank"
 
 
 def test_edits_never_remove_members_and_refill_new_matches(world):
@@ -249,7 +253,8 @@ def test_sixty_second_grace_stops_looking_and_releases_slots_without_a_ban(world
     now[0] += PRESENCE_GRACE - 1
     finder.seen(leader, "Noctis", "web")
     finder.sweep()
-    assert finder.players[holder].party == party and finder.players[looker].looking
+    assert finder.players[holder].party == party
+    assert finder.players[looker].looking
     now[0] += 2
     finder.seen(leader, "Noctis", "web")
     finder.sweep()
@@ -302,7 +307,8 @@ def test_full_party_waits_for_confirmed_hypixel_roster_not_just_game_presence(wo
     finder.confirm_joined(leader, party, [leader, *members])
     assert finder.parties[party].completed
     formed = finder.players[leader].notices[-1]
-    assert formed["kind"] == "party_joined" and len(formed["roster"]) == 5
+    assert formed["kind"] == "party_joined"
+    assert len(formed["roster"]) == 5
     assert all(finder.players[uuid].party == party for uuid in [leader, *members])
 
 
@@ -325,7 +331,8 @@ def test_no_shows_are_removed_banned_and_their_slot_relisted(world):
         finder.seen(uuid, "x", "mod" if uuid != waiting else "web")
     finder.sweep()
     no_show = finder.players[members[-1]]
-    assert no_show.party is None and no_show.banned_until == now[0] + NO_SHOW_BAN
+    assert no_show.party is None
+    assert no_show.banned_until == now[0] + NO_SHOW_BAN
     assert no_show.notices[-1]["reason"] == "no_show"
     # The slot reopened and the waiting looker filled it; the others stay.
     assert finder.players[waiting].party == party
@@ -381,8 +388,10 @@ def test_personal_view_shows_leader_only_fields_and_deadlines(world):
     finder.reserve(member, party, "healer")
     mine = finder.personal(leader)["party"]
     theirs = finder.personal(member)["party"]
-    assert mine["you_lead"] and mine["blocked"] == [{"uuid": "c" * 32, "name": "Grim"}]
-    assert not theirs["you_lead"] and "blocked" not in theirs
+    assert mine["you_lead"]
+    assert mine["blocked"] == [{"uuid": "c" * 32, "name": "Grim"}]
+    assert not theirs["you_lead"]
+    assert "blocked" not in theirs
     assert theirs["join_deadline"] is None
     fill(finder, join, party, names=("A", "B", "T"), roles=("archer", "berserk", "tank"))
     assert finder.personal(member)["party"]["join_deadline"] == now[0] + JOIN_WINDOW

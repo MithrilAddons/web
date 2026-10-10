@@ -20,6 +20,7 @@ DAY = 86400
 CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 PENDING_LIMIT = 1000
 CREDENTIAL_LIMIT = 100000
+DELETE_EXPIRED = "DELETE FROM auth WHERE expires <= ?"
 
 
 class AuthAttempts:
@@ -134,7 +135,7 @@ class AuthStore:
     def cleanup(self):
         with self.lock, self.db:
             self.db.execute("DELETE FROM auth_epochs WHERE at<?", (self.clock() - 900,))
-            self.db.execute("DELETE FROM auth WHERE expires <= ?", (self.clock(),))
+            self.db.execute(DELETE_EXPIRED, (self.clock(),))
             # Also reclaim legacy children whose parent was revoked or expired.
             self.db.execute("""DELETE FROM auth WHERE
                 (kind IN ('sync', 'party') OR (kind='receipt' AND remembered=1))
@@ -256,7 +257,7 @@ class AuthStore:
 
     def _issue(self, kind, uuid, name, seconds, server_id=None, remembered=False):
         token = secrets.token_urlsafe(32)
-        self.db.execute("DELETE FROM auth WHERE expires <= ?", (self.clock(),))
+        self.db.execute(DELETE_EXPIRED, (self.clock(),))
         if kind == "party":
             # A fresh ownership proof replaces this browser link's previous credential.
             self.db.execute(
@@ -372,7 +373,7 @@ class AuthStore:
         ).fetchone()
         if not session:
             raise HTTPException(401, "Session expired")
-        self.db.execute("DELETE FROM auth WHERE expires <= ?", (self.clock(),))
+        self.db.execute(DELETE_EXPIRED, (self.clock(),))
         pending = self.db.execute(
             "SELECT COUNT(*) FROM auth WHERE kind='receipt' AND server_id=? "
             "AND remembered=0 AND uuid=?",
