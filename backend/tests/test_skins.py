@@ -93,7 +93,8 @@ def test_cache_ttl_failure_and_capacity():
         return {"model": "default"}
 
     cache = SkinCache(loader, clock=lambda: now[0])
-    assert cache.get(UUID) == cache.get(UUID)
+    first = cache.get(UUID)
+    assert cache.get(UUID) == first
     assert len(calls) == 1
     now[0] = 300
     cache.get(UUID)

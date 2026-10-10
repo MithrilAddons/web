@@ -106,6 +106,8 @@ class Preview(SimpleHTTPRequestHandler):
             "default-src 'none'; script-src 'self'; "
             "style-src 'self'; img-src 'self' data:; connect-src 'self'",
         )
+        # JSON stays JSON: browsers must not sniff a response into something renderable.
+        self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Cache-Control", "no-store")
         super().end_headers()
 
