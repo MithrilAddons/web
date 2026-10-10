@@ -12,6 +12,31 @@ DIST = Path(__file__).resolve().parents[1] / "frontend/dist"
 CARD = DIST.parents[1] / "contracts/player-card-v1.json"
 
 
+CLEAR = (0, 0, 0, 0)
+HAIR = (65, 47, 40, 255)
+FACE = (190, 155, 125, 255)
+EYE = (30, 45, 60, 255)
+TROUSERS = (60, 65, 90, 255)
+SHIRT = (110, 115, 210, 255)
+
+
+def skin_pixel(x, y):
+    """One pixel of the synthetic 64x64 skin: head, then body and arms, then legs."""
+    if y < 16:
+        if x >= 32:
+            return CLEAR
+        if y < 8:
+            return HAIR
+        return EYE if y == 11 and x in (10, 13) else FACE
+    if y < 32:
+        return TROUSERS if x < 16 else SHIRT
+    if y < 48:
+        return CLEAR
+    if 16 <= x < 32:
+        return TROUSERS
+    return SHIRT if 32 <= x < 48 else CLEAR
+
+
 def synthetic_skin():
     def chunk(kind, data):
         return (
@@ -22,23 +47,7 @@ def synthetic_skin():
     for y in range(64):
         rows.append(0)
         for x in range(64):
-            if y < 16:
-                color = (190, 155, 125, 255) if x < 32 else (0, 0, 0, 0)
-                if y < 8:
-                    color = (65, 47, 40, 255) if x < 32 else (0, 0, 0, 0)
-                if y == 11 and x in (10, 13):
-                    color = (30, 45, 60, 255)
-            elif y < 32:
-                color = (60, 65, 90, 255) if x < 16 else (110, 115, 210, 255)
-            elif y < 48:
-                color = (0, 0, 0, 0)
-            else:
-                color = (
-                    (60, 65, 90, 255)
-                    if 16 <= x < 32
-                    else ((110, 115, 210, 255) if 32 <= x < 48 else (0, 0, 0, 0))
-                )
-            rows.extend(color)
+            rows.extend(skin_pixel(x, y))
     image = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 64, 64, 8, 6, 0, 0, 0))
     image += chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b"")
     return "data:image/png;base64," + base64.b64encode(image).decode()
