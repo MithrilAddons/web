@@ -65,9 +65,7 @@ export function ModDownload() {
           <a className="button" href={releases}>
             View releases
           </a>
-          <span className="quiet-label" role="status">
-            {status}
-          </span>
+          <output className="quiet-label">{status}</output>
         </>
       )}
     </div>

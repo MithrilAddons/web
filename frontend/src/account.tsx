@@ -182,7 +182,7 @@ export function Account({ compact = false }: Readonly<{ compact?: boolean }>) {
   );
 }
 
-export function LinkAccount({ token }: { token: string }) {
+export function LinkAccount({ token }: Readonly<{ token: string }>) {
   const [credential, setCredential] = useState(token);
   const [code, setCode] = useState("");
   const valid = /^(?:[A-Za-z0-9_-]{43}|[A-HJ-NP-Z2-9]{8})$/.test(credential);
@@ -228,6 +228,37 @@ export function LinkAccount({ token }: { token: string }) {
       setBusy(false);
     }
   }
+  const confirmation = user ? (
+    <>
+      <p>
+        Only continue if you created this link in your own Minecraft client.
+      </p>
+      <label className="remember">
+        <input
+          type="checkbox"
+          checked={remember}
+          onChange={(event) => setRemember(event.target.checked)}
+        />{" "}
+        Remember this browser for 30 days
+      </label>
+      <p>
+        Signing in uses a necessary session cookie. Remembering this browser
+        saves it between visits.{" "}
+        <a href="/cookies" target="_blank" rel="noreferrer">
+          Cookie policy
+        </a>
+      </p>
+      <button
+        className="primary"
+        disabled={busy}
+        onClick={() => void complete()}
+      >
+        Continue as {user.name}
+      </button>
+    </>
+  ) : (
+    !error && <p role="status">Checking link…</p>
+  );
   return (
     <>
       <title>Link account · Mithril</title>
@@ -283,37 +314,8 @@ export function LinkAccount({ token }: { token: string }) {
                 Check code
               </button>
             </form>
-          ) : user ? (
-            <>
-              <p>
-                Only continue if you created this link in your own Minecraft
-                client.
-              </p>
-              <label className="remember">
-                <input
-                  type="checkbox"
-                  checked={remember}
-                  onChange={(event) => setRemember(event.target.checked)}
-                />{" "}
-                Remember this browser for 30 days
-              </label>
-              <p>
-                Signing in uses a necessary session cookie. Remembering this
-                browser saves it between visits.{" "}
-                <a href="/cookies" target="_blank" rel="noreferrer">
-                  Cookie policy
-                </a>
-              </p>
-              <button
-                className="primary"
-                disabled={busy}
-                onClick={() => void complete()}
-              >
-                Continue as {user.name}
-              </button>
-            </>
           ) : (
-            !error && <p role="status">Checking link…</p>
+            confirmation
           )}
           {error && <p role="alert">{error}</p>}
           {error && valid && (

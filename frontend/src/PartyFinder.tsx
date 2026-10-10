@@ -23,7 +23,9 @@ import {
   formatRule,
   formatTime,
   type Listing,
+  type Looking,
   METRICS,
+  type Notice,
   openRoles,
   parseMetric,
   partyApi,
@@ -47,7 +49,7 @@ const SORTS: Record<Sort, string> = {
 export function PartyWorkspace() {
   const { state, signedOut, offline, apply } = usePartyState();
   const [view, setView] = useState<"browse" | "create" | "edit">("browse");
-  const [preferredFloor, setFloor] = useState<Floor>("M7");
+  const [preferredFloor, setPreferredFloor] = useState<Floor>("M7");
   const floor =
     state?.party?.floor ?? state?.you.looking?.floor ?? preferredFloor;
   const [busy, setBusy] = useState(false);
@@ -110,11 +112,7 @@ export function PartyWorkspace() {
   let main;
   if (signedOut) main = <SignedOut />;
   else if (!state)
-    main = (
-      <p className="quiet-label" role="status">
-        Loading parties…
-      </p>
-    );
+    main = <output className="quiet-label">Loading parties…</output>;
   else if (view !== "browse")
     main = (
       <PartyForm
@@ -143,7 +141,7 @@ export function PartyWorkspace() {
       <Browse
         state={state}
         floor={floor}
-        setFloor={setFloor}
+        setFloor={setPreferredFloor}
         run={run}
         busy={busy}
         sound={sound}
@@ -155,9 +153,9 @@ export function PartyWorkspace() {
     <div className="workspace">
       <div className="party-main" ref={content}>
         {offline && (
-          <p className="party-offline" role="status">
+          <output className="party-offline">
             Reconnecting to the party finder…
-          </p>
+          </output>
         )}
         {state && <Notices state={state} />}
         {error && <p role="alert">{error}</p>}
@@ -230,35 +228,37 @@ const NOTICE_TEXT: Record<string, string> = {
   leader_now: "The leader left. You now lead this party.",
 };
 
-function Notices({ state }: { state: PartyState }) {
+function noticeKey(notice: Notice) {
+  return notice.reason ? `${notice.kind}:${notice.reason}` : notice.kind;
+}
+
+function Notices({ state }: Readonly<{ state: PartyState }>) {
   const [dismissed, setDismissed] = useState<Set<string>>(() => new Set());
   const recent = state.notices.filter(
     (notice) =>
       notice.at > state.server_time - 15 * 60 && !dismissed.has(notice.id),
   );
-  const latest = [...recent].reverse().find((notice) => {
-    const key = notice.reason ? `${notice.kind}:${notice.reason}` : notice.kind;
-    return key in NOTICE_TEXT || notice.kind === "party_joined";
-  });
+  const latest = [...recent]
+    .reverse()
+    .find(
+      (notice) =>
+        noticeKey(notice) in NOTICE_TEXT || notice.kind === "party_joined",
+    );
   const banned = state.you.banned_until;
   return (
     <>
       {banned !== null && (
-        <p className="party-notice is-bad" role="status">
+        <output className="party-notice is-bad">
           You can reserve or look for parties again in{" "}
           {Math.max(1, Math.ceil((banned - state.server_time) / 60))} min.
-        </p>
+        </output>
       )}
       {latest && (
         <div className="party-notice" role="status">
           <p>
             {latest.kind === "party_joined"
               ? `Party formed: ${latest.roster?.map((entry) => entry.name).join(", ")}. Good luck!`
-              : NOTICE_TEXT[
-                  latest.reason
-                    ? `${latest.kind}:${latest.reason}`
-                    : latest.kind
-                ]}
+              : NOTICE_TEXT[noticeKey(latest)]}
           </p>
           <button
             className="text-button"
@@ -280,7 +280,7 @@ function Browse({
   busy,
   sound,
   setSound,
-}: {
+}: Readonly<{
   state: PartyState;
   floor: Floor;
   setFloor: (floor: Floor) => void;
@@ -288,20 +288,18 @@ function Browse({
   busy: boolean;
   sound: boolean;
   setSound: (on: boolean) => void;
-}) {
+}>) {
   const looking = state.you.looking;
   const party = state.party;
   const banned = state.you.banned_until !== null;
-  const [draftClasses, setClasses] = useState<Role[]>(looking?.classes ?? []);
+  const [draftClasses, setDraftClasses] = useState<Role[]>(
+    looking?.classes ?? [],
+  );
   const classes = looking?.classes ?? draftClasses;
-  const [draftLimitText, setLimitText] = useState(
+  const [draftLimitText, setDraftLimitText] = useState(
     looking?.limit ? formatTime(looking.limit) : "",
   );
-  const limitText = looking
-    ? looking.limit
-      ? formatTime(looking.limit)
-      : ""
-    : draftLimitText;
+  const limitText = lookingLimitText(looking, draftLimitText);
   const [sort, setSort] = useState<Sort>("fills");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [showOthers, setShowOthers] = useState(false);
@@ -332,31 +330,12 @@ function Browse({
       }),
     [parties, stats, floor, limit],
   );
-  const ordered = [...rows].sort((a, b) => {
-    const x = a.listing;
-    const y = b.listing;
-    switch (sort) {
-      case "fills":
-        return (
-          a.open.length - b.open.length ||
-          (x.team.s_plus_ms_avg ?? Infinity) -
-            (y.team.s_plus_ms_avg ?? Infinity)
-        );
-      case "newest":
-        return y.created_at - x.created_at;
-      case "team":
-        return (y.team.catacombs_avg ?? 0) - (x.team.catacombs_avg ?? 0);
-      case "reqs":
-        return (
-          (x.rules.shared.catacombs ?? 0) - (y.rules.shared.catacombs ?? 0)
-        );
-    }
-  });
+  const ordered = [...rows].sort((a, b) => compareRows(sort, a, b));
   const eligible = ordered.filter((row) => row.fits.length);
   const others = ordered.filter((row) => !row.fits.length);
 
   const toggleClass = (role: Role) =>
-    setClasses(
+    setDraftClasses(
       classes.includes(role)
         ? classes.filter((entry) => entry !== role)
         : [...classes, role],
@@ -371,13 +350,7 @@ function Browse({
   // Holding a slot: the party is the whole page; searching resumes after leaving.
   if (party) return <HeldPanel state={state} run={run} busy={busy} />;
 
-  const lookLine = banned
-    ? ""
-    : looking
-      ? `Looking for ${looking.floor} as ${orList(looking.classes)}. You’ll be placed automatically${sound ? ", with a sound" : ""}. If this tab and Minecraft are both closed for 60 seconds, you stop looking.`
-      : !selected.length
-        ? "Pick classes for automatic matching, or reserve any eligible slot below."
-        : "Start looking places you in the party closest to full that you qualify for and whose average S+ PB is within your limit. Ties go to the faster average. Keep this tab or Minecraft open while you look.";
+  const lookLine = lookLineText(banned, looking, selected.length > 0, sound);
 
   return (
     <>
@@ -427,7 +400,7 @@ function Browse({
               onClick={() => void run(partyApi.stopLooking)}
             >
               <span className="looking-dot" aria-hidden="true" />
-              Stop looking
+              {"Stop looking"}
             </button>
           ) : (
             <button
@@ -452,14 +425,14 @@ function Browse({
         >
           <span className="quiet-label">Party must have</span>
           <label className="inline-field">
-            Average S+ PB ≤
+            {"Average S+ PB ≤"}
             <input
               value={limitText}
               placeholder="m:ss"
               inputMode="numeric"
               aria-invalid={limit === undefined}
               disabled={Boolean(looking)}
-              onChange={(event) => setLimitText(event.target.value)}
+              onChange={(event) => setDraftLimitText(event.target.value)}
             />
           </label>
           <button
@@ -480,11 +453,7 @@ function Browse({
         <div className="panel-toolbar">
           <h2 id="parties-heading">Parties</h2>
           <span className="quiet-label">
-            {parties
-              ? `${parties.length} listed on ${floor}`
-              : failed
-                ? ""
-                : "Loading…"}
+            {listedLabel(parties, failed, floor)}
           </span>
           <div className="legend" aria-hidden="true">
             <span>
@@ -498,7 +467,7 @@ function Browse({
             </span>
           </div>
           <label className="sort-field">
-            Sort
+            {"Sort"}
             <select
               value={sort}
               onChange={(event) => setSort(event.target.value as Sort)}
@@ -571,6 +540,48 @@ function Browse({
   );
 }
 
+function compareRows(sort: Sort, a: Row, b: Row) {
+  const x = a.listing;
+  const y = b.listing;
+  switch (sort) {
+    case "fills":
+      return (
+        a.open.length - b.open.length ||
+        (x.team.s_plus_ms_avg ?? Infinity) - (y.team.s_plus_ms_avg ?? Infinity)
+      );
+    case "newest":
+      return y.created_at - x.created_at;
+    case "team":
+      return (y.team.catacombs_avg ?? 0) - (x.team.catacombs_avg ?? 0);
+    case "reqs":
+      return (x.rules.shared.catacombs ?? 0) - (y.rules.shared.catacombs ?? 0);
+  }
+}
+
+function lookingLimitText(looking: Looking | null, draft: string) {
+  if (!looking) return draft;
+  return looking.limit ? formatTime(looking.limit) : "";
+}
+
+function lookLineText(
+  banned: boolean,
+  looking: Looking | null,
+  hasClasses: boolean,
+  sound: boolean,
+) {
+  if (banned) return "";
+  if (looking)
+    return `Looking for ${looking.floor} as ${orList(looking.classes)}. You’ll be placed automatically${sound ? ", with a sound" : ""}. If this tab and Minecraft are both closed for 60 seconds, you stop looking.`;
+  if (!hasClasses)
+    return "Pick classes for automatic matching, or reserve any eligible slot below.";
+  return "Start looking places you in the party closest to full that you qualify for and whose average S+ PB is within your limit. Ties go to the faster average. Keep this tab or Minecraft open while you look.";
+}
+
+function listedLabel(parties: Listing[] | null, failed: boolean, floor: Floor) {
+  if (parties) return `${parties.length} listed on ${floor}`;
+  return failed ? "" : "Loading…";
+}
+
 type Row = {
   listing: Listing;
   open: Role[];
@@ -587,7 +598,7 @@ function PartyRow({
   onToggle,
   run,
   busy,
-}: {
+}: Readonly<{
   row: Row;
   state: PartyState;
   floor: Floor;
@@ -595,7 +606,7 @@ function PartyRow({
   onToggle: () => void;
   run: Run;
   busy: boolean;
-}) {
+}>) {
   const { listing, fits, reason, skipped } = row;
   const [detail, setDetail] = useState<Detail | null>(null);
   const [detailFailed, setDetailFailed] = useState(false);
@@ -733,7 +744,7 @@ function PartyRow({
               you={state.you.name}
               stats={state.you.stats}
               playing={[...CLASSES]}
-              action={(slot, role) =>
+              renderAction={(slot, role) =>
                 fits.includes(role) &&
                 !detail.members.some((member) => member.slot === slot) && (
                   <button
@@ -759,15 +770,22 @@ function PartyRow({
   );
 }
 
+function heldTitle(placed: boolean, role: Role | null, leader: string) {
+  if (placed && role)
+    return `Placed in ${leader}’s party as ${CLASS_NAMES[role]}`;
+  const slot = role ? `${CLASS_NAMES[role]} slot` : "Slot";
+  return `${slot} held in ${leader}’s party`;
+}
+
 function HeldPanel({
   state,
   run,
   busy,
-}: {
+}: Readonly<{
   state: PartyState;
   run: Run;
   busy: boolean;
-}) {
+}>) {
   const party = state.party!;
   const leave = () => void run(partyApi.leave);
   if (party.completed || party.full_since !== null)
@@ -788,9 +806,7 @@ function HeldPanel({
         <Roster chips={memberChips(party, state.you.name)} />
         <div>
           <h2 id="held-title">
-            {joinedBy?.kind === "placed" && role
-              ? `Placed in ${party.leader}’s party as ${CLASS_NAMES[role]}`
-              : `${role ? `${CLASS_NAMES[role]} slot` : "Slot"} held in ${party.leader}’s party`}
+            {heldTitle(joinedBy?.kind === "placed", role, party.leader)}
           </h2>
           <p className="quiet-label">
             {party.floor} · {5 - open.length} of 5 held · waiting for{" "}
@@ -838,10 +854,10 @@ function HeldPanel({
 function MatchingRecords({
   state,
   floor,
-}: {
+}: Readonly<{
   state: PartyState;
   floor: Floor;
-}) {
+}>) {
   const stats = state.you.stats;
   const rows: [string, string][] = stats
     ? [

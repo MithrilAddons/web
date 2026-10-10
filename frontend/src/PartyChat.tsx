@@ -17,12 +17,12 @@ export function PartyChat({
   connected,
   onSend,
   onReport,
-}: {
+}: Readonly<{
   messages: ChatMessage[];
   connected: boolean;
   onSend: (text: string, requestId: string) => Promise<void>;
   onReport?: (messageId: string, reason: string) => Promise<void>;
-}) {
+}>) {
   const id = useId();
   const [draft, setDraft] = useState("");
   const [collapsed, setCollapsed] = useState(false);
@@ -70,9 +70,9 @@ export function PartyChat({
     <section className="party-chat" aria-labelledby={`${id}-title`}>
       <header className="chat-heading">
         <h2 id={`${id}-title`}>Party chat</h2>
-        <span className="chat-status" role="status">
+        <output className="chat-status">
           {!connected ? "Reconnecting…" : "Connected"}
-        </span>
+        </output>
         <button
           type="button"
           className="text-button"
@@ -202,9 +202,9 @@ export function PartyChat({
           </p>
         )}
         {!connected && (
-          <p className="chat-connection-note" role="status">
+          <output className="chat-connection-note">
             Your draft is kept. Send it when you’re connected again.
-          </p>
+          </output>
         )}
       </div>
     </section>

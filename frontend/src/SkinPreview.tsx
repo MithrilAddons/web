@@ -2,7 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import type { SkinViewer } from "skinview3d";
 import { loadSkin } from "./skins";
 
-export function SkinPreview({ name, uuid }: { name: string; uuid: string }) {
+export function SkinPreview({
+  name,
+  uuid,
+}: Readonly<{ name: string; uuid: string }>) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const container = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<SkinViewer | null>(null);
@@ -134,11 +137,11 @@ export function SkinPreview({ name, uuid }: { name: string; uuid: string }) {
           }}
         />
         {state !== "ready" && (
-          <p className="skin-message" role="status">
+          <output className="skin-message">
             {state === "loading"
               ? "Loading skin…"
               : "Skin preview unavailable."}
-          </p>
+          </output>
         )}
       </div>
     </div>

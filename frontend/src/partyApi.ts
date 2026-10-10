@@ -274,8 +274,8 @@ export function parseMetric(
     if (!/^\d{1,2}(\.\d)?$/.test(value)) return undefined;
     parsed = Math.round(Number(value) * 1000);
   } else {
-    if (!/^\d{1,5}$/.test(value.replace(/,/g, ""))) return undefined;
-    parsed = Number(value.replace(/,/g, ""));
+    if (!/^\d{1,5}$/.test(value.replaceAll(",", ""))) return undefined;
+    parsed = Number(value.replaceAll(",", ""));
   }
   return parsed >= 1 && parsed <= max ? parsed : undefined;
 }
@@ -485,6 +485,24 @@ export function involved(state: PartyState | null) {
 
 const IDLE_REFRESH = 5 * 60_000;
 
+/** Waits `ms`, or until `kick.current()` ends the wait early. */
+function pause(kick: { current: () => void }, ms: number) {
+  return new Promise<void>((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      kick.current = () => {};
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    kick.current = done;
+  });
+}
+
+/** The version to wait on while involved; otherwise ask for the current state. */
+function knownVersion(state: PartyState | null) {
+  return involved(state) ? state!.state_version : undefined;
+}
+
 /**
  * Holds one state request open while involved (it doubles as the presence heartbeat);
  * otherwise fetches once and waits for the next action. Stale replies are ignored.
@@ -520,22 +538,10 @@ export function usePartyState() {
   useEffect(() => {
     const controller = new AbortController();
     let stopped = false;
-    const pause = (ms: number) =>
-      new Promise<void>((resolve) => {
-        const done = () => {
-          clearTimeout(timer);
-          kick.current = () => {};
-          resolve();
-        };
-        const timer = setTimeout(done, ms);
-        kick.current = done;
-      });
     void (async () => {
       let failed = 0;
       while (!stopped) {
-        const known = involved(current.current)
-          ? current.current!.state_version
-          : undefined;
+        const known = knownVersion(current.current);
         try {
           const result = await partyApi.state(
             known,
@@ -545,7 +551,7 @@ export function usePartyState() {
           failed = 0;
           setOffline(false);
           if (result) apply(result);
-          if (!involved(current.current)) await pause(IDLE_REFRESH);
+          if (!involved(current.current)) await pause(kick, IDLE_REFRESH);
         } catch (error) {
           if (stopped) return;
           if (error instanceof PartyRequestError && error.status === 401) {
@@ -554,7 +560,7 @@ export function usePartyState() {
           }
           failed += 1;
           setOffline(true);
-          await pause(Math.min(30_000, 1000 * 2 ** failed));
+          await pause(kick, Math.min(30_000, 1000 * 2 ** failed));
         }
       }
     })();

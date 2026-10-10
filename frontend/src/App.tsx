@@ -8,9 +8,16 @@ import { ModDownload } from "./ModDownload";
 import { SlayerProfits } from "./SlayerProfits";
 import { RunMap } from "./RunMap";
 
+/** Drops trailing slashes in linear time (equivalent to `replace(/\/+$/, "")`). */
+export function trimTrailingSlashes(path: string) {
+  let end = path.length;
+  while (end > 0 && path[end - 1] === "/") end -= 1;
+  return path.slice(0, end);
+}
+
 // Remove the bearer secret before React renders (including StrictMode remounts).
 const linkToken =
-  window.location.pathname.replace(/\/+$/, "") === "/link"
+  trimTrailingSlashes(window.location.pathname) === "/link"
     ? window.location.hash.slice(1)
     : "";
 if (linkToken) window.history.replaceState(null, "", "/link");
@@ -20,7 +27,7 @@ export function App() {
   const sourceRef =
     revision && /^[0-9a-f]{40}$/.test(revision) ? revision : "main";
   const sourceUrl = "https://github.com/MithrilAddons/web";
-  const path = window.location.pathname.replace(/\/+$/, "") || "/";
+  const path = trimTrailingSlashes(window.location.pathname) || "/";
   const isPartyFinder = path === "/party-finder";
   const isSlayerProfits =
     path === "/slayer-profits" || path === "/slayerprofits";
@@ -200,21 +207,17 @@ function PartyFinder() {
         <div>
           <h1>Dungeon party finder</h1>
         </div>
-        <p
-          className="status"
-          data-state={
-            status === "Service online"
-              ? "online"
-              : status === "Service unavailable"
-                ? "offline"
-                : "pending"
-          }
-          role="status"
-        >
+        <output className="status" data-state={serviceState(status)}>
           {status}
-        </p>
+        </output>
       </div>
       <PartyWorkspace />
     </>
   );
+}
+
+function serviceState(status: string) {
+  if (status === "Service online") return "online";
+  if (status === "Service unavailable") return "offline";
+  return "pending";
 }

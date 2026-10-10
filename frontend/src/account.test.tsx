@@ -50,7 +50,7 @@ it("requires confirmation and an explicit choice to remember the browser", async
   )?.[1];
   expect(JSON.parse(options.body)).toEqual({ token, remember: true });
   expect(options.credentials).toBe("same-origin");
-  expect(localStorage.length).toBe(0);
+  expect(localStorage).toHaveLength(0);
 });
 
 it("does not request malformed links", () => {

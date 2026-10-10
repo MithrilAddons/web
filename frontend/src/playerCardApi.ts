@@ -36,7 +36,7 @@ export function parsePlayerCard(value: unknown, uuid: string): PlayerCardData {
     !object(value.user) ||
     value.user.uuid !== uuid ||
     typeof value.user.name !== "string" ||
-    !/^[A-Za-z0-9_]{1,16}$/.test(value.user.name) ||
+    !/^\w{1,16}$/.test(value.user.name) ||
     !(
       value.profile === null ||
       (object(value.profile) &&

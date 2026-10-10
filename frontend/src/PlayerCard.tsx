@@ -8,9 +8,9 @@ import {
 
 export function PartyPlayerName({
   user,
-}: {
+}: Readonly<{
   user: { uuid: string; name: string };
-}) {
+}>) {
   const [open, setOpen] = useState(false);
   const button = useRef<HTMLButtonElement>(null);
   return (
@@ -145,9 +145,7 @@ export function PlayerStats({
     <>
       {data?.profile && <p className="quiet-label">{data.profile.name}</p>}
       {!data && !error && (
-        <p className="card-status" role="status">
-          Loading stats…
-        </p>
+        <output className="card-status">Loading stats…</output>
       )}
       {error && (
         <div className="card-status">
