@@ -113,8 +113,12 @@ class PartyPreview(Preview):
         body = json.loads(self.rfile.read(length) or b"{}")
         if path == "/api/v1/party/state":
             if "known" in body:
+                # Only ever echo a number, never request text, even on this loopback harness.
+                known = body["known"]
+                if not isinstance(known, int) or isinstance(known, bool):
+                    return self.send_error(400)
                 time.sleep(20)  # held like the real server, then unchanged
-                return self.json({"version": 1, "state_version": body["known"], "unchanged": True})
+                return self.json({"version": 1, "state_version": int(known), "unchanged": True})
             return self.json(state(SCENARIO))
         replies = {
             "/api/v1/party/reserve": "joined",
