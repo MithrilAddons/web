@@ -41,6 +41,16 @@ from .solo_evidence import SoloProgress, SoloStart, TerminalReport
 
 HEX_64_PATTERN = r"^[0-9a-f]{64}$"
 BEARER_PATTERN = r"Bearer [A-Za-z0-9_-]{43}"
+TOKEN_PATTERN = r"^[A-Za-z0-9_-]{43}$"
+LINK_BROWSER_FIRST = "Link your browser first"
+SIGN_IN_FIRST = "Sign in first"
+
+# Shared OpenAPI descriptions for the HTTPException status codes routes can raise.
+AUTH_REQUIRED = {"description": "Authentication required or expired"}
+ORIGIN_REFUSED = {"description": "Request origin not allowed"}
+NOT_FOUND = {"description": "Not found"}
+EXPIRED = {"description": "Link or verification expired"}
+UNAVAILABLE = {"description": "Temporarily unavailable"}
 
 
 class StrictModel(BaseModel):
@@ -55,7 +65,7 @@ class Challenge(StrictModel):
 
 
 class Proof(StrictModel):
-    challenge_id: str = Field(pattern=r"^[A-Za-z0-9_-]{43}$")
+    challenge_id: str = Field(pattern=TOKEN_PATTERN)
 
 
 class DeviceChallenge(Challenge):
@@ -67,7 +77,7 @@ class RevokeDevice(StrictModel):
 
 
 class Link(StrictModel):
-    token: str = Field(pattern=r"^[A-Za-z0-9_-]{43}$")
+    token: str = Field(pattern=TOKEN_PATTERN)
 
 
 class BrowserLink(StrictModel):
@@ -81,11 +91,11 @@ class Complete(BrowserLink):
 
 
 class SyncChallenge(Challenge):
-    receipt_token: str = Field(pattern=r"^[A-Za-z0-9_-]{43}$")
+    receipt_token: str = Field(pattern=TOKEN_PATTERN)
 
 
 class SyncProof(Proof):
-    receipt_token: str = Field(pattern=r"^[A-Za-z0-9_-]{43}$")
+    receipt_token: str = Field(pattern=TOKEN_PATTERN)
 
 
 def ownership_challenge(body: Challenge, scope: str) -> tuple[str, str | None]:
@@ -257,7 +267,7 @@ def create_app(
             path="/",
         )
 
-    @app.post("/api/v1/auth/challenge")
+    @app.post("/api/v1/auth/challenge", responses={403: ORIGIN_REFUSED})
     def challenge(body: Challenge, request: Request):
         mod(request)
         challenge_attempts.check(request.client.host if request.client else "unknown")
@@ -296,7 +306,10 @@ def create_app(
             raise HTTPException(401, "Minecraft ownership could not be verified. Try again.")
         return {**row, "name": profile["name"]}
 
-    @app.post("/api/v1/auth/verify")
+    @app.post(
+        "/api/v1/auth/verify",
+        responses={401: AUTH_REQUIRED, 403: ORIGIN_REFUSED, 410: EXPIRED, 503: UNAVAILABLE},
+    )
     def verify(body: Proof, request: Request):
         mod(request)
         verification_attempts.check(request.client.host if request.client else "unknown")
@@ -313,7 +326,7 @@ def create_app(
             "expires_in_seconds": 300,
         }
 
-    @app.post("/api/v1/auth/device-challenge")
+    @app.post("/api/v1/auth/device-challenge", responses={403: ORIGIN_REFUSED})
     def device_challenge(body: DeviceChallenge, request: Request):
         mod(request)
         challenge_attempts.check(request.client.host if request.client else "unknown")
@@ -327,7 +340,10 @@ def create_app(
             "expires_in_seconds": 60,
         }
 
-    @app.post("/api/v1/auth/device-verify")
+    @app.post(
+        "/api/v1/auth/device-verify",
+        responses={401: AUTH_REQUIRED, 403: ORIGIN_REFUSED, 410: EXPIRED, 503: UNAVAILABLE},
+    )
     def device_verify(body: Proof, request: Request):
         mod(request)
         verification_attempts.check(request.client.host if request.client else "unknown")
@@ -354,13 +370,14 @@ def create_app(
         return row
 
     @app.get(
-        "/api/v1/auth/device-session", responses={401: {"description": "Minecraft session expired"}}
+        "/api/v1/auth/device-session",
+        responses={401: {"description": "Minecraft session expired"}, 403: ORIGIN_REFUSED},
     )
     def device_session(request: Request):
         row = device_user(request)
         return {"version": 1, "user": identity(row), "expires": row["expires"]}
 
-    @app.post("/api/v1/auth/device-logout")
+    @app.post("/api/v1/auth/device-logout", responses={403: ORIGIN_REFUSED})
     def device_logout(request: Request):
         mod(request)
         authorization = request.headers.get("authorization", "")
@@ -372,17 +389,17 @@ def create_app(
     def devices(request: Request):
         return {"version": 1, "devices": app.state.auth.devices(request.cookies.get(COOKIE, ""))}
 
-    @app.post("/api/v1/auth/devices/revoke")
+    @app.post("/api/v1/auth/devices/revoke", responses={403: ORIGIN_REFUSED})
     def revoke_device(body: RevokeDevice, request: Request):
         browser(request)
         app.state.auth.revoke_device(request.cookies.get(COOKIE, ""), body.id)
         return {"version": 1, "revoked": True}
 
-    @app.post("/api/v1/auth/sync-challenge")
+    @app.post("/api/v1/auth/sync-challenge", responses={401: AUTH_REQUIRED, 403: ORIGIN_REFUSED})
     def sync_challenge(body: SyncChallenge, request: Request):
         return scoped_challenge(body, request, "sync")
 
-    @app.post("/api/v1/auth/party-challenge")
+    @app.post("/api/v1/auth/party-challenge", responses={401: AUTH_REQUIRED, 403: ORIGIN_REFUSED})
     def party_challenge(body: SyncChallenge, request: Request):
         return scoped_challenge(body, request, "party")
 
@@ -391,7 +408,7 @@ def create_app(
         store = request.app.state.auth
         session = store.linked_receipt(body.receipt_token)
         if not session or session["uuid"] != body.uuid:
-            raise HTTPException(401, "Link your browser first")
+            raise HTTPException(401, LINK_BROWSER_FIRST)
         server_id, nonce = ownership_challenge(body, scope)
         token = store.issue(f"{scope}_challenge", body.uuid, body.name, 60, server_id)
         return {
@@ -402,11 +419,17 @@ def create_app(
             "expires_in_seconds": 60,
         }
 
-    @app.post("/api/v1/auth/sync-verify")
+    @app.post(
+        "/api/v1/auth/sync-verify",
+        responses={401: AUTH_REQUIRED, 403: ORIGIN_REFUSED, 410: EXPIRED, 503: UNAVAILABLE},
+    )
     def sync_verify(body: SyncProof, request: Request):
         return scoped_verify(body, request, "sync", 900)
 
-    @app.post("/api/v1/auth/party-verify")
+    @app.post(
+        "/api/v1/auth/party-verify",
+        responses={401: AUTH_REQUIRED, 403: ORIGIN_REFUSED, 410: EXPIRED, 503: UNAVAILABLE},
+    )
     def party_verify(body: SyncProof, request: Request):
         return scoped_verify(body, request, "party", 30 * DAY)
 
@@ -414,11 +437,11 @@ def create_app(
         mod(request)
         store = request.app.state.auth
         if not store.linked_receipt(body.receipt_token):
-            raise HTTPException(401, "Link your browser first")
+            raise HTTPException(401, LINK_BROWSER_FIRST)
         row = verify_ownership(request, body.challenge_id, f"{scope}_challenge")
         session = store.linked_receipt(body.receipt_token)
         if not session or session["uuid"] != row["uuid"]:
-            raise HTTPException(401, "Link your browser first")
+            raise HTTPException(401, LINK_BROWSER_FIRST)
         token = store.issue(
             scope,
             row["uuid"],
@@ -435,7 +458,12 @@ def create_app(
         }
 
     @app.post(
-        "/api/v1/auth/sync-records", responses={410: {"description": "Use live record tracking"}}
+        "/api/v1/auth/sync-records",
+        responses={
+            401: AUTH_REQUIRED,
+            403: ORIGIN_REFUSED,
+            410: {"description": "Use live record tracking"},
+        },
     )
     def sync_records(body: Submission, request: Request):
         mod(request)
@@ -487,30 +515,32 @@ def create_app(
             raise HTTPException(404, "Record unavailable")
         return public_record(app.state.records, record_id)
 
-    @app.post("/api/v1/records/solo-start")
+    @app.post("/api/v1/records/solo-start", responses={401: AUTH_REQUIRED, 403: ORIGIN_REFUSED})
     async def solo_start(body: SoloStart, request: Request):
         _, result = await run_in_threadpool(submit_record, request, "start", body)
         return result
 
-    @app.post("/api/v1/records/solo-progress")
+    @app.post("/api/v1/records/solo-progress", responses={401: AUTH_REQUIRED, 403: ORIGIN_REFUSED})
     async def solo_progress(body: SoloProgress, request: Request):
         uuid, result = await run_in_threadpool(submit_record, request, "progress", body)
         if result["status"] == "accepted":
             await app.state.records_changed(uuid)
         return result
 
-    @app.post("/api/v1/records/terminal-report")
+    @app.post(
+        "/api/v1/records/terminal-report", responses={401: AUTH_REQUIRED, 403: ORIGIN_REFUSED}
+    )
     async def terminal_report(body: TerminalReport, request: Request):
         uuid, result = await run_in_threadpool(submit_record, request, "terminal", body)
         await app.state.records_changed(uuid)
         return result
 
-    @app.post("/api/v1/auth/link-status")
+    @app.post("/api/v1/auth/link-status", responses={403: ORIGIN_REFUSED})
     def link_status(body: Link, request: Request):
         mod(request)
         return request.app.state.auth.receipt_status(body.token)
 
-    @app.post("/api/v1/auth/preview")
+    @app.post("/api/v1/auth/preview", responses={403: ORIGIN_REFUSED, 410: EXPIRED})
     def preview(body: BrowserLink, request: Request):
         browser(request)
         row = require_link(request, body.token)
@@ -520,7 +550,7 @@ def create_app(
             result["already_linked"] = True
         return result
 
-    @app.post("/api/v1/auth/resume")
+    @app.post("/api/v1/auth/resume", responses={403: ORIGIN_REFUSED, 410: EXPIRED})
     def resume(body: BrowserLink, request: Request, response: Response):
         browser(request)
         store = request.app.state.auth
@@ -530,7 +560,7 @@ def create_app(
         set_cookie(response, token, remember)
         return {"authenticated": True, "user": identity(row)}
 
-    @app.post("/api/v1/auth/complete")
+    @app.post("/api/v1/auth/complete", responses={403: ORIGIN_REFUSED, 410: EXPIRED})
     def complete(body: Complete, request: Request, response: Response):
         browser(request)
         require_link(request, body.token)
@@ -561,32 +591,38 @@ def create_app(
             "moderator": bool(app.state.moderation.role(row["uuid"])),
         }
 
-    @app.get("/api/v1/auth/skin", responses={401: {"description": "Session revoked"}})
+    @app.get(
+        "/api/v1/auth/skin",
+        responses={401: {"description": "Session revoked"}, 503: UNAVAILABLE},
+    )
     def skin(request: Request):
         token = request.cookies.get(COOKIE, "")
         row = request.app.state.auth.get(token, "session")
         if not row:
-            raise HTTPException(401, "Sign in first")
+            raise HTTPException(401, SIGN_IN_FIRST)
         result = skins.get(row["uuid"])
         if not request.app.state.auth.get(token, "session"):
             skins.erase(row["uuid"])
-            raise HTTPException(401, "Sign in first")
+            raise HTTPException(401, SIGN_IN_FIRST)
         if not result:
             raise HTTPException(503, "Skin unavailable. Try again later.")
         return result
 
-    @app.post("/api/v1/auth/logout")
+    @app.post("/api/v1/auth/logout", responses={403: ORIGIN_REFUSED})
     def logout(request: Request, response: Response):
         browser(request)
         request.app.state.auth.revoke(request.cookies.get(COOKIE, ""))
         response.delete_cookie(COOKIE, secure=True, httponly=True, samesite="strict", path="/")
         return {"authenticated": False}
 
-    @app.get("/api/v1/party/skin/{uuid}")
+    @app.get(
+        "/api/v1/party/skin/{uuid}",
+        responses={401: AUTH_REQUIRED, 404: NOT_FOUND, 503: UNAVAILABLE},
+    )
     async def party_skin(uuid: str, request: Request):
         row = request.app.state.auth.get(request.cookies.get(COOKIE, ""), "session")
         if not row:
-            raise HTTPException(401, "Sign in first")
+            raise HTTPException(401, SIGN_IN_FIRST)
         if not re.fullmatch(r"[0-9a-f]{32}", uuid):
             raise HTTPException(404, "Skin unavailable")
         finder = request.app.state.finder
@@ -607,8 +643,14 @@ def create_app(
             raise HTTPException(503, "Skin unavailable. Try again later.")
         return result
 
-    @app.get("/api/v1/auth/device-player-card")
-    @app.get("/api/v1/auth/player-card", responses={401: {"description": "Session revoked"}})
+    @app.get(
+        "/api/v1/auth/device-player-card",
+        responses={401: AUTH_REQUIRED, 403: ORIGIN_REFUSED, 503: UNAVAILABLE},
+    )
+    @app.get(
+        "/api/v1/auth/player-card",
+        responses={401: {"description": "Session revoked"}, 503: UNAVAILABLE},
+    )
     def player_card(request: Request):
         native = request.url.path.endswith("device-player-card")
         row = (
@@ -617,7 +659,7 @@ def create_app(
             else request.app.state.auth.get(request.cookies.get(COOKIE, ""), "session")
         )
         if not row:
-            raise HTTPException(401, "Sign in first")
+            raise HTTPException(401, SIGN_IN_FIRST)
         summary = cards.get(row["uuid"])
         if not (
             device_user(request)
@@ -625,17 +667,20 @@ def create_app(
             else request.app.state.auth.get(request.cookies.get(COOKIE, ""), "session")
         ):
             cards.erase(row["uuid"])
-            raise HTTPException(401, "Sign in first")
+            raise HTTPException(401, SIGN_IN_FIRST)
         if summary is None:
             raise HTTPException(503, "Player stats unavailable. Try again shortly.")
         summary = with_mod_records(summary, request.app.state.records.read(row["uuid"]))
         return {"version": 1, "user": identity(row), **summary}
 
-    @app.get("/api/v1/party/player-card/{uuid}")
+    @app.get(
+        "/api/v1/party/player-card/{uuid}",
+        responses={401: AUTH_REQUIRED, 404: NOT_FOUND, 503: UNAVAILABLE},
+    )
     async def party_player_card(uuid: str, request: Request):
         row = request.app.state.auth.get(request.cookies.get(COOKIE, ""), "session")
         if not row:
-            raise HTTPException(401, "Sign in first")
+            raise HTTPException(401, SIGN_IN_FIRST)
         finder = request.app.state.finder
         player = finder.players.get(uuid)
         party = finder.parties.get(player.party) if player else None
@@ -680,7 +725,7 @@ def create_app(
     def mod_release():
         return releases.get()
 
-    @app.get("/api/v1/health", response_model=Health)
+    @app.get("/api/v1/health")
     def health(response: Response) -> Health:
         response.headers["Cache-Control"] = "no-store"
         response.headers["X-Content-Type-Options"] = "nosniff"

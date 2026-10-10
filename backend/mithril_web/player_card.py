@@ -87,7 +87,7 @@ def object_value(value):
     return value if isinstance(value, dict) else {}
 
 
-def parse_profiles(payload, uuid):
+def selected_profile(payload):
     if not isinstance(payload, dict) or payload.get("success") is not True:
         raise ValueError("Profiles unavailable")
     profiles = payload.get("profiles")
@@ -98,7 +98,40 @@ def parse_profiles(payload, uuid):
     selected = [p for p in profiles if isinstance(p, dict) and p.get("selected") is True]
     if len(selected) > 1 or (profiles and not selected):
         raise ValueError("Selected profile unavailable")
-    profile = selected[0] if selected else None
+    return selected[0] if selected else None
+
+
+def profile_identity(profile):
+    name, profile_id = profile.get("cute_name"), profile.get("profile_id")
+    if not isinstance(name, str) or not 1 <= len(name) <= 64:
+        raise ValueError("Invalid profile name")
+    if not isinstance(profile_id, str) or not re.fullmatch(
+        r"(?:[0-9a-f]{32}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})", profile_id
+    ):
+        raise ValueError("Invalid profile ID")
+    return {"id": profile_id.replace("-", ""), "name": name}
+
+
+def floor_times(types):
+    floors = []
+    for prefix, kind in (("F", "catacombs"), ("M", "master_catacombs")):
+        data = object_value(types.get(kind))
+        for floor in range(1, 8):
+            value = number(object_value(data.get("fastest_time_s_plus")).get(str(floor)), 604800000)
+            floors.append(
+                {
+                    "floor": f"{prefix}{floor}",
+                    "s_plus_ms": value if value is not None and value > 0 else None,
+                    "solo_clear_ms": None,
+                    "ss_ms": None,
+                    "terminals_ms": None,
+                }
+            )
+    return floors
+
+
+def parse_profiles(payload, uuid):
+    profile = selected_profile(payload)
     member = object_value(object_value(profile).get("members")).get(uuid)
     if profile is not None and not isinstance(member, dict):
         raise ValueError("Selected member unavailable")
@@ -126,30 +159,10 @@ def parse_profiles(payload, uuid):
             for role in ("archer", "berserk", "healer", "mage", "tank")
         },
         "mod_records_available": False,
-        "floors": [],
+        "floors": floor_times(types),
     }
     if profile is not None:
-        name, profile_id = profile.get("cute_name"), profile.get("profile_id")
-        if not isinstance(name, str) or not 1 <= len(name) <= 64:
-            raise ValueError("Invalid profile name")
-        if not isinstance(profile_id, str) or not re.fullmatch(
-            r"(?:[0-9a-f]{32}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})", profile_id
-        ):
-            raise ValueError("Invalid profile ID")
-        result["profile"] = {"id": profile_id.replace("-", ""), "name": name}
-    for prefix, kind in (("F", "catacombs"), ("M", "master_catacombs")):
-        data = object_value(types.get(kind))
-        for floor in range(1, 8):
-            value = number(object_value(data.get("fastest_time_s_plus")).get(str(floor)), 604800000)
-            result["floors"].append(
-                {
-                    "floor": f"{prefix}{floor}",
-                    "s_plus_ms": value if value is not None and value > 0 else None,
-                    "solo_clear_ms": None,
-                    "ss_ms": None,
-                    "terminals_ms": None,
-                }
-            )
+        result["profile"] = profile_identity(profile)
     return result
 
 

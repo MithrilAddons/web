@@ -42,8 +42,9 @@ def test_global_budget_bounds_memory_even_when_rejected_peers_keep_changing():
         attempts.check(str(IPv4Address(0xC0000200 + i)))
     attempts.check("198.51.100.1")
     for i in range(1000):
+        peer = str(IPv4Address(0xC6336400 + i))
         with pytest.raises(HTTPException) as failure:
-            attempts.check(str(IPv4Address(0xC6336400 + i)))
+            attempts.check(peer)
         assert failure.value.status_code == 429
     assert len(attempts.attempts) == 300
     now[0] = 60

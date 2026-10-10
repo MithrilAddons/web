@@ -27,6 +27,7 @@ WAIT = 25  # clients re-request immediately, well inside the 60 s presence grace
 SWEEP = 5
 TRACKED_INTERVAL = 25  # mod heartbeat while this account uses the finder
 IDLE_INTERVAL = 120  # otherwise game presence is only checked occasionally
+PARTY_ID_PATTERN = r"^[A-Za-z0-9_-]{12}$"
 
 Role = Literal["archer", "berserk", "healer", "mage", "tank"]
 Floor = Literal["F7", "M7"]
@@ -44,14 +45,14 @@ class StateRequest(Strict):
 
 class ChatSend(Strict):
     version: Literal[1]
-    party_id: str = Field(pattern=r"^[A-Za-z0-9_-]{12}$")
+    party_id: str = Field(pattern=PARTY_ID_PATTERN)
     request_id: str = Field(pattern=r"^[A-Za-z0-9_-]{16,64}$")
     text: str = Field(min_length=1, max_length=256)
 
 
 class ChatRead(Strict):
     version: Literal[1]
-    party_id: str = Field(pattern=r"^[A-Za-z0-9_-]{12}$")
+    party_id: str = Field(pattern=PARTY_ID_PATTERN)
     after: int = Field(default=0, ge=0, le=2**53 - 1)
 
 
@@ -63,7 +64,7 @@ class LookRequest(Strict):
 
 
 class ReserveRequest(Strict):
-    party_id: str = Field(pattern=r"^[A-Za-z0-9_-]{12}$")
+    party_id: str = Field(pattern=PARTY_ID_PATTERN)
     role: Role
 
 
@@ -109,7 +110,7 @@ class Empty(Strict):
 
 
 class ChatReport(Action):
-    party_id: str = Field(pattern=r"^[A-Za-z0-9_-]{12}$")
+    party_id: str = Field(pattern=PARTY_ID_PATTERN)
     message_id: str = Field(pattern=r"^[0-9]{1,12}$")
 
 
@@ -120,8 +121,8 @@ class ModPresence(Strict):
 
 class ModRoster(Strict):
     version: Literal[1]
-    party_id: str = Field(pattern=r"^[A-Za-z0-9_-]{12}$")
-    handoff_id: str = Field(pattern=r"^[A-Za-z0-9_-]{12}$")
+    party_id: str = Field(pattern=PARTY_ID_PATTERN)
+    handoff_id: str = Field(pattern=PARTY_ID_PATTERN)
     leader: str = Field(pattern=r"^[A-Za-z0-9_]{1,16}$")
     members: Names = Field(min_length=1, max_length=5)
 
@@ -153,7 +154,7 @@ def mojang_uuid(name):
         data = json.loads(body)
         uuid, current = data.get("id"), data.get("name")
         if not re.fullmatch(r"[0-9a-f]{32}", str(uuid)) or not re.fullmatch(
-            r"[A-Za-z0-9_]{1,16}", str(current)
+            r"\w{1,16}", str(current), flags=re.ASCII
         ):
             raise ValueError("Invalid profile")
         return uuid, current

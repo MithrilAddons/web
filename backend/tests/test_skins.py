@@ -56,8 +56,9 @@ def test_fixed_destinations_and_model(model):
     ],
 )
 def test_rejects_untrusted_texture_urls(url):
+    untrusted = profile(url=url)
     with pytest.raises(ValueError):
-        texture_details(profile(url=url), UUID)
+        texture_details(untrusted, UUID)
 
 
 @pytest.mark.parametrize(
@@ -76,8 +77,9 @@ def test_rejects_invalid_or_large_images(data):
 
 
 def test_wrong_profile_and_missing_skin():
+    valid = profile()
     with pytest.raises(ValueError):
-        texture_details(profile(), "f" * 32)
+        texture_details(valid, "f" * 32)
     with pytest.raises(ValueError):
         texture_details({"id": UUID}, UUID)
 
@@ -156,13 +158,15 @@ def test_upstream_limits_close_connections_and_do_not_follow_redirects(monkeypat
     monkeypatch.setattr("mithril_web.skins.http.client.HTTPSConnection", Connection)
     with pytest.raises(ValueError):
         get_bytes("textures.minecraft.net", "/texture/a", 10)
-    assert Connection.closed and Connection.limit == 11
+    assert Connection.closed
+    assert Connection.limit == 11
     Connection.closed = False
     Connection.limit = None
     Connection.status = 302
     with pytest.raises(ValueError):
         get_bytes("textures.minecraft.net", "/texture/a", 10)
-    assert Connection.closed and Connection.limit is None
+    assert Connection.closed
+    assert Connection.limit is None
 
 
 def test_party_skins_require_membership_reuse_cache_and_allow_retained_senders(tmp_path):

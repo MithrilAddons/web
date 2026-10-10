@@ -99,7 +99,8 @@ def test_publish_then_looking_places_the_player_automatically(setup):
     published = client.post("/api/v1/party/publish", headers=leader, json=PUBLISH)
     assert published.status_code == 200, published.text
     party = published.json()["party"]
-    assert party["you_lead"] and party["floor"] == "M7"
+    assert party["you_lead"]
+    assert party["floor"] == "M7"
     looked = client.post(
         "/api/v1/party/look",
         headers=joiner,
@@ -144,7 +145,8 @@ def test_listings_are_shared_compact_hidden_when_blocked_and_cacheable(setup):
     response = client.get("/api/v1/party/listings", params={"floor": "M7"}, headers=viewer)
     rows = response.json()["parties"]
     assert [row["leader"] for row in rows] == ["Noctis"]
-    assert "members" not in rows[0] and "blocked" not in rows[0]
+    assert "members" not in rows[0]
+    assert "blocked" not in rows[0]
     assert rows[0]["team"]["s_plus_ms_avg"] == 320_000
     again = client.get(
         "/api/v1/party/listings",
@@ -156,7 +158,8 @@ def test_listings_are_shared_compact_hidden_when_blocked_and_cacheable(setup):
     assert hidden.json()["parties"] == []
     assert client.get(f"/api/v1/party/listings/{party['id']}", headers=blocked).status_code == 404
     detail = client.get(f"/api/v1/party/listings/{party['id']}", headers=viewer).json()
-    assert detail["members"][0]["name"] == "Noctis" and detail["members"][0]["leader"]
+    assert detail["members"][0]["name"] == "Noctis"
+    assert detail["members"][0]["leader"]
     empty = client.get("/api/v1/party/listings", params={"floor": "F7"}, headers=viewer)
     assert empty.json() == {"version": 1, "floor": "F7", "parties": []}
 
@@ -344,7 +347,8 @@ def test_block_lookups_happen_only_after_authentication_and_leader_checks(tmp_pa
             headers=headers,
             json={"rules": NO_RULES, "block_names": ["Unknown"]},
         )
-        assert edit.status_code == 409 and edit.json()["detail"] == "not_leader"
+        assert edit.status_code == 409
+        assert edit.json()["detail"] == "not_leader"
         assert calls == []
 
 

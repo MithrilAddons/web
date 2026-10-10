@@ -210,4 +210,5 @@ def test_after_inviting_disconnects_do_not_receive_the_offline_no_show_ban(setup
     finder.sweep()
     assert finder.players[ids[-1]].banned_until == 0
     assert finder.players[ids[-1]].party is None
-    assert party.id in finder.parties and party.full_since is None
+    assert party.id in finder.parties
+    assert party.full_since is None
