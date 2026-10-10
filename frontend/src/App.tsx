@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { getHealth } from "./api";
 import { Account, CookiePolicy, LinkAccount } from "./account";
+import { Curator } from "./Curator";
 import { PartyWorkspace } from "./PartyFinder";
 import { AccountPrivacy, PrivacyPolicy } from "./Privacy";
 import { Moderation } from "./Moderation";
@@ -21,6 +22,9 @@ const linkToken =
     ? window.location.hash.slice(1)
     : "";
 if (linkToken) window.history.replaceState(null, "", "/link");
+// Games live under /games/<game>; Curator is the only one so far.
+if (trimTrailingSlashes(window.location.pathname) === "/games")
+  window.history.replaceState(null, "", "/games/curator");
 
 export function App() {
   const revision = import.meta.env.VITE_SOURCE_REVISION as string | undefined;
@@ -31,6 +35,7 @@ export function App() {
   const isPartyFinder = path === "/party-finder";
   const isSlayerProfits =
     path === "/slayer-profits" || path === "/slayerprofits";
+  const isGames = path.startsWith("/games/");
 
   return (
     <>
@@ -67,13 +72,16 @@ export function App() {
           >
             Slayer profits
           </a>
+          <a href="/games/curator" aria-current={isGames ? "page" : undefined}>
+            Games
+          </a>
         </nav>
         <Account compact />
       </header>
       <main
         id="main"
         tabIndex={-1}
-        className={pageClass(path, isPartyFinder || isSlayerProfits)}
+        className={pageClass(path, isPartyFinder || isSlayerProfits || isGames)}
       >
         <PageContent path={path} />
       </main>
@@ -109,6 +117,8 @@ function PageContent({ path }: Readonly<{ path: string }>) {
     case "/slayer-profits":
     case "/slayerprofits":
       return <SlayerProfits />;
+    case "/games/curator":
+      return <Curator />;
     case "/privacy":
       return <PrivacyPolicy />;
     case "/profile":

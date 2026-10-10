@@ -1,14 +1,16 @@
-"""Owner-only Curator review: answer queue, allow and block lists, popularity cut-off."""
+"""Curator: owner review (answer queue, lists, cut-off) and the game for the mod and website."""
 
+import re
 from typing import Annotated, Literal
 
-from fastapi import HTTPException, Query, Request
+from fastapi import HTTPException, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from .auth import COOKIE
 from .curator_game import GameError
 
-ItemId = Annotated[str, Field(pattern=r"^[A-Za-z0-9_:;.\-]{1,128}$")]
+ITEM_PATTERN = r"[A-Za-z0-9_:;.\-]{1,128}"
+ItemId = Annotated[str, Field(pattern=f"^{ITEM_PATTERN}$")]
 Day = Annotated[str, Field(pattern=r"^\d{4}-\d{2}-\d{2}$")]
 
 
@@ -99,11 +101,22 @@ def register_curator(app, browser):
         return change(request, lambda _: app.state.curator.mark_reviewed())
 
 
-def register_curator_game(app, device_user):
-    """Mod routes for playing Curator; a linked device session identifies the player."""
+def register_curator_game(app, device_user, browser):
+    """Curator for the mod (device token) and the website (session cookie), one round each day.
 
-    def player(request):
-        row = device_user(request)
+    Both identify the same Minecraft account, so a round started in one continues in the other.
+    """
+
+    def player(request, write=False):
+        if "authorization" in request.headers:
+            row = device_user(request)
+        else:
+            # The cookie is SameSite=Strict; guesses must also come from the site itself.
+            if write or "origin" in request.headers:
+                browser(request)
+            row = app.state.auth.get(request.cookies.get(COOKIE, ""), "session")
+            if not row:
+                raise HTTPException(401, "Link your Minecraft account to play Curator")
         app.state.moderation.check(row["uuid"], request.client.host if request.client else None)
         return row
 
@@ -121,7 +134,7 @@ def register_curator_game(app, device_user):
 
     @app.post("/api/v1/games/curator/guess")
     def guess(body: Guess, request: Request):
-        row = player(request)
+        row = player(request, write=True)
         try:
             return app.state.curator_game.guess(row["uuid"], row["name"], body.day, body.item)
         except GameError as error:
@@ -129,4 +142,25 @@ def register_curator_game(app, device_user):
 
     @app.get("/api/v1/games/curator/leaderboard")
     def leaderboard(request: Request):
-        return app.state.curator_game.leaderboard(player(request)["uuid"])
+        signed_in = "authorization" in request.headers or app.state.auth.get(
+            request.cookies.get(COOKIE, ""), "session"
+        )
+        if signed_in:
+            return app.state.curator_game.leaderboard(player(request)["uuid"])
+        # Anyone can see the standings; only signed-in players get their own row and stats.
+        if "origin" in request.headers:
+            browser(request)
+        return {**app.state.curator_game.leaderboard(None), "you": None, "stats": None}
+
+    @app.get("/api/v1/games/curator/icon/{item}.png")
+    def icon(item: str):
+        if not re.fullmatch(ITEM_PATTERN, item):
+            raise HTTPException(404, "No icon")
+        found = app.state.curator.icon(item)
+        if found is None:
+            raise HTTPException(404, "No icon")
+        if found is False:
+            raise HTTPException(503, "Icon unavailable", headers={"Retry-After": "30"})
+        return Response(
+            found, media_type="image/png", headers={"Cache-Control": "public, max-age=86400"}
+        )

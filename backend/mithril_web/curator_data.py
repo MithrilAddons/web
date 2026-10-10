@@ -5,6 +5,7 @@ beyond the auction IDs needed to avoid counting a sale twice.
 """
 
 import asyncio
+import hashlib
 import http.client
 import json
 import random
@@ -16,10 +17,11 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 
-from . import slayer_market
+from . import curator_icons, slayer_market
 from .curator import catalog
+from .skins import get_bytes
 
-PERIODS = {"sales": 60, "catalog": 6 * 3600, "lock": 60}
+PERIODS = {"sales": 60, "catalog": 6 * 3600, "lock": 60, "icons": 6 * 3600}
 SALES_DAYS = 60
 QUEUE_DAYS = 30
 DEFAULT_CUTOFF = 100
@@ -35,6 +37,7 @@ FAILURES = (
     KeyError,
     TypeError,
     AttributeError,
+    *curator_icons.FAILURES,
 )
 
 
@@ -54,9 +57,12 @@ def sold_item(auction):
 class CuratorData:
     """One lock owns SQLite; network calls never hold it."""
 
-    def __init__(self, path: Path, loader=None, clock=time.time):
+    def __init__(self, path: Path, loader=None, clock=time.time, download=get_bytes):
         path.parent.mkdir(parents=True, exist_ok=True)
         self.loader = loader or (lambda request: slayer_market.fetch_json(request))
+        # Pack and head-skin downloads, as (host, path, size limit) -> bytes.
+        self.download = download
+        self.head_slots = threading.BoundedSemaphore(2)
         self.clock = clock
         self.lock = threading.Lock()
         self.next = dict.fromkeys(PERIODS, 0)
@@ -93,6 +99,9 @@ class CuratorData:
             item TEXT PRIMARY KEY, list TEXT NOT NULL, actor TEXT NOT NULL, at REAL NOT NULL)""")
         self.db.execute("""CREATE TABLE IF NOT EXISTS curator_days (
             day TEXT PRIMARY KEY, item TEXT NOT NULL, actor TEXT, at REAL NOT NULL)""")
+        # Website icons: "pack" textures, or "head:<skin path>" faces fetched on first use.
+        self.db.execute("""CREATE TABLE IF NOT EXISTS curator_icons (
+            item TEXT PRIMARY KEY, png BLOB NOT NULL, source TEXT NOT NULL)""")
         self.db.commit()
 
     def close(self):
@@ -159,6 +168,69 @@ class CuratorData:
             self.db.execute(
                 "INSERT OR REPLACE INTO curator_meta VALUES ('catalog_updated', ?)", (str(updated),)
             )
+
+    def load_icons(self):
+        """Hypixel's SkyBlock pack textures, downloaded again only when a new pack is deployed."""
+        packs = self.loader("resources/packs")["packs"]
+        pack = next((p for p in packs if p.get("id") == "SkyBlock"), None)
+        if pack is None:
+            raise ValueError("No SkyBlock pack listed")
+        deploy = pack["deployId"]
+        with self.lock:
+            current = self._meta("icon_pack", "")
+        if not isinstance(deploy, str) or deploy == current:
+            return
+        path, digest = curator_icons.pack_location(pack)
+        archive = self.download(curator_icons.PACK_HOST, path, curator_icons.MAX_PACK)
+        # An integrity check against Hypixel's own listing, not a security boundary.
+        if hashlib.sha1(archive, usedforsecurity=False).hexdigest() != digest:
+            raise ValueError("Pack download incomplete")
+        textures = curator_icons.pack_textures(archive)
+        if not textures:
+            raise ValueError("Pack has no item textures")
+        with self.lock, self.db:
+            self.db.execute("DELETE FROM curator_icons WHERE source='pack'")
+            self.db.executemany(
+                "INSERT OR REPLACE INTO curator_icons VALUES (?, ?, 'pack')", textures.items()
+            )
+            self.db.execute(
+                "INSERT OR REPLACE INTO curator_meta VALUES ('icon_pack', ?)", (deploy,)
+            )
+
+    def icon(self, item):
+        """An item's icon PNG; None when it has none, False when its head can't be fetched now."""
+        with self.lock:
+            stored = self.db.execute(
+                "SELECT png, source FROM curator_icons WHERE item=?", (item,)
+            ).fetchone()
+            known = self.db.execute("SELECT icon FROM curator_items WHERE id=?", (item,)).fetchone()
+        if stored and stored["source"] == "pack":
+            return stored["png"]
+        try:
+            path = curator_icons.skin_path(json.loads(known["icon"]).get("skin")) if known else None
+        except ValueError:
+            path = None
+        if not path:
+            return None
+        if stored and stored["source"] == "head:" + path:
+            return stored["png"]
+        if not self.head_slots.acquire(blocking=False):
+            return False
+        try:
+            png = curator_icons.head_icon(self.download(curator_icons.SKIN_HOST, path, 65536))
+        except (*curator_icons.FAILURES, http.client.HTTPException):
+            return False
+        finally:
+            self.head_slots.release()
+        with self.lock, self.db:
+            # A pack texture that arrived meanwhile wins over the head.
+            self.db.execute(
+                """INSERT INTO curator_icons VALUES (?, ?, ?) ON CONFLICT(item)
+                DO UPDATE SET png=excluded.png, source=excluded.source
+                WHERE curator_icons.source != 'pack'""",
+                (item, png, "head:" + path),
+            )
+        return png
 
     def load_sales(self):
         auctions = self.loader("skyblock/auctions_ended")["auctions"]

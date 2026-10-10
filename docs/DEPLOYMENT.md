@@ -131,6 +131,14 @@ Auction House and Bazaar scan for the market snapshot, which can take a couple o
 minutes; until it finishes the mod shows the day as being prepared. Player results are
 stored in records.sqlite3 (`curator_results`) and follow its backups and erasure.
 
+Website icons need no nginx change. Every six hours the backend checks Hypixel's
+`/v2/resources/packs` listing and, when a new SkyBlock pack is deployed, downloads it
+from `resourcepacks.hypixel.net` (about 20 MB, checked against the listed SHA-1) and keeps
+its item textures in `curator_icons` in curator.sqlite3. Head icons are fetched from
+`textures.minecraft.net` the first time each is shown, at most two at once, and kept in
+the same table. No Hypixel or Mojang art is stored in this repository. After deployment,
+verify that a pack item and a head item return an icon.
+
 API responses are not publicly cached. Authentication has an nginx limit of
 30 requests/minute/IP (burst 15), party routes 60/minute/IP (burst 30).
 Bodies are limited to 4 KiB. Held party state requests need a 40-second proxy
