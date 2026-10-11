@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { getHealth } from "./api";
 import { Account, CookiePolicy, LinkAccount } from "./account";
+import { Capture } from "./Capture";
 import { Curator } from "./Curator";
 import { PartyWorkspace } from "./PartyFinder";
 import { AccountPrivacy, PrivacyPolicy } from "./Privacy";
@@ -135,6 +136,8 @@ function PageContent({ path }: Readonly<{ path: string }>) {
       return <AccountPrivacy />;
     case "/moderation":
       return <Moderation />;
+    case "/capture":
+      return <Capture />;
     case "/link":
       return (
         <div className="link-panel">

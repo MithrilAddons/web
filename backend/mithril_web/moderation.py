@@ -26,6 +26,8 @@ class Moderation:
         self.db, self.lock, self.clock = records.db, records.lock, records.clock
         self.db.executescript("""
             CREATE TABLE IF NOT EXISTS moderators (uuid TEXT PRIMARY KEY);
+            CREATE TABLE IF NOT EXISTS capture_roles (
+                uuid TEXT NOT NULL, role TEXT NOT NULL, PRIMARY KEY (uuid, role));
             CREATE TABLE IF NOT EXISTS moderation_audit (
                 id INTEGER PRIMARY KEY, at REAL NOT NULL, actor TEXT NOT NULL,
                 action TEXT NOT NULL, subject TEXT NOT NULL, reason TEXT NOT NULL,
@@ -55,6 +57,40 @@ class Moderation:
         with self.lock:
             return self._role(uuid)
 
+    def _capture_roles(self, uuid):
+        if uuid == self.owner:
+            return ["capturer", "reviewer"]
+        return [
+            row[0]
+            for row in self.db.execute(
+                "SELECT role FROM capture_roles WHERE uuid=? ORDER BY role", (uuid,)
+            )
+        ]
+
+    def capture_roles(self, uuid):
+        """Location-game content roles: capturers upload, reviewers approve. The owner has both."""
+        with self.lock:
+            return self._capture_roles(uuid)
+
+    def set_capture_role(self, actor, uuid, role, enabled, reason):
+        with self.lock, self.db:
+            self._require(actor, owner=True)
+            if uuid == self.owner:
+                raise HTTPException(409, "Owner access is configured separately")
+            before = self._capture_roles(uuid)
+            if enabled:
+                self.db.execute("INSERT OR IGNORE INTO capture_roles VALUES (?, ?)", (uuid, role))
+            else:
+                self.db.execute("DELETE FROM capture_roles WHERE uuid=? AND role=?", (uuid, role))
+            self._audit(
+                actor,
+                f"{role}_{'grant' if enabled else 'revoke'}",
+                uuid,
+                reason,
+                before,
+                self._capture_roles(uuid),
+            )
+
     def _require(self, actor, owner=False):
         role = self._role(actor)
         if not role or (owner and role != "owner"):
@@ -73,8 +109,19 @@ class Moderation:
 
     def home(self, actor):
         with self.lock:
+            if not self._role(actor) and "reviewer" in self._capture_roles(actor):
+                # Reviewers who aren't moderators only see the capture review tabs.
+                self._check(actor)
+                return {
+                    "version": 1,
+                    "role": "reviewer",
+                    "network_bans_available": False,
+                    "moderators": [],
+                    "capture_roles": self._capture_roles(actor),
+                }
             role = self._require(actor)
             return {
+                "capture_roles": self._capture_roles(actor),
                 "version": 1,
                 "role": role,
                 "network_bans_available": bool(self.network_key),
@@ -129,7 +176,13 @@ class Moderation:
                     (uuid,),
                 )
             ]
-            return {"version": 1, "uuid": uuid, "records": records, "cases": cases}
+            return {
+                "version": 1,
+                "uuid": uuid,
+                "records": records,
+                "cases": cases,
+                "capture_roles": self._capture_roles(uuid),
+            }
 
     def audit(self, actor, before):
         with self.lock:

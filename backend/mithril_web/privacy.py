@@ -9,6 +9,7 @@ from pathlib import Path
 from fastapi import HTTPException
 
 from .auth import DAY, digest
+from .capture import erase_captures
 
 
 class Privacy:
@@ -156,6 +157,8 @@ class Privacy:
             )
             self.db.execute("DELETE FROM accounts.auth WHERE uuid=?", (uuid,))
             self.db.execute("DELETE FROM moderators WHERE uuid=?", (uuid,))
+            self.db.execute("DELETE FROM capture_roles WHERE uuid=?", (uuid,))
+            erase_captures(self.db, uuid)
             self.db.execute("DELETE FROM account_networks WHERE uuid=?", (uuid,))
             self.db.execute("UPDATE chat_reports SET reporter='erased' WHERE reporter=?", (uuid,))
             self.db.execute(

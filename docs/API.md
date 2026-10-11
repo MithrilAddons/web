@@ -519,6 +519,40 @@ on Mojang's texture server, at 16×16. It answers 404 when the item has neither 
 art belongs to Hypixel; the pack's license lets Hypixel-related websites use it free of
 charge, and pages showing icons credit Hypixel.
 
+## Location game captures
+
+The private Mithril Capture mod uploads panoramas and island maps for the location game.
+Its requests carry an upload code (`Authorization: Bearer`, 43 URL-safe characters), the
+signed-in player's UUID in `X-Capture-Player` (refused with 403 when it isn't the code's
+account) and the mod version in `X-Capture-Version`, and no Origin header. Only accounts with
+the Capturer role (the owner always has it) can use them; banned accounts get 403. Uploads
+from builds older than the server's minimum version get 426. Each capturer can create up to
+200 submissions per UTC day (429 after).
+
+- `GET /api/v1/capture/me` returns the user and `minimum_version`; it works for outdated builds.
+- `GET /api/v1/capture/nearby?island=&x=&z=` lists submitted and approved locations within
+  10 blocks horizontally (`status` `pending` or `live`), for the mod's duplicate check.
+- `POST /api/v1/capture/locations` takes `client_id` (a UUID from the mod; repeating it returns
+  the same location), `island` (Hypixel's location mode; private islands, gardens and
+  instances are refused), `island_name`, `x`, `y`, `z`, `captured_at` (Unix ms), `note`
+  (≤200 characters) and `face_size` (1024 or 2048). It returns the location `id`, `status`
+  and the face numbers already received.
+- `PUT /api/v1/capture/locations/{id}/faces/{0-5}` takes one raw `image/png` face (front,
+  right, back, left, up, down) of `face_size` pixels, at most 8 MiB.
+- `POST /api/v1/capture/locations/{id}/finish` submits it once all six faces are there.
+- `POST /api/v1/capture/maps` takes `client_id`, `island`, `island_name` and the inclusive block
+  corners `min_x`, `min_z`, `max_x`, `max_z` (at most 4096 blocks a side);
+  `PUT /api/v1/capture/maps/{id}/image` takes the matching PNG, one pixel per block, north up,
+  and submits it. It replaces the same capturer's unreviewed map of that island.
+- `GET /api/v1/capture/submissions` lists the capturer's locations and maps with `status`
+  (uploading, submitted, approved, changes_requested, rejected) and the reviewer's note.
+
+Images are re-encoded on arrival, so no metadata is kept, and stored under random IDs in the
+backend's data folder. In the browser, `GET /api/v1/capture/account` returns the signed-in
+account's capture roles and upload codes (`id`, `created`, `last_used`);
+`POST /api/v1/capture/codes` creates a code (shown once; at most 10) and
+`POST /api/v1/capture/codes/revoke` takes an `id`. Both POSTs need the site's Origin.
+
 ## Operations and limits
 
 Release metadata for the Discord bot may include an optional `checks` object:
@@ -726,3 +760,19 @@ caches. A separate seven-day erasure ledger is replayed before serving restored
 records; see DEPLOYMENT.md. GET /api/v1/privacy publishes the operator/contact from
 server configuration. `/account` provides self-service deletion and `/privacy`
 explains purposes, retention, exceptions and contact rights.
+
+### Capture review
+
+`POST /api/v1/moderation/capture-role` (owner only) takes `uuid`, `role` (`capturer` or
+`reviewer`), `enabled` and a `reason`, and is audited; removing the Capturer role revokes that
+account's upload codes. `GET /api/v1/moderation/access` includes `capture_roles`, and reviewers
+who aren't moderators get `role: "reviewer"` with access to the capture review only.
+
+Reviewers (and the owner) use `GET /api/v1/moderation/captures?kind=locations|maps&status=&offset=`
+(25 per page, newest first, with each island's current approved map and its corners),
+`GET /api/v1/moderation/captures/locations/{id}/faces/{n}.png`,
+`GET /api/v1/moderation/captures/maps/{id}.png` and `POST /api/v1/moderation/captures/decide`
+with `kind`, `id`, `decision` (`approve`, `changes` or `reject`) and a `note`, required unless
+approving. The latest approved map is an island's current map. Rejected submissions are deleted
+after 30 days. Erasing an account deletes its unreviewed submissions and keeps approved ones
+without the capturer's name.
