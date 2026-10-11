@@ -394,3 +394,64 @@ def test_responses_match_the_contract(game):
     actual = contract_responses(client, headers)
     fixture = Path(__file__).resolve().parents[2] / "contracts/curator-v1.json"
     assert actual == json.loads(fixture.read_text())
+
+
+def play_as_guest(client, items, date=None, origin=ORIGIN):
+    return client.post(
+        "/api/v1/games/curator/guest",
+        headers={"Origin": origin},
+        json={"version": 1, "day": date, "items": items},
+    )
+
+
+def test_guests_play_on_the_website_without_anything_stored(game):
+    client, app, _, _, plan = game
+    assert play_as_guest(client, []).json()["state"] == "preparing"
+    plan("SYNTHESIZER_V3")
+    app.state.curator.load_lock()
+    start = play_as_guest(client, []).json()
+    assert (start["state"], start["day"], start["guesses"]) == ("playing", day(NOW), [])
+    playing = play_as_guest(client, ["SYNTHESIZER_V2", "HYPERION"], day(NOW)).json()
+    assert [entry["family"] for entry in playing["guesses"]] == [True, False]
+    assert playing["guesses"][0]["feedback"]["market"] == {"match": "none", "arrow": "up"}
+    assert "answer" not in playing
+    solved = play_as_guest(client, ["HYPERION", "SYNTHESIZER_V3"], day(NOW)).json()
+    assert solved["state"] == "solved"
+    assert solved["answer"]["name"] == "Synthesizer v3"
+    # Guests have no stats and never reach the results table or the leaderboard.
+    assert "stats" not in solved
+    assert app.state.records.db.execute("SELECT COUNT(*) FROM curator_results").fetchone()[0] == 0
+    assert client.get("/api/v1/games/curator/leaderboard").json()["players"] == 0
+    failed = play_as_guest(client, [f"FILLER_{n:04}" for n in range(10)], day(NOW)).json()
+    assert (failed["state"], failed["answer"]["item"]) == ("failed", "SYNTHESIZER_V3")
+
+
+def test_guest_rounds_are_checked_like_signed_in_ones(game):
+    client, app, _, _, plan = game
+    plan("SYNTHESIZER_V3")
+    app.state.curator.load_lock()
+    today = day(NOW)
+    assert play_as_guest(client, ["HYPERION"], day(NOW - DAY)).json()["detail"] == (
+        "A new item is ready"
+    )
+    assert play_as_guest(client, ["HYPERION", "HYPERION"], today).json()["detail"] == (
+        "Already guessed"
+    )
+    assert play_as_guest(client, ["SYNTHESIZER_V3", "HYPERION"], today).json()["detail"] == (
+        "Today's round is already over"
+    )
+    assert play_as_guest(client, ["MISSING"], today).status_code == 404
+    eleven = [f"FILLER_{n:04}" for n in range(11)]
+    assert play_as_guest(client, eleven, today).status_code == 422
+    # The website only: other sites and Origin-less callers are refused.
+    assert play_as_guest(client, [], origin="https://example.com").status_code == 403
+    assert (
+        client.post(
+            "/api/v1/games/curator/guest", json={"version": 1, "day": None, "items": []}
+        ).status_code
+        == 403
+    )
+    assert client.get("/api/v1/games/curator/catalog").status_code == 200
+    assert (
+        client.get("/api/v1/games/curator/catalog", headers={"Origin": ORIGIN}).status_code == 200
+    )

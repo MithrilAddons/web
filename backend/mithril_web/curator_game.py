@@ -61,13 +61,10 @@ class CuratorGame:
             return [], False, False
         return json.loads(row["guesses"]), bool(row["solved"]), row["finished"] is not None
 
-    def state(self, uuid):
-        today = self.today()
-        answer = self.data.locked(today)
-        if not answer:
-            return {"version": 1, "day": today, "state": "preparing", "resets_at": self.resets_at()}
-        with self.records.lock:
-            guesses, solved, finished = self._result(today, uuid)
+    def _preparing(self, today):
+        return {"version": 1, "day": today, "state": "preparing", "resets_at": self.resets_at()}
+
+    def _round(self, today, answer, guesses, solved, finished):
         result = {
             "version": 1,
             "day": today,
@@ -79,16 +76,21 @@ class CuratorGame:
         }
         if finished:
             result["answer"] = {key: answer[key] for key in ("item", "name", "values", "icon")}
-            result["stats"] = self.player_stats(uuid)
         return result
 
-    def guess(self, uuid, name, date, item):
+    def state(self, uuid):
         today = self.today()
         answer = self.data.locked(today)
         if not answer:
-            raise GameError(409, "Today's item is still being prepared")
-        if date != today:
-            raise GameError(409, "A new item is ready")
+            return self._preparing(today)
+        with self.records.lock:
+            guesses, solved, finished = self._result(today, uuid)
+        result = self._round(today, answer, guesses, solved, finished)
+        if finished:
+            result["stats"] = self.player_stats(uuid)
+        return result
+
+    def _entry(self, today, answer, item):
         guessed = self.data.guessable(item, today)
         if not guessed:
             raise GameError(404, "Unknown item")
@@ -98,7 +100,7 @@ class CuratorGame:
             guessed["values"]["market"],
             answer["values"]["market"],
         )
-        entry = {
+        return {
             "item": item,
             "name": guessed["name"],
             "values": guessed["values"],
@@ -108,6 +110,31 @@ class CuratorGame:
             and guessed["family"] == answer["family"]
             and item != answer["item"],
         }
+
+    def guest(self, date, items):
+        """A guest's round: nothing is stored, the browser sends all its guesses each time."""
+        today = self.today()
+        answer = self.data.locked(today)
+        if not answer:
+            return self._preparing(today)
+        if items and date != today:
+            raise GameError(409, "A new item is ready")
+        if len(set(items)) != len(items):
+            raise GameError(409, "Already guessed")
+        if answer["item"] in items[:-1]:
+            raise GameError(409, "Today's round is already over")
+        guesses = [self._entry(today, answer, item) for item in items]
+        solved = answer["item"] in items
+        return self._round(today, answer, guesses, solved, solved or len(items) >= GUESSES)
+
+    def guess(self, uuid, name, date, item):
+        today = self.today()
+        answer = self.data.locked(today)
+        if not answer:
+            raise GameError(409, "Today's item is still being prepared")
+        if date != today:
+            raise GameError(409, "A new item is ready")
+        entry = self._entry(today, answer, item)
         with self.records.lock, self.records.db:
             guesses, _, finished = self._result(today, uuid)
             if finished:

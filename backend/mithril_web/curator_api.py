@@ -7,7 +7,7 @@ from fastapi import HTTPException, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from .auth import COOKIE
-from .curator_game import GameError
+from .curator_game import GUESSES, GameError
 
 ITEM_PATTERN = r"[A-Za-z0-9_:;.\-]{1,128}"
 ItemId = Annotated[str, Field(pattern=f"^{ITEM_PATTERN}$")]
@@ -32,6 +32,11 @@ class DayChange(CuratorBody):
 class Guess(CuratorBody):
     day: Day
     item: ItemId
+
+
+class GuestRound(CuratorBody):
+    day: Day | None
+    items: Annotated[list[ItemId], Field(max_length=GUESSES)]
 
 
 class Settings(CuratorBody):
@@ -125,6 +130,14 @@ class CuratorPlayers:
         self.app.state.moderation.check(row["uuid"], host)
         return row
 
+    def viewer(self, request):
+        """Public reads: signed-in callers are checked as players, others only for the Origin."""
+        if self.signed_in(request):
+            return self.player(request)
+        if "origin" in request.headers:
+            self.browser(request)
+        return None
+
 
 def icon_response(found):
     """An icon PNG, or why there is none: 404 when the item has no icon, 503 to retry later."""
@@ -146,7 +159,8 @@ def register_curator_game(app, device_user, browser):
 
     @app.get("/api/v1/games/curator/catalog")
     def catalog(request: Request, version: Annotated[str, Query(max_length=64)] = ""):
-        players.player(request)
+        # Guests need the names too; they are no secret, but a signed-in ban still applies.
+        players.viewer(request)
         current, items, rarities = app.state.curator.guess_list()
         if version and version == current:
             return {"version": 1, "catalog": current, "unchanged": True}
@@ -165,13 +179,20 @@ def register_curator_game(app, device_user, browser):
         except GameError as error:
             raise HTTPException(error.status, error.detail) from None
 
+    @app.post("/api/v1/games/curator/guest")
+    def guest(body: GuestRound, request: Request):
+        """The website's guest round: judged here, kept only in the browser, never ranked."""
+        browser(request)
+        try:
+            return app.state.curator_game.guest(body.day, body.items)
+        except GameError as error:
+            raise HTTPException(error.status, error.detail) from None
+
     @app.get("/api/v1/games/curator/leaderboard")
     def leaderboard(request: Request):
-        if players.signed_in(request):
-            return app.state.curator_game.leaderboard(players.player(request)["uuid"])
+        if row := players.viewer(request):
+            return app.state.curator_game.leaderboard(row["uuid"])
         # Anyone can see the standings; only signed-in players get their own row and stats.
-        if "origin" in request.headers:
-            browser(request)
         return {**app.state.curator_game.leaderboard(None), "you": None, "stats": None}
 
     @app.get("/api/v1/games/curator/icon/{item}.png")
