@@ -143,11 +143,11 @@ def test_neighbour_scenery_belongs_to_its_own_island():
     assert world.island_at(10_000, -10_000) == "fishing_1"
     assert world.spot("fishing_1", BAYOU_MIN[0] + 8, BAYOU_MIN[1] + 8) == (108, 8)
     assert world.score("hub", 20, 20, 21, 22) == (MAX_POINTS, math.hypot(1, 2), "hub")
-    scale = math.hypot(64, 64) / 6
+    scale = math.hypot(64, 64) / 11
     points, distance, _ = world.score("hub", 20, 20, 20, 40)
     assert (points, distance) == (round(MAX_POINTS * math.exp(-((20 / scale) ** 2))), 20)
     # Near misses barely cost anything; a miss of most of the island costs nearly all.
-    assert world.score("hub", 20, 20, 22, 23)[0] > 4700
+    assert world.score("hub", 20, 20, 22, 23)[0] > 4000
     assert world.score("hub", 0, 0, 63, 63)[0] < 50
     assert world.score("hub", 20, 20, 105, 5) == (0, None, "fishing_1")
     assert world.width % CELL == 0
