@@ -119,6 +119,20 @@ class Health(BaseModel):
     api_version: Literal[1] = 1
 
 
+# Ordinary requests one process works on at once. Past this it answers "busy" straight away,
+# instead of every request slowing down until nginx times out. Clients retry after Retry-After.
+MAX_IN_FLIGHT = 100
+# Held party reads mostly wait for news, and health must stay answerable, so neither counts.
+UNCOUNTED = frozenset(
+    {
+        "/api/v1/health",
+        "/api/v1/party/state",
+        "/api/v1/party/client/state",
+        "/api/v1/party/mod/chat/state",
+    }
+)
+
+
 def create_app(
     *,
     database=None,
@@ -194,6 +208,9 @@ def create_app(
     app.state.releases = releases
     slayer_market = SlayerMarket(**({"loader": slayer_loader} if slayer_loader else {}))
 
+    app.state.max_in_flight = MAX_IN_FLIGHT
+    app.state.in_flight = 0
+
     @app.middleware("http")
     async def limits(request, call_next):
         if request.url.path.startswith(
@@ -235,6 +252,27 @@ def create_app(
         response.headers.setdefault("Cache-Control", "no-store")
         response.headers["X-Content-Type-Options"] = "nosniff"
         return response
+
+    # Registered last, so it runs first: a full process refuses before doing any other work.
+    @app.middleware("http")
+    async def admission(request, call_next):
+        if request.url.path in UNCOUNTED:
+            return await call_next(request)
+        if app.state.in_flight >= app.state.max_in_flight:
+            return JSONResponse(
+                {"detail": "mithril.foo is busy. Try again in a few seconds."},
+                status_code=503,
+                headers={
+                    "Retry-After": "5",
+                    "Cache-Control": "no-store",
+                    "X-Content-Type-Options": "nosniff",
+                },
+            )
+        app.state.in_flight += 1
+        try:
+            return await call_next(request)
+        finally:
+            app.state.in_flight -= 1
 
     def party_access(request):
         authorization = request.headers.get("authorization", "")

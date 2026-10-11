@@ -39,7 +39,8 @@ def main():
             option = socket.SO_EXCLUSIVEADDRUSE if os.name == "nt" else socket.SO_REUSEADDR
             listener.setsockopt(socket.SOL_SOCKET, option, 1)
             listener.bind(("127.0.0.1", port))
-            listener.listen(128)
+            # Bursts should reach the busy answer rather than wait for a free accept slot.
+            listener.listen(1024)
             sockets.append(listener)
         uvicorn.Server(config).run(sockets=sockets)
 

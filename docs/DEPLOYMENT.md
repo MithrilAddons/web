@@ -160,6 +160,16 @@ Short-code guessing also has bounded per-client and global limits in this proces
 Anonymous linking has separate in-process challenge/verification budgets and
 reserved lookup capacity for already-linked players; see API.md for limits.
 These are single-process admission controls, not distributed DDoS protection.
+The process also works on at most 100 ordinary requests at once; past that it answers 503 with
+`Retry-After: 5` straight away instead of letting every request slow down until nginx times out.
+Health and the held party reads (`/api/v1/party/state`, `/api/v1/party/client/state`,
+`/api/v1/party/mod/chat/state`) are not counted. The mod backs off and retries; the website shows
+the busy message.
+
+Each held request uses two nginx connections (browser and backend), so the main
+`/etc/nginx/nginx.conf`, which is not part of this repository, needs room for them: set
+`worker_rlimit_nofile 16384;` at the top level and `worker_connections 4096;` in `events`. Keep
+a copy of the previous file and run `nginx -t` before reloading.
 Do not add workers without shared rate-limit state. Pending-link and established
 credential storage budgets are separate; see API.md. Auth startup adds indexes
 idempotently and cleans up expired/orphaned credentials without invalidating

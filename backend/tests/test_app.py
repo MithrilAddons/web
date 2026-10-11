@@ -39,3 +39,26 @@ def test_untrusted_host_is_rejected(client):
 def test_no_cross_origin_access_is_granted(client):
     response = client.get("/api/v1/health", headers={"Origin": "https://untrusted.invalid"})
     assert "access-control-allow-origin" not in response.headers
+
+
+def test_a_full_process_answers_busy_at_once(client):
+    app = client.app
+    app.state.in_flight = app.state.max_in_flight
+    busy = client.get("/api/v1/games/curator/leaderboard")
+    assert busy.status_code == 503
+    assert busy.headers["retry-after"] == "5"
+    assert busy.headers["cache-control"] == "no-store"
+    assert busy.json() == {"detail": "mithril.foo is busy. Try again in a few seconds."}
+    # Health stays answerable and held party reads are not counted.
+    assert client.get("/api/v1/health").status_code == 200
+    assert client.post("/api/v1/party/state", json={}).status_code != 503
+    app.state.in_flight -= 1
+    assert client.get("/api/v1/games/curator/leaderboard").status_code == 200
+    assert app.state.in_flight == app.state.max_in_flight - 1
+
+
+def test_requests_release_their_slot_even_when_they_fail(client):
+    assert client.get("/api/v1/games/curator/leaderboard").status_code == 200
+    assert client.post("/api/v1/auth/session", content=b"x" * 5000).status_code == 413
+    assert client.get("/api/v1/does-not-exist").status_code == 404
+    assert client.app.state.in_flight == 0
