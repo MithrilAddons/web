@@ -184,6 +184,10 @@
 }
 
 /* Location game captures */
+.capture-kind {
+  margin: 0;
+  min-width: 0;
+}
 .capture-list {
   display: grid;
   gap: 16px;

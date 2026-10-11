@@ -154,7 +154,8 @@ def test_codes_can_be_listed_and_revoked(capture):
     grant(ALICE)
     mod = code(ALICE)
     codes = client.get("/api/v1/capture/account", headers=sessions[ALICE]).json()["codes"]
-    assert len(codes) == 1 and codes[0]["last_used"] is None
+    assert len(codes) == 1
+    assert codes[0]["last_used"] is None
     revoke = client.post(
         "/api/v1/capture/codes/revoke",
         headers=sessions[ALICE],
@@ -186,7 +187,8 @@ def test_a_location_uploads_resumes_and_submits(capture):
     mod = code(ALICE)
     client_id = str(uuids.uuid4())
     created = location(client, mod, client_id).json()
-    assert created["status"] == "uploading" and created["faces"] == []
+    assert created["status"] == "uploading"
+    assert created["faces"] == []
     assert upload(client, mod, created["id"], 0).json()["faces"] == [0]
     assert upload(client, mod, created["id"], 3).json()["faces"] == [0, 3]
     # The same client_id resumes the same location.
@@ -200,7 +202,8 @@ def test_a_location_uploads_resumes_and_submits(capture):
     assert upload(client, mod, created["id"], 0).status_code == 409
     stored = app.state.captures.face_path(created["id"], 0).read_bytes()
     with Image.open(io.BytesIO(stored)) as image:
-        assert "comment" not in image.info and image.size == (1024, 1024)
+        assert "comment" not in image.info
+        assert image.size == (1024, 1024)
     listed = client.get("/api/v1/capture/submissions", headers=mod).json()
     assert listed["locations"][0]["status"] == "submitted"
     assert listed["locations"][0]["client_id"] == client_id
@@ -343,7 +346,8 @@ def test_reviewers_decide_with_a_note(capture):
     location_id = submitted(client, mod)
     uploading = location(client, mod).json()["id"]
     queue = client.get("/api/v1/moderation/captures", headers=sessions[OWNER]).json()
-    assert queue["total"] == 1 and queue["items"][0]["name"] == "Alice"
+    assert queue["total"] == 1
+    assert queue["items"][0]["name"] == "Alice"
     assert "uuid" not in queue["items"][0]
     assert client.get("/api/v1/moderation/captures", headers=sessions[BOB]).status_code == 403
 
@@ -380,7 +384,8 @@ def test_reviewers_decide_with_a_note(capture):
         == 404
     )
     home = client.get("/api/v1/moderation/access", headers=sessions[BOB]).json()
-    assert home["role"] == "reviewer" and home["capture_roles"] == ["reviewer"]
+    assert home["role"] == "reviewer"
+    assert home["capture_roles"] == ["reviewer"]
     assert (
         client.get(f"/api/v1/moderation/player/{ALICE}", headers=sessions[BOB]).status_code == 403
     )
@@ -421,7 +426,8 @@ def test_erasure_keeps_approved_work_without_a_name(capture):
         for row in app.state.records.db.execute("SELECT id, uuid, name FROM capture_locations")
     }
     assert pending not in rows
-    assert rows[approved]["uuid"] is None and rows[approved]["name"] is None
+    assert rows[approved]["uuid"] is None
+    assert rows[approved]["name"] is None
     assert app.state.moderation.capture_roles(ALICE) == []
     app.state.captures.cleanup()
     assert not app.state.captures.face_path(pending, 0).exists()

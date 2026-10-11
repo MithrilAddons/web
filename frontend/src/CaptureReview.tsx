@@ -102,7 +102,8 @@ export function CaptureReview() {
     <section className="content-stack capture-review">
       <h2>Captures</h2>
       <div className="moderation-search">
-        <div className="segmented" role="group" aria-label="Submission type">
+        <fieldset className="segmented capture-kind">
+          <legend className="sr-only">Submission type</legend>
           {(["locations", "maps"] as const).map((value) => (
             <button
               key={value}
@@ -113,9 +114,9 @@ export function CaptureReview() {
               {value === "locations" ? "Locations" : "Maps"}
             </button>
           ))}
-        </div>
+        </fieldset>
         <label>
-          Show
+          Show{" "}
           <select
             value={status}
             onChange={(event) => setStatus(event.target.value as Status)}
@@ -270,7 +271,7 @@ function DecisionForm({
   return (
     <div className="moderation-actions">
       <label>
-        Note for the capturer
+        Note for the capturer{" "}
         <input
           value={note}
           maxLength={500}

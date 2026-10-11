@@ -90,7 +90,7 @@ export function Capture() {
       {account?.roles.includes("capturer") && (
         <>
           {code ? (
-            <div className="capture-code" role="status">
+            <output className="capture-code">
               <p>
                 Paste this code into the capture mod’s welcome screen. It won’t
                 be shown again.
@@ -107,7 +107,7 @@ export function Capture() {
               >
                 {copied ? "Copied" : "Copy code"}
               </button>
-            </div>
+            </output>
           ) : (
             <button
               type="button"

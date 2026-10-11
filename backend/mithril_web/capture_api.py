@@ -75,61 +75,84 @@ def version_tuple(text):
     return tuple(int(part) for part in match.groups()) if match else (0, 0, 0)
 
 
-def register_capture(app, browser, mod):
-    def store() -> CaptureStore:
-        return app.state.captures
+PNG = "image/png"
 
-    def handle(action):
-        try:
-            return action()
-        except CaptureError as error:
-            raise HTTPException(error.status, error.detail) from None
 
-    def capturer(request, write=True):
-        mod(request)
+def handle(action):
+    try:
+        return action()
+    except CaptureError as error:
+        raise HTTPException(error.status, error.detail) from None
+
+
+async def image_body(request):
+    data = await request.body()
+    if len(data) > MAX_IMAGE:
+        raise HTTPException(413, "Images can be at most 8 MiB")
+    if request.headers.get("content-type", "").split(";")[0].strip() != PNG:
+        raise HTTPException(422, "Images must be sent as image/png")
+    return data
+
+
+class CaptureAccess:
+    """Who is asking: the capture mod with an upload code, or a signed-in browser."""
+
+    def __init__(self, app, mod):
+        self.app, self.mod = app, mod
+
+    @property
+    def store(self) -> CaptureStore:
+        return self.app.state.captures
+
+    def _check(self, uuid, request):
+        self.app.state.moderation.check(uuid, request.client.host if request.client else None)
+
+    def capturer(self, request, write=True):
+        self.mod(request)
         authorization = request.headers.get("authorization", "")
         token = authorization[7:] if authorization.startswith("Bearer ") else ""
-        row = app.state.auth.get(token, "capture") if re.fullmatch(CODE_PATTERN, token) else None
+        valid = re.fullmatch(CODE_PATTERN, token)
+        row = self.app.state.auth.get(token, "capture") if valid else None
         if not row:
             raise HTTPException(401, "This upload code isn't valid any more. Create a new one.")
         if request.headers.get("x-capture-player") != row["uuid"]:
             raise HTTPException(403, "This upload code belongs to another Minecraft account")
-        app.state.moderation.check(row["uuid"], request.client.host if request.client else None)
-        if "capturer" not in app.state.moderation.capture_roles(row["uuid"]):
+        self._check(row["uuid"], request)
+        if "capturer" not in self.app.state.moderation.capture_roles(row["uuid"]):
             raise HTTPException(403, "You don't have the Capturer role")
-        if write and version_tuple(request.headers.get("x-capture-version")) < version_tuple(
-            MINIMUM_VERSION
-        ):
+        version = version_tuple(request.headers.get("x-capture-version"))
+        if write and version < version_tuple(MINIMUM_VERSION):
             raise HTTPException(426, "Update the capture mod to upload")
-        store().used(row["token"])
+        self.store.used(row["token"])
         return row
 
-    def session(request):
-        row = app.state.auth.get(request.cookies.get(COOKIE, ""), "session")
+    def session(self, request):
+        row = self.app.state.auth.get(request.cookies.get(COOKIE, ""), "session")
         if not row:
             raise HTTPException(401, "Sign in with your linked Minecraft account")
-        app.state.moderation.check(row["uuid"], request.client.host if request.client else None)
+        self._check(row["uuid"], request)
         return row
 
-    def reviewer(request):
-        row = session(request)
-        if "reviewer" not in app.state.moderation.capture_roles(row["uuid"]):
+    def reviewer(self, request):
+        row = self.session(request)
+        if "reviewer" not in self.app.state.moderation.capture_roles(row["uuid"]):
             raise HTTPException(403, "Reviewer access required")
         return row
 
-    async def image_body(request):
-        data = await request.body()
-        if len(data) > MAX_IMAGE:
-            raise HTTPException(413, "Images can be at most 8 MiB")
-        if request.headers.get("content-type", "").split(";")[0].strip() != "image/png":
-            raise HTTPException(422, "Images must be sent as image/png")
-        return data
 
-    # The capture mod
+def register_capture(app, browser, mod):
+    access = CaptureAccess(app, mod)
+    register_mod_routes(app, access)
+    register_browser_routes(app, access, browser)
+    register_review_routes(app, access, browser)
+
+
+def register_mod_routes(app, access):
+    """What the capture mod calls with its upload code."""
 
     @app.get("/api/v1/capture/me")
     def me(request: Request):
-        row = capturer(request, write=False)
+        row = access.capturer(request, write=False)
         return {
             "version": 1,
             "user": {"uuid": row["uuid"], "name": row["name"]},
@@ -143,57 +166,58 @@ def register_capture(app, browser, mod):
         x: Annotated[float, Query(ge=-1_000_000, le=1_000_000)],
         z: Annotated[float, Query(ge=-1_000_000, le=1_000_000)],
     ):
-        capturer(request, write=False)
-        return {"version": 1, "locations": store().nearby(island, x, z)}
+        access.capturer(request, write=False)
+        return {"version": 1, "locations": access.store.nearby(island, x, z)}
 
     @app.post("/api/v1/capture/locations")
     def create_location(body: NewLocation, request: Request):
-        row = capturer(request)
-        return handle(lambda: store().create_location(row, body))
+        row = access.capturer(request)
+        return handle(lambda: access.store.create_location(row, body))
 
     @app.put("/api/v1/capture/locations/{location_id}/faces/{face}")
     async def upload_face(
         location_id: SubmissionId, face: Annotated[int, Path(ge=0, le=5)], request: Request
     ):
-        row = await run_in_threadpool(capturer, request)
+        row = await run_in_threadpool(access.capturer, request)
         data = await image_body(request)
         return await run_in_threadpool(
-            handle, lambda: store().upload_face(row["uuid"], location_id, face, data)
+            handle, lambda: access.store.upload_face(row["uuid"], location_id, face, data)
         )
 
     @app.post("/api/v1/capture/locations/{location_id}/finish")
     def finish_location(location_id: SubmissionId, body: Body, request: Request):
-        row = capturer(request)
-        return handle(lambda: store().finish_location(row["uuid"], location_id))
+        row = access.capturer(request)
+        return handle(lambda: access.store.finish_location(row["uuid"], location_id))
 
     @app.post("/api/v1/capture/maps")
     def create_map(body: NewMap, request: Request):
-        row = capturer(request)
-        return handle(lambda: store().create_map(row, body))
+        row = access.capturer(request)
+        return handle(lambda: access.store.create_map(row, body))
 
     @app.put("/api/v1/capture/maps/{map_id}/image")
     async def upload_map(map_id: SubmissionId, request: Request):
-        row = await run_in_threadpool(capturer, request)
+        row = await run_in_threadpool(access.capturer, request)
         data = await image_body(request)
         return await run_in_threadpool(
-            handle, lambda: store().upload_map(row["uuid"], map_id, data)
+            handle, lambda: access.store.upload_map(row["uuid"], map_id, data)
         )
 
     @app.get("/api/v1/capture/submissions")
     def submissions(request: Request):
-        return store().submissions(capturer(request, write=False)["uuid"])
+        return access.store.submissions(access.capturer(request, write=False)["uuid"])
 
-    # Capturers in the browser
+
+def register_browser_routes(app, access, browser):
+    """Capturers manage their upload codes from a signed-in browser."""
 
     @app.get("/api/v1/capture/account")
     def account(request: Request):
-        row = session(request)
-        roles = app.state.moderation.capture_roles(row["uuid"])
+        row = access.session(request)
         codes = app.state.auth.capture_codes(row["uuid"])
-        used = store().last_used([code["id"] for code in codes])
+        used = access.store.last_used([code["id"] for code in codes])
         return {
             "version": 1,
-            "roles": roles,
+            "roles": app.state.moderation.capture_roles(row["uuid"]),
             "codes": [
                 {
                     "id": code["id"],
@@ -207,7 +231,7 @@ def register_capture(app, browser, mod):
     @app.post("/api/v1/capture/codes")
     def create_code(body: Body, request: Request):
         browser(request)
-        row = session(request)
+        row = access.session(request)
         if "capturer" not in app.state.moderation.capture_roles(row["uuid"]):
             raise HTTPException(403, "You don't have the Capturer role")
         return {
@@ -218,15 +242,17 @@ def register_capture(app, browser, mod):
     @app.post("/api/v1/capture/codes/revoke")
     def revoke_code(body: RevokeCode, request: Request):
         browser(request)
-        app.state.auth.revoke_capture(session(request)["uuid"], body.id)
+        app.state.auth.revoke_capture(access.session(request)["uuid"], body.id)
         return {"version": 1}
 
-    # The owner and reviewers
+
+def register_review_routes(app, access, browser):
+    """The owner grants roles; reviewers work through the queue."""
 
     @app.post("/api/v1/moderation/capture-role")
     def set_role(body: RoleChange, request: Request):
         browser(request)
-        actor = session(request)["uuid"]
+        actor = access.session(request)["uuid"]
         app.state.moderation.set_capture_role(
             actor, body.uuid, body.role, body.enabled, body.reason.strip()
         )
@@ -243,25 +269,25 @@ def register_capture(app, browser, mod):
         ] = "submitted",
         offset: Annotated[int, Query(ge=0, le=100_000)] = 0,
     ):
-        reviewer(request)
-        return store().review(kind, status, offset)
+        access.reviewer(request)
+        return access.store.review(kind, status, offset)
 
     @app.post("/api/v1/moderation/captures/decide")
     def decide(body: Decision, request: Request):
         browser(request)
-        actor = reviewer(request)["uuid"]
-        handle(lambda: store().decide(actor, body.kind, body.id, body.decision, body.note))
+        actor = access.reviewer(request)["uuid"]
+        handle(lambda: access.store.decide(actor, body.kind, body.id, body.decision, body.note))
         return {"version": 1}
 
     @app.get("/api/v1/moderation/captures/locations/{location_id}/faces/{face}.png")
     def face_image(
         location_id: SubmissionId, face: Annotated[int, Path(ge=0, le=5)], request: Request
     ):
-        reviewer(request)
-        data = handle(lambda: store().image("locations", location_id, face))
-        return Response(data, media_type="image/png")
+        access.reviewer(request)
+        data = handle(lambda: access.store.image("locations", location_id, face))
+        return Response(data, media_type=PNG)
 
     @app.get("/api/v1/moderation/captures/maps/{map_id}.png")
     def map_image(map_id: SubmissionId, request: Request):
-        reviewer(request)
-        return Response(handle(lambda: store().image("maps", map_id)), media_type="image/png")
+        access.reviewer(request)
+        return Response(handle(lambda: access.store.image("maps", map_id)), media_type=PNG)
