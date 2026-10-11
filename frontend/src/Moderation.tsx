@@ -1,13 +1,29 @@
 import { Children, useEffect, useRef, useState } from "react";
+import { CaptureReview } from "./CaptureReview";
 import { CuratorReview } from "./CuratorReview";
 import { request } from "./moderationApi";
 import "./moderation.css";
 
 type Access = {
-  role: "owner" | "moderator";
+  role: "owner" | "moderator" | "reviewer";
   moderators: string[];
   network_bans_available: boolean;
+  capture_roles?: string[];
 };
+type View = "players" | "reports" | "audit" | "curator" | "captures";
+const CAPTURE_ROLES = [
+  ["capturer", "Capturer"],
+  ["reviewer", "Reviewer"],
+] as const;
+
+/** Reviewers who aren't moderators only see the capture review tab. */
+function views(access: Access): View[] {
+  const shown: View[] =
+    access.role === "reviewer" ? [] : ["players", "reports", "audit"];
+  if (access.role === "owner") shown.push("curator");
+  if (access.capture_roles?.includes("reviewer")) shown.push("captures");
+  return shown;
+}
 type RecordRow = {
   id: string;
   floor: string;
@@ -30,6 +46,7 @@ type Player = {
   name?: string;
   records: RecordRow[];
   cases: Case[];
+  capture_roles?: string[];
 };
 type Audit = {
   id: number;
@@ -56,9 +73,7 @@ export function Moderation() {
   const working = useRef(false);
   const actionFocus = useRef<HTMLElement | null>(null);
   const [audit, setAudit] = useState<Audit[]>([]);
-  const [view, setView] = useState<"players" | "reports" | "audit" | "curator">(
-    "players",
-  );
+  const [view, setView] = useState<View>("players");
   const [pending, setPending] = useState<{
     path: string;
     body: Record<string, unknown>;
@@ -75,7 +90,9 @@ export function Moderation() {
     let active = true;
     void request<Access>("access").then(
       (value) => {
-        if (active) setAccess(value);
+        if (!active) return;
+        setAccess(value);
+        if (value.role === "reviewer") setView("captures");
       },
       (err: Error) => {
         if (active) setError(err.message);
@@ -195,10 +212,7 @@ export function Moderation() {
       {access && (
         <>
           <nav className="moderation-tabs" aria-label="Moderation views">
-            {(access.role === "owner"
-              ? (["players", "reports", "audit", "curator"] as const)
-              : (["players", "reports", "audit"] as const)
-            ).map((item) => (
+            {views(access).map((item) => (
               <button
                 key={item}
                 aria-pressed={view === item}
@@ -214,6 +228,7 @@ export function Moderation() {
                     reports: "Chat reports",
                     audit: "Audit log",
                     curator: "Curator",
+                    captures: "Captures",
                   }[item]
                 }
               </button>
@@ -470,6 +485,29 @@ export function Moderation() {
                         ? "Revoke moderator"
                         : "Grant moderator"}
                     </button>
+                    <h3>Location game roles</h3>
+                    <div className="moderation-actions">
+                      {CAPTURE_ROLES.map(([role, label]) => {
+                        const has = player.capture_roles?.includes(role);
+                        return (
+                          <button
+                            key={role}
+                            type="button"
+                            className="secondary"
+                            disabled={busy}
+                            onClick={() =>
+                              mutate("capture-role", {
+                                uuid: player.uuid,
+                                role,
+                                enabled: !has,
+                              })
+                            }
+                          >
+                            {has ? `Remove ${label}` : `Make ${label}`}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </section>
                 )}
               </>
@@ -491,6 +529,7 @@ export function Moderation() {
             />
           )}
           {view === "curator" && <CuratorReview />}
+          {view === "captures" && <CaptureReview />}
           {view === "audit" && (
             <section className="content-stack">
               <h2>Audit log</h2>
@@ -765,6 +804,8 @@ function actionTitle(path: string, body: Record<string, unknown>) {
   }
   if (path === "access")
     return body.enabled ? "Grant moderator access" : "Revoke moderator access";
+  if (path === "capture-role")
+    return `${body.enabled ? "Grant" : "Remove"} the ${String(body.role)} role`;
   const action = typeof body.action === "string" ? body.action : path;
   return action.replaceAll("_", " ");
 }

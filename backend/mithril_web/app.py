@@ -21,6 +21,8 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.responses import JSONResponse
 
 from .auth import COOKIE, DAY, AuthAttempts, AuthStore, CodeAttempts, mojang_profile
+from .capture import CaptureStore
+from .capture_api import register_capture
 from .curator_api import register_curator, register_curator_game
 from .curator_data import CuratorData
 from .curator_game import CuratorGame
@@ -151,6 +153,7 @@ def create_app(
             Path(path).with_name("curator.sqlite3"), loader=curator_loader, clock=clock or time.time
         )
         app.state.curator_game = CuratorGame(app.state.curator, app.state.records)
+        app.state.captures = CaptureStore(app.state.records, Path(path).with_name("captures"))
 
         async def cleanup():
             while True:
@@ -159,6 +162,7 @@ def create_app(
                 await run_in_threadpool(app.state.records.cleanup)
                 await run_in_threadpool(app.state.moderation.cleanup)
                 await run_in_threadpool(app.state.privacy.cleanup)
+                await run_in_threadpool(app.state.captures.cleanup)
 
         tasks = [
             asyncio.create_task(cleanup()),
@@ -199,13 +203,19 @@ def create_app(
                 "/api/v1/records/",
                 "/api/v1/moderation/",
                 "/api/v1/games/",
+                "/api/v1/capture/",
             )
         ):
             # Nginx also bounds streaming requests; do not accept chunked auth bodies.
             length = request.headers.get("content-length", "0")
-            maximum = 640 * 1024 if request.url.path == "/api/v1/records/solo-progress" else 4096
+            maximum = 4096
+            if request.url.path == "/api/v1/records/solo-progress":
+                maximum = 640 * 1024
+            elif request.method == "PUT" and request.url.path.startswith("/api/v1/capture/"):
+                maximum = 8 * 1024 * 1024  # one panorama face or one island map
+
             if (
-                len(length) > 6
+                len(length) > 7
                 or not length.isdigit()
                 or int(length) > maximum
                 or "transfer-encoding" in request.headers
@@ -711,6 +721,7 @@ def create_app(
     register_moderation(app, browser, name_lookup)
     register_curator(app, browser)
     register_curator_game(app, device_user, browser)
+    register_capture(app, browser, mod)
     register_privacy(app, browser, skins, cards, device_user)
 
     app.add_middleware(

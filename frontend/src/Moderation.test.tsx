@@ -43,6 +43,8 @@ function server(role = "owner", data: Record<string, object> = {}) {
         body = { uuid, records: [record], cases: [] };
       if (path === "chat") body = { reports: [] };
       if (path === "audit") body = { entries: [] };
+      if (path.startsWith("captures?"))
+        body = { total: 0, items: [], current_maps: {} };
       body = data[path] ?? body;
     }
     return new Response(JSON.stringify(body), { status: 200 });
@@ -360,4 +362,62 @@ it("loads each queue on entry and distinguishes an empty result", async () => {
   expect(
     await screen.findByText("No moderator actions recorded."),
   ).toBeTruthy();
+});
+
+it("lets the owner grant location game roles", async () => {
+  const fetcher = server("owner", {
+    access: {
+      role: "owner",
+      moderators: [],
+      network_bans_available: false,
+      capture_roles: ["capturer", "reviewer"],
+    },
+    [`player/${uuid}`]: {
+      uuid,
+      records: [],
+      cases: [],
+      capture_roles: ["reviewer"],
+    },
+  });
+  render(<Moderation />);
+  await find();
+  expect(screen.getByRole("button", { name: "Remove Reviewer" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Make Capturer" }));
+  expect(await screen.findByText("Grant the capturer role")).toBeTruthy();
+  await confirmAction("Helping with captures");
+  await screen.findByText("Saved.");
+  expect(fetcher).toHaveBeenCalledWith(
+    "/api/v1/moderation/capture-role",
+    expect.objectContaining({
+      body: JSON.stringify({
+        version: 1,
+        uuid,
+        role: "capturer",
+        enabled: true,
+        reason: "Helping with captures",
+      }),
+    }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Captures" }));
+  expect(await screen.findByText("Nothing here.")).toBeTruthy();
+});
+
+it("shows reviewers who aren't moderators only the capture review", async () => {
+  server("reviewer", {
+    access: {
+      role: "reviewer",
+      moderators: [],
+      network_bans_available: false,
+      capture_roles: ["reviewer"],
+    },
+    "captures?kind=locations&status=submitted&offset=0": {
+      total: 0,
+      items: [],
+      current_maps: {},
+    },
+  });
+  render(<Moderation />);
+  expect(await screen.findByText("Nothing here.")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Players & cases" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Captures" })).toBeTruthy();
 });

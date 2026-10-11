@@ -249,7 +249,7 @@ class AuthStore:
             query += " AND remembered=?"
             params.append(remembered)
         count = self.db.execute(query, params).fetchone()[0]
-        established = kind in ("session", "device", "party", "sync") or (
+        established = kind in ("session", "device", "party", "sync", "capture") or (
             kind == "receipt" and remembered
         )
         if count + additional > (CREDENTIAL_LIMIT if established else PENDING_LIMIT):
@@ -350,6 +350,39 @@ class AuthStore:
                 "DELETE FROM auth WHERE server_id=? AND kind IN ('receipt','party','sync')",
                 (device_id,),
             )
+
+    def capture_codes(self, uuid):
+        """A capturer's upload codes: their stored digests (the codes themselves are never kept)."""
+        with self.lock:
+            return [
+                dict(row)
+                for row in self.db.execute(
+                    "SELECT token AS id, expires FROM auth WHERE uuid=? AND kind='capture' "
+                    "AND expires>? ORDER BY expires DESC",
+                    (uuid, self.clock()),
+                )
+            ]
+
+    def issue_capture(self, uuid, name, seconds):
+        with self.lock, self.db:
+            count = self.db.execute(
+                "SELECT COUNT(*) FROM auth WHERE uuid=? AND kind='capture' AND expires>?",
+                (uuid, self.clock()),
+            ).fetchone()[0]
+            if count >= 10:
+                raise HTTPException(409, "Revoke an old upload code before creating another")
+            return self._issue("capture", uuid, name, seconds)
+
+    def revoke_capture(self, uuid, code_id=None):
+        """Revokes one upload code by its id, or all of a player's codes."""
+        with self.lock, self.db:
+            if code_id is None:
+                self.db.execute("DELETE FROM auth WHERE uuid=? AND kind='capture'", (uuid,))
+                return
+            if not self.db.execute(
+                "DELETE FROM auth WHERE token=? AND uuid=? AND kind='capture'", (code_id, uuid)
+            ).rowcount:
+                raise HTTPException(404, "Upload code not found")
 
     def _revoke(self, token):
         self.db.execute("DELETE FROM auth WHERE token=? AND kind='session'", (digest(token),))

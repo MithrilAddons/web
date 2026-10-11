@@ -139,6 +139,15 @@ its item textures in `curator_icons` in curator.sqlite3. Head icons are fetched 
 the same table. No Hypixel or Mojang art is stored in this repository. After deployment,
 verify that a pack item and a head item return an icon.
 
+Location game captures add the idempotent `capture_locations`, `capture_maps`,
+`capture_code_use` and `capture_roles` tables to records.sqlite3 and keep images in a
+`captures` folder beside the databases (about 9 MB per location). Back the folder up with the
+databases; the hourly cleanup deletes files no row points at and rejected submissions after 30
+days. Install the updated nginx configuration with the release: `/api/v1/capture/` has its own
+zone (120 requests/minute/IP, burst 60) and accepts 8 MiB bodies there only, and the backend
+allows 8 MiB only for capture PUTs. After deployment, verify the capture routes refuse requests
+without an upload code and the review endpoints refuse non-reviewers.
+
 API responses are not publicly cached. Authentication has an nginx limit of
 30 requests/minute/IP (burst 15), party routes 60/minute/IP (burst 30).
 Bodies are limited to 4 KiB. Held party state requests need a 40-second proxy
