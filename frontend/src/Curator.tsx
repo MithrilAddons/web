@@ -180,9 +180,9 @@ function TodayView() {
   const load = useCallback(() => {
     const round = guest.current
       ? getGuestToday()
-      : getToday().catch((problem: unknown) => {
-          if (!(problem instanceof CuratorError) || problem.status !== 401)
-            throw problem;
+      : getToday().catch((error_: unknown) => {
+          if (!(error_ instanceof CuratorError) || error_.status !== 401)
+            throw error_;
           guest.current = true;
           setAsGuest(true);
           return getGuestToday();
