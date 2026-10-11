@@ -413,7 +413,11 @@ export function hint(column: Column, feedback: Feedback) {
   return "Doesn't match the answer";
 }
 
-export type CatalogItem = readonly [id: string, name: string];
+export type CatalogItem = readonly [
+  id: string,
+  name: string,
+  rarity?: string | null,
+];
 
 /** Up to `limit` names starting with the text, then names with a word starting with it. */
 export function suggestions(

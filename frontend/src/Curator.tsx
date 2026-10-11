@@ -441,7 +441,9 @@ function GuessBox({
                   }}
                   onMouseEnter={() => setActive(index)}
                 >
-                  {item[1]}
+                  <span style={{ color: RARITY_COLOUR[item[2] ?? ""] }}>
+                    {item[1]}
+                  </span>
                 </li>
               );
             })}

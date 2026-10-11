@@ -138,25 +138,35 @@ export async function getCatalog(): Promise<CatalogItem[]> {
   const cached = cachedCatalog();
   const query = cached ? `?version=${encodeURIComponent(cached.catalog)}` : "";
   const response = await request<
-    | { catalog: string; unchanged: true }
-    | { catalog: string; items: CatalogItem[] }
+    { catalog: string; unchanged: true } | CatalogResponse
   >(`/catalog${query}`);
   if ("unchanged" in response && cached) return cached.items;
-  if (!("items" in response)) return getCatalogFresh();
+  if (!("items" in response)) return withRarities(await request("/catalog"));
+  const items = withRarities(response);
   try {
     localStorage.setItem(
       CATALOG_KEY,
-      JSON.stringify({ catalog: response.catalog, items: response.items }),
+      JSON.stringify({ catalog: response.catalog, items }),
     );
   } catch {
     // Storage may be full or disabled; the list still works for this visit.
   }
-  return response.items;
+  return items;
 }
 
-async function getCatalogFresh() {
-  const response = await request<{ items: CatalogItem[] }>("/catalog");
-  return response.items;
+type CatalogResponse = {
+  catalog: string;
+  items: [string, string][];
+  rarities?: (string | null)[];
+};
+
+/** Each item with its rarity, which the API sends beside the [id, name] pairs. */
+function withRarities(response: CatalogResponse): CatalogItem[] {
+  return response.items.map(([id, name], index) => [
+    id,
+    name,
+    response.rarities?.[index] ?? null,
+  ]);
 }
 
 export function iconUrl(item: string) {
