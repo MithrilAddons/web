@@ -118,6 +118,9 @@
 .world-answer {
   background: var(--success);
 }
+.world-opponent {
+  background: var(--danger);
+}
 .world-map-line {
   position: absolute;
   inset: 0;
@@ -158,7 +161,104 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Duels */
+.duel-lobby {
+  display: grid;
+  gap: 16px;
+}
+.duel-ways {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+.duel-ways h2,
+.duel-join h2 {
+  margin: 0;
+}
+.duel-name input {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+}
+.duel-incoming {
+  border-color: var(--accent);
+}
+.duel-incoming p {
+  margin: 0;
+}
+.duel-invite {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.duel-invite code {
+  overflow-wrap: anywhere;
+}
+.duel-history {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  max-width: 420px;
+  margin: 0;
+  padding-left: 20px;
+}
+.duel-history li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.duel-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
+  font-variant-numeric: tabular-nums;
+}
+.duel-middle {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  text-align: center;
+}
+.duel-middle .solo-clock {
+  margin: 0;
+  text-align: center;
+}
+.duel-multiplier {
+  color: var(--danger);
+}
+.duel-health {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 8px;
+}
+.duel-health:last-child {
+  text-align: right;
+}
+.duel-health meter {
+  grid-column: 1 / -1;
+  width: 100%;
+  height: 10px;
+}
+.duel-health-value {
+  font-weight: 600;
+}
+.duel-status {
+  margin: 0;
+}
+.duel-leave {
+  justify-self: start;
+}
+
 @media (max-width: 760px) {
+  .duel-bar {
+    grid-template-columns: 1fr 1fr;
+  }
+  .duel-middle {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
   .solo-map-toggle {
     display: inline-flex;
   }

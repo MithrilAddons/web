@@ -12,19 +12,28 @@ import {
   type Run,
   type World,
 } from "./locationsApi";
+import { DuelBoard } from "./LocationBoard";
+import { Duels } from "./LocationDuels";
+import { Countdown, guessDetail, message, points } from "./locationsShared";
 import { Panorama } from "./Panorama";
 import { WorldMap } from "./WorldMap";
 import "./locations.css";
 
 const BEST_KEY = "mithril.locations.best";
+const VIEW_KEY = "mithril.locations.view";
 const MAX_RUN = 25_000;
-// The server allows a guess one second late; ask for the result a little after that.
-const SETTLE_MS = 1200;
+const WORLD_RETRY_MS = 5000;
 
-function message(problem: unknown) {
-  return problem instanceof LocationsError
-    ? problem.message
-    : "Something went wrong. Try again.";
+type View = "solo" | "duel" | "board";
+
+function storedView(): View {
+  if (new URLSearchParams(window.location.search).has("join")) return "duel";
+  try {
+    const value = localStorage.getItem(VIEW_KEY);
+    return value === "duel" || value === "board" ? value : "solo";
+  } catch {
+    return "solo";
+  }
 }
 
 function storedBest() {
@@ -50,10 +59,9 @@ function recordGuestBest(total: number) {
   return { best: before, beaten: false };
 }
 
-const points = (value: number) => value.toLocaleString("en-US");
-
-/** The location game (working name): solo runs on the website for now. */
+/** The location game (working name): solo runs, duels and the duel leaderboard. */
 export function Locations() {
+  const [view, setView] = useState<View>(storedView);
   const [world, setWorld] = useState<World | null>(null);
   const [me, setMe] = useState<Me | null>(null);
   const [run, setRun] = useState<Run | null>(null);
@@ -67,10 +75,21 @@ export function Locations() {
   }, []);
 
   useEffect(() => {
-    getWorld()
-      .then(setWorld)
-      .catch((error_: unknown) => setError(message(error_)));
+    // The map is needed for every game, so keep asking until it arrives.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const load = () =>
+      getWorld()
+        .then((value) => {
+          setWorld(value);
+          setError("");
+        })
+        .catch((error_: unknown) => {
+          setError(message(error_));
+          timer = setTimeout(load, WORLD_RETRY_MS);
+        });
+    void load();
     refresh();
+    return () => clearTimeout(timer);
   }, [refresh]);
 
   const start = async () => {
@@ -91,10 +110,19 @@ export function Locations() {
     refresh();
   };
 
-  return (
-    <>
-      <title>Locations · Mithril</title>
-      {run && world ? (
+  const choose = (next: View) => {
+    setView(next);
+    try {
+      localStorage.setItem(VIEW_KEY, next);
+    } catch {
+      // The choice just isn't remembered.
+    }
+  };
+
+  if (run && world)
+    return (
+      <>
+        <title>Locations · Mithril</title>
         <SoloRun
           key={run.id}
           world={world}
@@ -102,17 +130,43 @@ export function Locations() {
           onAgain={() => void start()}
           onLeave={leave}
         />
-      ) : (
-        <section className="locations-start">
-          <div className="page-heading">
-            <div>
-              <h1>Locations</h1>
-              <p className="quiet-label">
-                Look around a spot in SkyBlock and find it on the map. Five
-                rounds, 25 seconds each, up to 5,000 points a round.
-              </p>
-            </div>
+      </>
+    );
+  return (
+    <>
+      <title>Locations · Mithril</title>
+      <section className="locations-start">
+        <div className="page-heading">
+          <div>
+            <h1>Locations</h1>
+            <p className="quiet-label">
+              Look around a spot in SkyBlock and find it on the map, against the
+              clock or against another player.
+            </p>
           </div>
+          <fieldset className="segmented curator-views">
+            <legend className="sr-only">Locations view</legend>
+            {(
+              [
+                ["solo", "Solo"],
+                ["duel", "Duel"],
+                ["board", "Leaderboard"],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={view === value}
+                onClick={() => choose(value)}
+              >
+                {label}
+              </button>
+            ))}
+          </fieldset>
+        </div>
+        {view === "duel" && <Duels world={world} me={me} onChanged={refresh} />}
+        {view === "board" && <DuelBoard />}
+        {view === "solo" && (
           <div className="curator-panel locations-panel">
             <h2>Solo</h2>
             <Best me={me} />
@@ -124,6 +178,9 @@ export function Locations() {
             >
               Start a run
             </button>
+            <p className="quiet-label">
+              Five rounds, 25 seconds each, up to 5,000 points a round.
+            </p>
             {me?.kind === "guest" && (
               <p className="quiet-label">
                 Playing as a guest: your best stays in this browser.{" "}
@@ -131,9 +188,9 @@ export function Locations() {
               </p>
             )}
           </div>
-          {error && <p role="alert">{error}</p>}
-        </section>
-      )}
+        )}
+        {error && <p role="alert">{error}</p>}
+      </section>
     </>
   );
 }
@@ -293,49 +350,11 @@ function SoloRun({
   );
 }
 
-function Countdown({
-  deadline,
-  offset,
-  onExpired,
-}: Readonly<{
-  deadline: number;
-  offset: { current: number };
-  onExpired: () => void;
-}>) {
-  const remaining = () => deadline * 1000 - (Date.now() + offset.current);
-  const [left, setLeft] = useState(remaining);
-  const expired = useRef(onExpired);
-  expired.current = onExpired;
-  useEffect(() => {
-    let done = false;
-    const timer = setInterval(() => {
-      const value = deadline * 1000 - (Date.now() + offset.current);
-      setLeft(value);
-      if (!done && value < -SETTLE_MS) {
-        done = true;
-        expired.current();
-      }
-    }, 200);
-    return () => clearInterval(timer);
-  }, [deadline, offset]);
-  const seconds = Math.max(0, Math.ceil(left / 1000));
-  return (
-    <span className="solo-clock" data-low={seconds <= 5 ? "true" : undefined}>
-      {seconds > 0 ? `${seconds}s` : "Time’s up"}
-    </span>
-  );
-}
-
 function RoundResult({
   world,
   result,
 }: Readonly<{ world: World; result: Run["results"][number] }>) {
-  const guessed = world.islands.find((island) => island.key === result.guessed);
-  let detail: string;
-  if (!result.pin) detail = "No guess in time.";
-  else if (result.distance === null)
-    detail = `Wrong island: you picked ${guessed?.name ?? "the void"}.`;
-  else detail = `${Math.round(result.distance)} blocks away.`;
+  const detail = guessDetail(world, result);
   return (
     <div className="solo-result" aria-live="polite">
       <p className="solo-score">+{points(result.score)}</p>

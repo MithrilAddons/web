@@ -76,11 +76,14 @@ export function WorldMap({
   pin,
   answer,
   onPin,
+  opponent,
 }: Readonly<{
   world: World;
   pin: Point | null;
   answer?: Point | null;
   onPin?: (point: Point) => void;
+  /** The other duellist's pin, shown once a round is revealed. */
+  opponent?: { pin: Point | null; name: string } | null;
 }>) {
   const box = useRef<HTMLDivElement>(null);
   const [view, setView] = useState<View | null>(null);
@@ -97,8 +100,8 @@ export function WorldMap({
   }, []);
 
   // Only a new map or a reveal reframes; placing the pin keeps the player's view.
-  const pinned = useRef(pin);
-  pinned.current = pin;
+  const pinned = useRef([pin, opponent?.pin ?? null]);
+  pinned.current = [pin, opponent?.pin ?? null];
   useLayoutEffect(() => {
     const element = box.current;
     if (!element) return;
@@ -111,8 +114,8 @@ export function WorldMap({
         setView(fitted);
         return;
       }
-      const guess = pinned.current;
-      setView(frame(world, guess ? [guess, answer] : [answer], width, height));
+      const guesses = pinned.current.filter((point): point is Point => !!point);
+      setView(frame(world, [...guesses, answer], width, height));
     };
     reframe();
     // A resized panel (a turned phone, the sheet opening) shows the whole map again.
@@ -218,15 +221,28 @@ export function WorldMap({
           }}
         />
       )}
-      {view && pin && answer && (
+      {view && answer && (pin || opponent?.pin) && (
         <svg className="world-map-line" aria-hidden="true">
-          <line
-            x1={place(pin)!.left}
-            y1={place(pin)!.top}
-            x2={place(answer)!.left}
-            y2={place(answer)!.top}
-          />
+          {[pin, opponent?.pin].map(
+            (point, index) =>
+              point && (
+                <line
+                  key={index === 0 ? "you" : "opponent"}
+                  x1={place(point)!.left}
+                  y1={place(point)!.top}
+                  x2={place(answer)!.left}
+                  y2={place(answer)!.top}
+                />
+              ),
+          )}
         </svg>
+      )}
+      {opponent?.pin && view && (
+        <span
+          className="world-pin world-opponent"
+          style={place(opponent.pin)}
+          title={`${opponent.name}'s guess`}
+        />
       )}
       {pin && view && (
         <span className="world-pin" style={place(pin)} title="Your guess" />
