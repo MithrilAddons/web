@@ -6,7 +6,6 @@ Each live location's six faces are packed into one WebP image, so a round costs 
 """
 
 import io
-import random
 import secrets
 import threading
 from dataclasses import dataclass, field
@@ -24,6 +23,8 @@ RUN_KEPT = 3600
 MAX_RUNS = 5000
 GUEST_SEEN_KEPT = 30 * 86400
 FACE = 1024
+# Picks and shuffles locations; the system source keeps the order unpredictable.
+_random = secrets.SystemRandom()
 
 
 class GameError(Exception):
@@ -148,10 +149,10 @@ class LocationGame:
         ids = list(self.pool)
         if len(ids) < ROUNDS:
             raise GameError(503, "Not enough locations yet. Check back soon.")
-        random.shuffle(ids)
+        _random.shuffle(ids)
         ids.sort(key=lambda location_id: seen.get(location_id, 0))
         chosen = ids[:ROUNDS]
-        random.shuffle(chosen)
+        _random.shuffle(chosen)
         return [self.pool[location_id] for location_id in chosen]
 
     def _issue(self, run, index, now):

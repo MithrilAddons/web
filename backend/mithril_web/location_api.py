@@ -85,13 +85,17 @@ class Players:
 
 def register_locations(app, browser, clock=time.monotonic):
     players = Players(app, browser, clock)
+    register_world(app)
+    register_player(app, browser, players)
+    register_solo(app, browser, players)
 
-    def game():
-        return app.state.locations
+
+def register_world(app):
+    """The guessing map, public and cached by revision."""
 
     @app.get("/api/v1/games/locations/world")
     def world():
-        current = game().world
+        current = app.state.locations.world
         if not current:
             raise HTTPException(503, "The game is getting ready. Try again in a moment.")
         return {
@@ -102,7 +106,7 @@ def register_locations(app, browser, clock=time.monotonic):
 
     @app.get("/api/v1/games/locations/world/{revision}.png")
     def world_image(revision: Annotated[str, Path(pattern=r"^[0-9a-f]{16}$")]):
-        current = game().world
+        current = app.state.locations.world
         if not current or current.revision != revision:
             raise HTTPException(404, "This map has been replaced")
         return Response(
@@ -111,6 +115,8 @@ def register_locations(app, browser, clock=time.monotonic):
             headers={"Cache-Control": "public, max-age=86400, immutable"},
         )
 
+
+def register_player(app, browser, players):
     @app.get("/api/v1/games/locations/me")
     def me(request: Request):
         if "origin" in request.headers:
@@ -121,9 +127,15 @@ def register_locations(app, browser, clock=time.monotonic):
             if error.status_code != 401:
                 raise
             return {"version": 1, "kind": "guest", "name": None, "solo": None}
-        solo = game().best(who["uuid"]) if who["uuid"] else None
-        kind = "linked" if who["uuid"] else "guest"
-        return {"version": 1, "kind": kind, "name": who["name"], "solo": solo}
+        if not who["uuid"]:
+            return {"version": 1, "kind": "guest", "name": who["name"], "solo": None}
+        solo = app.state.locations.best(who["uuid"])
+        return {"version": 1, "kind": "linked", "name": who["name"], "solo": solo}
+
+
+def register_solo(app, browser, players):
+    def game():
+        return app.state.locations
 
     @app.post("/api/v1/games/locations/solo")
     def start(body: Body, request: Request, response: Response):
