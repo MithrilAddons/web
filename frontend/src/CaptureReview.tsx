@@ -3,7 +3,12 @@ import { request } from "./moderationApi";
 
 type Kind = "locations" | "maps";
 type Status =
-  "submitted" | "approved" | "changes_requested" | "rejected" | "all";
+  | "submitted"
+  | "approved"
+  | "changes_requested"
+  | "rejected"
+  | "retired"
+  | "all";
 type Corners = { min_x: number; min_z: number; max_x: number; max_z: number };
 type Submission = Corners & {
   id: string;
@@ -30,6 +35,7 @@ const STATUS: Record<Status, string> = {
   approved: "Approved",
   changes_requested: "Changes requested",
   rejected: "Rejected",
+  retired: "Retired",
   all: "All",
 };
 // Minecraft's panorama order, laid out as an unfolded cube.
@@ -46,6 +52,7 @@ const DONE: Record<string, string> = {
   approve: "Approved.",
   changes: "Sent back.",
   reject: "Rejected.",
+  retire: "Retired: it's out of the game.",
 };
 
 export function CaptureReview() {
@@ -148,10 +155,24 @@ export function CaptureReview() {
                 onDecide={(decision, note) => void decide(item, decision, note)}
               />
             ) : (
-              <p className="quiet-label">
-                {STATUS[item.status as Status] ?? item.status}
-                {item.reviewer_note ? ` · ${item.reviewer_note}` : ""}
-              </p>
+              <div className="moderation-actions">
+                <p className="quiet-label">
+                  {item.status === "approved" && kind === "locations"
+                    ? "Live in the game"
+                    : (STATUS[item.status as Status] ?? item.status)}
+                  {item.reviewer_note ? ` · ${item.reviewer_note}` : ""}
+                </p>
+                {item.status === "approved" && kind === "locations" && (
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={busy}
+                    onClick={() => void decide(item, "retire", "")}
+                  >
+                    Retire
+                  </button>
+                )}
+              </div>
             )}
           </li>
         ))}

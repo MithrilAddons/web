@@ -34,6 +34,12 @@ class RecordStore:
                 guesses TEXT NOT NULL, solved INTEGER NOT NULL, finished REAL,
                 PRIMARY KEY(day, uuid));
             CREATE INDEX IF NOT EXISTS curator_player ON curator_results(uuid, day);
+            CREATE TABLE IF NOT EXISTS location_seen (
+                player TEXT NOT NULL, location TEXT NOT NULL, seen REAL NOT NULL,
+                PRIMARY KEY(player, location));
+            CREATE TABLE IF NOT EXISTS location_solo_best (
+                uuid TEXT PRIMARY KEY, best INTEGER NOT NULL, runs INTEGER NOT NULL,
+                points INTEGER NOT NULL, updated REAL NOT NULL);
             CREATE TABLE IF NOT EXISTS pb_maps (
                 uuid TEXT NOT NULL, floor TEXT NOT NULL, record_id TEXT NOT NULL UNIQUE,
                 data BLOB NOT NULL, PRIMARY KEY(uuid,floor));

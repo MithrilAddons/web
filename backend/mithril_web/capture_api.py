@@ -66,7 +66,7 @@ class RoleChange(Body):
 class Decision(Body):
     kind: Literal["locations", "maps"]
     id: Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]{22}$")]
-    decision: Literal["approve", "changes", "reject"]
+    decision: Literal["approve", "changes", "reject", "retire"]
     note: Annotated[str, Field(max_length=500)] = ""
 
 
@@ -267,7 +267,7 @@ def register_review_routes(app, access, browser):
         request: Request,
         kind: Literal["locations", "maps"] = "locations",
         status: Literal[
-            "submitted", "approved", "changes_requested", "rejected", "all"
+            "submitted", "approved", "changes_requested", "rejected", "retired", "all"
         ] = "submitted",
         offset: Annotated[int, Query(ge=0, le=100_000)] = 0,
     ):
@@ -279,6 +279,8 @@ def register_review_routes(app, access, browser):
         browser(request)
         actor = access.reviewer(request)["uuid"]
         handle(lambda: access.store.decide(actor, body.kind, body.id, body.decision, body.note))
+        # Approvals and retirements change the game's map or its pool straight away.
+        app.state.locations.refresh()
         return {"version": 1}
 
     @app.get("/api/v1/moderation/captures/locations/{location_id}/faces/{face}.png")

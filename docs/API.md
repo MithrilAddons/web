@@ -561,6 +561,45 @@ account's capture roles and upload codes (`id`, `created`, `last_used`);
 `POST /api/v1/capture/codes` creates a code (shown once; at most 10) and
 `POST /api/v1/capture/codes/revoke` takes an `id`. Both POSTs need the site's Origin.
 
+## Location game
+
+The website plays solo runs; duels and the mod come later. Signed-in visitors play as their
+linked account. Everyone else plays as a guest: the first run sets a `mithril_guest` cookie
+(HttpOnly, 30 days, path `/api/v1/games/locations`) of which only a hash is kept. New guests are
+limited per IP, and network bans apply to guests too. POSTs need the site's Origin.
+
+`GET /api/v1/games/locations/world` describes the guessing map: `revision`, the world position
+(`x`, `z`) of its top-left block, `width` and `height` in blocks (one pixel per block), the
+`islands` (`key`, `name`, `box` as x0, z0, x1, z1 in blocks) and `image`, a PNG URL that is
+cached for a day and changes with the revision. The map combines each island's latest approved
+map; islands in separate worlds are shifted beside their neighbours. Each 4×4-block patch
+belongs to one island, so a neighbour's scenery counts as the neighbour, and the void counts as
+the nearest island. It answers 503 until a map is approved.
+
+`POST /api/v1/games/locations/solo` starts a run of 5 rounds from the live locations the player
+has seen least (503 when there are fewer than 5). Starting again ends the player's earlier run.
+Every run route returns the run's state: `id`, `round`, `rounds`, `timer` (25 seconds), `state`
+(loading, playing, revealed or finished), server `now`, `results` and `total`. While loading or
+playing it includes `panorama`, the round's image: the six faces in Minecraft's panorama order,
+three across and two down, as one WebP whose URL never repeats between rounds. Playing adds the
+`deadline`. Each result has the `score` (up to 5,000), the `distance` in blocks (null on the
+wrong island or without a guess), the island `guessed`, the `pin`, the `answer` (island, name,
+x, z) and who captured it. A finished run by a linked player adds `best` (best, runs, average,
+new_best).
+
+`GET /api/v1/games/locations/solo/{id}` returns the state. `POST .../ready` with `round` starts
+the round's clock once the panorama is on screen; a round starts by itself 20 seconds after it
+was handed out. `POST .../guess` takes `round`, `x` and `z` in world blocks, up to one second
+past the deadline; a round that runs out scores 0. `POST .../next` moves to the next round. A
+stale round or a run that has ended answers 409 or 404.
+
+`GET /api/v1/games/locations/me` returns `kind` (linked or guest), the player's name (Guest #1234
+for guests) and, for linked players, their solo `best`, `runs` and `average`.
+
+Runs live in memory, so a restart ends them. Which locations a player has seen and linked
+players' solo bests are in records.sqlite3 (`location_seen`, `location_solo_best`); erasing
+records removes them, and guests' rows go after 30 days.
+
 ## Operations and limits
 
 Release metadata for the Discord bot may include an optional `checks` object:
@@ -780,7 +819,9 @@ Reviewers (and the owner) use `GET /api/v1/moderation/captures?kind=locations|ma
 (25 per page, newest first, with each island's current approved map and its corners),
 `GET /api/v1/moderation/captures/locations/{id}/faces/{n}.png`,
 `GET /api/v1/moderation/captures/maps/{id}.png` and `POST /api/v1/moderation/captures/decide`
-with `kind`, `id`, `decision` (`approve`, `changes` or `reject`) and a `note`, required unless
-approving. The latest approved map is an island's current map. Rejected submissions are deleted
+with `kind`, `id`, `decision` (`approve`, `changes`, `reject` or `retire`) and a `note`,
+required to send back or reject. Approved locations are live in the location game; `retire`
+takes a live location out of it (409 for anything else), and approving it again brings it back.
+The latest approved map is an island's current map. Rejected submissions are deleted
 after 30 days. Erasing an account deletes its unreviewed submissions and keeps approved ones
 without the capturer's name.

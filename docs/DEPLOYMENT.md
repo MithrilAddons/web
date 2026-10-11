@@ -141,8 +141,10 @@ verify that a pack item and a head item return an icon.
 
 Location game captures add the idempotent `capture_locations`, `capture_maps`,
 `capture_code_use` and `capture_roles` tables to records.sqlite3 and keep images in a
-`captures` folder beside the databases (about 9 MB per location). Back the folder up with the
-databases; the hourly cleanup deletes files no row points at and rejected submissions after 30
+`captures` folder beside the databases (about 9 MB per location). The location game adds
+`location_seen` and `location_solo_best` to records.sqlite3 and keeps one WebP per live location
+in `captures/game`, rebuilt from the faces when missing (the first start after deployment packs
+them, a few seconds). Back the folder up with the databases; the hourly cleanup deletes files no row points at and rejected submissions after 30
 days. Install the updated nginx configuration with the release: `/api/v1/capture/` has its own
 zone (120 requests/minute/IP, burst 60) and accepts 8 MiB bodies there only, and the backend
 allows 8 MiB only for capture PUTs. The capture review queue, images and decisions under `/api/v1/moderation/captures` have their own

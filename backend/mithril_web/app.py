@@ -27,6 +27,8 @@ from .curator_api import register_curator, register_curator_game
 from .curator_data import CuratorData
 from .curator_game import CuratorGame
 from .link_previews import register_previews
+from .location_api import register_locations
+from .location_game import LocationGame
 from .moderation import Moderation
 from .moderation_api import register_moderation
 from .parties import Finder
@@ -168,6 +170,14 @@ def create_app(
         )
         app.state.curator_game = CuratorGame(app.state.curator, app.state.records)
         app.state.captures = CaptureStore(app.state.records, Path(path).with_name("captures"))
+        app.state.locations = LocationGame(
+            app.state.records, app.state.captures, Path(path).with_name("captures") / "game"
+        )
+        try:
+            await run_in_threadpool(app.state.locations.refresh)
+        except (OSError, ValueError):
+            # Unreadable map files leave the game unavailable, not the whole site.
+            app.state.locations.world = None
 
         async def cleanup():
             while True:
@@ -177,6 +187,7 @@ def create_app(
                 await run_in_threadpool(app.state.moderation.cleanup)
                 await run_in_threadpool(app.state.privacy.cleanup)
                 await run_in_threadpool(app.state.captures.cleanup)
+                await run_in_threadpool(app.state.locations.cleanup)
 
         tasks = [
             asyncio.create_task(cleanup()),
@@ -760,6 +771,7 @@ def create_app(
     register_curator(app, browser)
     register_curator_game(app, device_user, browser)
     register_capture(app, browser, mod)
+    register_locations(app, browser, clock or time.monotonic)
     register_privacy(app, browser, skins, cards, device_user)
 
     app.add_middleware(

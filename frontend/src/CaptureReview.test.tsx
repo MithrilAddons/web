@@ -174,3 +174,40 @@ it("compares maps and filters by status", async () => {
     ),
   );
 });
+
+it("retires a live location", async () => {
+  const fetcher = serve({
+    "captures?kind=locations&status=approved&offset=0": {
+      total: 1,
+      items: [{ ...near, status: "approved" }],
+      current_maps: { hub: hubMap },
+    },
+    "captures?kind=locations&status=submitted&offset=0": {
+      total: 0,
+      items: [],
+      current_maps: {},
+    },
+  });
+  render(<CaptureReview />);
+  await screen.findByText("Nothing here.");
+  fireEvent.change(screen.getByLabelText("Show"), {
+    target: { value: "approved" },
+  });
+  expect(await screen.findByText("Live in the game")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Retire" }));
+  expect(
+    await screen.findByText("Retired: it's out of the game."),
+  ).toBeTruthy();
+  expect(fetcher).toHaveBeenCalledWith(
+    "/api/v1/moderation/captures/decide",
+    expect.objectContaining({
+      body: JSON.stringify({
+        version: 1,
+        kind: "locations",
+        id: near.id,
+        decision: "retire",
+        note: "",
+      }),
+    }),
+  );
+});

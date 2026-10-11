@@ -13,8 +13,13 @@ from pathlib import Path
 
 from PIL import Image, UnidentifiedImageError
 
-STATUSES = ("uploading", "submitted", "approved", "changes_requested", "rejected")
-DECISIONS = {"approve": "approved", "changes": "changes_requested", "reject": "rejected"}
+STATUSES = ("uploading", "submitted", "approved", "changes_requested", "rejected", "retired")
+DECISIONS = {
+    "approve": "approved",
+    "changes": "changes_requested",
+    "reject": "rejected",
+    "retire": "retired",
+}
 REFUSED_ISLANDS = {"dynamic", "garden", "dungeon", "kuudra"}
 DAILY_LIMIT = 200
 NEARBY = 10.0
@@ -358,7 +363,7 @@ class CaptureStore:
 
     def decide(self, actor, kind, item_id, decision, note):
         table = "capture_locations" if kind == "locations" else "capture_maps"
-        if decision != "approve" and not note.strip():
+        if decision in ("changes", "reject") and not note.strip():
             raise CaptureError(422, "Tell the capturer what to change")
         with self.lock, self.db:
             row = self.db.execute(f"SELECT status FROM {table} WHERE id=?", (item_id,)).fetchone()
@@ -366,6 +371,9 @@ class CaptureStore:
                 raise CaptureError(404, "Unknown submission")
             if row["status"] == "uploading":
                 raise CaptureError(409, "This submission is still uploading")
+            # Retiring takes a live location out of the game, e.g. after Hypixel rebuilds it.
+            if decision == "retire" and (kind != "locations" or row["status"] != "approved"):
+                raise CaptureError(409, "Only live locations can be retired")
             self.db.execute(
                 f"UPDATE {table} SET status=?, reviewer_note=?, reviewer=?, updated=? WHERE id=?",
                 (DECISIONS[decision], note.strip() or None, actor, self.clock(), item_id),
