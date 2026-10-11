@@ -186,6 +186,16 @@ describe("search", () => {
       suggestions(items, "asp", new Set(["ASPECT_OF_THE_END"]), 1),
     ).toEqual([["ASPECT_OF_THE_VOID", "Aspect of the Void"]]);
     expect(suggestions(items, "  ", new Set())).toEqual([]);
+    const ties: CatalogItem[] = [
+      ["BOW_B", "Bow B"],
+      ["BOW_A", "Bow A"],
+      ["BOW_C", "Bow C"],
+    ];
+    expect(suggestions(ties, "bow", new Set()).map(([id]) => id)).toEqual([
+      "BOW_A",
+      "BOW_B",
+      "BOW_C",
+    ]);
     expect(exact(items, " wand OF atonement ")).toEqual([
       "WAND",
       "Wand of Atonement",

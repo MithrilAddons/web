@@ -97,10 +97,10 @@ def test_pack_textures_take_flat_item_models_and_skip_the_rest():
     assert set(textures) == {"HYPERION", "GLOWING"}
     with Image.open(io.BytesIO(textures["GLOWING"])) as image:
         assert image.size == (16, 16)
-    with pytest.raises(ValueError):
-        flat_texture(png((16, 20)))
-    with pytest.raises(ValueError):
-        flat_texture(png((4, 4)))
+    for size in ((16, 20), (4, 4)):
+        texture = png(size)
+        with pytest.raises(ValueError):
+            flat_texture(texture)
 
 
 def test_pack_location_uses_the_newest_format_on_hypixels_host():
@@ -127,8 +127,9 @@ def test_heads_use_the_face_and_hat_from_mojangs_texture_server():
         assert face.size == (16, 16)
         assert face.getpixel((0, 0)) == (255, 0, 0, 255)
         assert face.getpixel((8, 8)) == (30, 60, 200, 255)
+    square = png((32, 32))
     with pytest.raises(ValueError):
-        head_icon(png((32, 32)))
+        head_icon(square)
 
 
 def items():

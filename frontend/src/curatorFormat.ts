@@ -227,14 +227,15 @@ function pick(map: Record<string, string>, value: string | null) {
 /** "1.2M", "140k", "17.4k": one decimal below a hundred of a unit. */
 export function amount(value: number) {
   const size = Math.abs(value);
-  const [scaled, suffix] =
-    size >= 1e9
-      ? [value / 1e9, "B"]
-      : size >= 1e6
-        ? [value / 1e6, "M"]
-        : size >= 1e3
-          ? [value / 1e3, "k"]
-          : [value, ""];
+  const unit = (
+    [
+      [1e9, "B"],
+      [1e6, "M"],
+      [1e3, "k"],
+    ] as const
+  ).find(([step]) => size >= step);
+  const scaled = unit ? value / unit[0] : value;
+  const suffix = unit ? unit[1] : "";
   const short =
     (Math.abs(scaled) < 100 && suffix) || Math.abs(scaled) < 10
       ? scaled.toFixed(1).replace(/\.0$/, "")
@@ -435,9 +436,15 @@ export function suggestions(
     (a, b) =>
       a[0] - b[0] ||
       a[1][1].length - b[1][1].length ||
-      (a[1][1] < b[1][1] ? -1 : a[1][1] > b[1][1] ? 1 : 0),
+      ordinal(a[1][1], b[1][1]),
   );
   return ranked.slice(0, limit).map(([, item]) => item);
+}
+
+/** Plain code-unit order, as the mod sorts names. */
+function ordinal(a: string, b: string) {
+  if (a < b) return -1;
+  return a > b ? 1 : 0;
 }
 
 /** The item whose whole name matches, ignoring case. */
@@ -511,12 +518,9 @@ export function known(guesses: readonly Guess[], column: Column): Known {
   let text = "";
   if (column === "market" || column === "npc" || column === "length") {
     const [low, high] = bounds(guesses, column, (values) => values[column]);
+    const format = column === "length" ? String : amount;
     const show = (value: number | undefined) =>
-      value === undefined
-        ? undefined
-        : column === "length"
-          ? String(value)
-          : amount(value);
+      value === undefined ? undefined : format(value);
     text = range(show(low), show(high));
   } else if (column === "rarity" || column === "stage") {
     const order = column === "rarity" ? RARITY_ORDER : STAGE_ORDER;

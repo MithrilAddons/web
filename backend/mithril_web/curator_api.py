@@ -101,28 +101,52 @@ def register_curator(app, browser):
         return change(request, lambda _: app.state.curator.mark_reviewed())
 
 
+class CuratorPlayers:
+    """Who is playing: the mod's device token, or the website's session cookie."""
+
+    def __init__(self, app, device_user, browser):
+        self.app, self.device_user, self.browser = app, device_user, browser
+
+    def signed_in(self, request):
+        session = self.app.state.auth.get(request.cookies.get(COOKIE, ""), "session")
+        return "authorization" in request.headers or bool(session)
+
+    def player(self, request, write=False):
+        if "authorization" in request.headers:
+            row = self.device_user(request)
+        else:
+            # The cookie is SameSite=Strict; guesses must also come from the site itself.
+            if write or "origin" in request.headers:
+                self.browser(request)
+            row = self.app.state.auth.get(request.cookies.get(COOKIE, ""), "session")
+            if not row:
+                raise HTTPException(401, "Link your Minecraft account to play Curator")
+        host = request.client.host if request.client else None
+        self.app.state.moderation.check(row["uuid"], host)
+        return row
+
+
+def icon_response(found):
+    """An icon PNG, or why there is none: 404 when the item has no icon, 503 to retry later."""
+    if found is None:
+        raise HTTPException(404, "No icon")
+    if found is False:
+        raise HTTPException(503, "Icon unavailable", headers={"Retry-After": "30"})
+    return Response(
+        found, media_type="image/png", headers={"Cache-Control": "public, max-age=86400"}
+    )
+
+
 def register_curator_game(app, device_user, browser):
     """Curator for the mod (device token) and the website (session cookie), one round each day.
 
     Both identify the same Minecraft account, so a round started in one continues in the other.
     """
-
-    def player(request, write=False):
-        if "authorization" in request.headers:
-            row = device_user(request)
-        else:
-            # The cookie is SameSite=Strict; guesses must also come from the site itself.
-            if write or "origin" in request.headers:
-                browser(request)
-            row = app.state.auth.get(request.cookies.get(COOKIE, ""), "session")
-            if not row:
-                raise HTTPException(401, "Link your Minecraft account to play Curator")
-        app.state.moderation.check(row["uuid"], request.client.host if request.client else None)
-        return row
+    players = CuratorPlayers(app, device_user, browser)
 
     @app.get("/api/v1/games/curator/catalog")
     def catalog(request: Request, version: Annotated[str, Query(max_length=64)] = ""):
-        player(request)
+        players.player(request)
         current, items = app.state.curator.guess_list()
         if version and version == current:
             return {"version": 1, "catalog": current, "unchanged": True}
@@ -130,11 +154,11 @@ def register_curator_game(app, device_user, browser):
 
     @app.get("/api/v1/games/curator/today")
     def today(request: Request):
-        return app.state.curator_game.state(player(request)["uuid"])
+        return app.state.curator_game.state(players.player(request)["uuid"])
 
     @app.post("/api/v1/games/curator/guess")
     def guess(body: Guess, request: Request):
-        row = player(request, write=True)
+        row = players.player(request, write=True)
         try:
             return app.state.curator_game.guess(row["uuid"], row["name"], body.day, body.item)
         except GameError as error:
@@ -142,11 +166,8 @@ def register_curator_game(app, device_user, browser):
 
     @app.get("/api/v1/games/curator/leaderboard")
     def leaderboard(request: Request):
-        signed_in = "authorization" in request.headers or app.state.auth.get(
-            request.cookies.get(COOKIE, ""), "session"
-        )
-        if signed_in:
-            return app.state.curator_game.leaderboard(player(request)["uuid"])
+        if players.signed_in(request):
+            return app.state.curator_game.leaderboard(players.player(request)["uuid"])
         # Anyone can see the standings; only signed-in players get their own row and stats.
         if "origin" in request.headers:
             browser(request)
@@ -156,11 +177,4 @@ def register_curator_game(app, device_user, browser):
     def icon(item: str):
         if not re.fullmatch(ITEM_PATTERN, item):
             raise HTTPException(404, "No icon")
-        found = app.state.curator.icon(item)
-        if found is None:
-            raise HTTPException(404, "No icon")
-        if found is False:
-            raise HTTPException(503, "Icon unavailable", headers={"Retry-After": "30"})
-        return Response(
-            found, media_type="image/png", headers={"Cache-Control": "public, max-age=86400"}
-        )
+        return icon_response(app.state.curator.icon(item))

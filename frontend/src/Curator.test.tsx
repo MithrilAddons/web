@@ -115,10 +115,9 @@ it("uses the keyboard and explains a name that isn't in the list", async () => {
   });
   render(<Curator />);
   const box = await screen.findByRole("combobox");
-  await waitFor(() => {
-    fireEvent.change(box, { target: { value: "s" } });
-    expect(screen.getAllByRole("option")).toHaveLength(2);
-  });
+  // Typed before the item list arrives, the matches appear once it does.
+  fireEvent.change(box, { target: { value: "s" } });
+  expect(await screen.findAllByRole("option")).toHaveLength(2);
   fireEvent.keyDown(box, { key: "ArrowDown" });
   expect(screen.getAllByRole("option")[1]?.getAttribute("aria-selected")).toBe(
     "true",
@@ -166,10 +165,8 @@ it("shows a clue summary, one-line guesses and the box at the bottom on phones",
   expect(row.getAttribute("aria-expanded")).toBe("true");
   const box = screen.getByRole("combobox");
   expect(box.closest(".curator-dock")).toBeTruthy();
-  await waitFor(() => {
-    fireEvent.change(box, { target: { value: "synth" } });
-    expect(screen.getAllByRole("option")).toHaveLength(1);
-  });
+  fireEvent.change(box, { target: { value: "synth" } });
+  expect(await screen.findAllByRole("option")).toHaveLength(1);
   fireEvent.keyDown(box, { key: "ArrowUp" });
   fireEvent.keyDown(box, { key: "ArrowDown" });
 });
@@ -183,11 +180,10 @@ it("offers the next item once the day turns over", async () => {
   });
   render(<Curator />);
   const box = await screen.findByRole("combobox");
-  await waitFor(() => {
-    fireEvent.change(box, { target: { value: "Hyperion" } });
-    fireEvent.keyDown(box, { key: "Enter" });
-    expect(screen.getByText("A new item is ready")).toBeTruthy();
-  });
+  fireEvent.change(box, { target: { value: "Hyperion" } });
+  await screen.findByRole("option");
+  fireEvent.keyDown(box, { key: "Enter" });
+  expect(await screen.findByText("A new item is ready")).toBeTruthy();
   today = { ...playing, day: "2027-01-16", number: 2, guesses: [] };
   fireEvent.click(screen.getByRole("button", { name: "Load new item" }));
   expect(await screen.findByText("Curator #2")).toBeTruthy();
@@ -334,10 +330,8 @@ it("keeps the item list until the catalog changes", async () => {
   });
   render(<Curator />);
   const box = await screen.findByRole("combobox");
-  await waitFor(() => {
-    fireEvent.change(box, { target: { value: "hyp" } });
-    expect(screen.getByRole("option").textContent).toBe("Hyperion");
-  });
+  fireEvent.change(box, { target: { value: "hyp" } });
+  expect((await screen.findByRole("option")).textContent).toBe("Hyperion");
   expect(fetcher).toHaveBeenCalled();
   window.dispatchEvent(new Event("focus"));
 });

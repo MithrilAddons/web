@@ -111,7 +111,8 @@ export function Curator() {
             with the MithrilPF mod.
           </p>
         </div>
-        <div className="segmented" role="group" aria-label="Curator view">
+        <fieldset className="segmented curator-views">
+          <legend className="sr-only">Curator view</legend>
           <button
             type="button"
             aria-pressed={view === "today"}
@@ -126,7 +127,7 @@ export function Curator() {
           >
             Leaderboard
           </button>
-        </div>
+        </fieldset>
       </div>
       {view === "today" ? <TodayView /> : <LeaderboardView />}
       <p className="curator-credit">
@@ -204,8 +205,8 @@ function TodayView() {
         setToday(await sendGuess(today.day, item));
         setError("");
         return true;
-      } catch (problem) {
-        fail(problem);
+      } catch (error_) {
+        fail(error_);
         return false;
       }
     },
@@ -555,7 +556,7 @@ function ClueGrid({
           {Array.from(
             { length: Math.max(0, limit - guesses.length) },
             (_, row) => (
-              <tr key={`empty-${row}`} className="is-empty" aria-hidden="true">
+              <tr key={`empty-${row}`} className="is-empty">
                 <td />
                 {COLUMNS.map((column) => (
                   <td key={column.key} />
@@ -731,10 +732,10 @@ function LeaderboardView() {
         setBoard(value);
         setError("");
       })
-      .catch((problem: unknown) =>
+      .catch((error_: unknown) =>
         setError(
-          problem instanceof CuratorError
-            ? problem.message
+          error_ instanceof CuratorError
+            ? error_.message
             : "Something went wrong. Try again.",
         ),
       );
@@ -837,16 +838,18 @@ function Season({
       </p>
       <h4 className="quiet-label">Guesses per solve</h4>
       <ol className="curator-histogram">
-        {stats.histogram.map((count, index) => (
-          <li key={index} aria-label={`${index + 1} guesses: ${count}`}>
-            <span aria-hidden="true">{index + 1}</span>
-            <i
-              aria-hidden="true"
-              style={{ width: `${(count / most) * 100}%` }}
-            />
-            <span aria-hidden="true">{count}</span>
-          </li>
-        ))}
+        {stats.histogram
+          .map((count, index) => ({ guesses: index + 1, count }))
+          .map(({ guesses, count }) => (
+            <li key={guesses} aria-label={`${guesses} guesses: ${count}`}>
+              <span aria-hidden="true">{guesses}</span>
+              <i
+                aria-hidden="true"
+                style={{ width: `${(count / most) * 100}%` }}
+              />
+              <span aria-hidden="true">{count}</span>
+            </li>
+          ))}
       </ol>
       {stats.failed > 0 && (
         <p className="quiet-label">Not solved: {stats.failed}</p>

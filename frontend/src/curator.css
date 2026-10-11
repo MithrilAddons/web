@@ -2,6 +2,10 @@
 .curator-heading p {
   margin-top: 8px;
 }
+.curator-views {
+  margin: 0;
+  min-width: 0;
+}
 .curator-round,
 .curator-board {
   display: grid;
