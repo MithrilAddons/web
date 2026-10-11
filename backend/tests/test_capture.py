@@ -337,6 +337,7 @@ def test_maps_upload_and_replace_older_unreviewed_ones(capture):
     }
     image = client.get(f"/api/v1/moderation/captures/maps/{second}.png", headers=sessions[OWNER])
     assert image.headers["content-type"] == "image/png"
+    assert image.headers["cache-control"] == "private, max-age=86400"
 
 
 def test_reviewers_decide_with_a_note(capture):
@@ -377,6 +378,7 @@ def test_reviewers_decide_with_a_note(capture):
         f"/api/v1/moderation/captures/locations/{location_id}/faces/2.png", headers=sessions[BOB]
     )
     assert face.status_code == 200
+    assert face.headers["cache-control"] == "private, max-age=86400"
     assert (
         client.get(
             f"/api/v1/moderation/captures/locations/{uploading}/faces/2.png", headers=sessions[BOB]
