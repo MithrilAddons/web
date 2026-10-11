@@ -582,8 +582,9 @@ Every run route returns the run's state: `id`, `round`, `rounds`, `timer` (25 se
 (loading, playing, revealed or finished), server `now`, `results` and `total`. While loading or
 playing it includes `panorama`, the round's image: the six faces in Minecraft's panorama order,
 three across and two down, as one WebP whose URL never repeats between rounds. Playing adds the
-`deadline`. Each result has the `score` (up to 5,000), the `distance` in blocks (null on the
-wrong island or without a guess), the island `guessed`, the `pin`, the `answer` (island, name,
+`deadline`. Each result has the `score` (up to 5,000 within 3 blocks, then
+5,000 × e^−(distance ÷ (island size ÷ 6))², where the size is the diagonal of the island's ground;
+0 on the wrong island), the `distance` in blocks (null on the wrong island or without a guess), the island `guessed`, the `pin`, the `answer` (island, name,
 x, z) and who captured it. A finished run by a linked player adds `best` (best, runs, average,
 new_best).
 
