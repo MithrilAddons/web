@@ -43,6 +43,16 @@ def multiplier(number):
     return 1.5 + 0.5 * (number - 4)
 
 
+TALLY = {"win": "wins", "loss": "losses", "draw": "draws"}
+
+
+def outcome(winner, index):
+    """win, loss or draw from one seat's side."""
+    if winner is None:
+        return "draw"
+    return "win" if winner == index else "loss"
+
+
 def season_of(moment):
     return datetime.fromtimestamp(moment, UTC).strftime("%Y-%m")
 
@@ -215,9 +225,7 @@ class LocationDuels:
             target = found
         if target["player"] == who["player"]:
             raise GameError(422, "You can't challenge yourself")
-        for item in list(self.pending.values()):
-            if item.sender["player"] == who["player"] and item.target is not None:
-                del self.pending[item.id]
+        self._withdraw(who["player"], challenges=True)
         now = self.clock()
         item = Pending(
             secrets.token_urlsafe(9),
@@ -232,13 +240,21 @@ class LocationDuels:
         self._poke(who["player"])
         return {"version": 1, "id": item.id, "expires": item.expires}
 
+    def _withdraw(self, player, challenges):
+        """Drops the player's earlier challenge (or invite): one of each at a time."""
+        stale = [
+            key
+            for key, item in self.pending.items()
+            if item.sender["player"] == player and (item.target is not None) == challenges
+        ]
+        for key in stale:
+            del self.pending[key]
+
     def invite(self, who):
         self._player(who)
         self._check_free(who["player"])
         self._bound()
-        for item in list(self.pending.values()):
-            if item.sender["player"] == who["player"] and item.target is None:
-                del self.pending[item.id]
+        self._withdraw(who["player"], challenges=False)
         now = self.clock()
         code = "".join(secrets.choice(CODE_ALPHABET) for _ in range(6))
         item = Pending(code, who, now, now + INVITE_KEPT)
@@ -328,7 +344,7 @@ class LocationDuels:
             raise GameError(404, "Unknown panorama")
         return self.game.atlas(duel.rounds[found[1]].location.id)
 
-    def _begin(self, duel, current, at):
+    def _begin(self, current, at):
         current.started = at
         current.deadline = at + TIMER
 
@@ -346,9 +362,9 @@ class LocationDuels:
                 return True
             if now < duel.countdown:
                 return False
-            self._begin(duel, current, duel.countdown)
+            self._begin(current, duel.countdown)
         else:
-            self._begin(duel, current, now)
+            self._begin(current, now)
         return True
 
     def ready(self, duel_id, who, number):
@@ -430,13 +446,15 @@ class LocationDuels:
     def advance(self, now=None):
         """Moves every live duel's clocks along; called a few times a second."""
         now = self.clock() if now is None else now
-        for duel in list(self.duels.values()):
-            if duel.finished:
-                if now - duel.finished["at"] > RECONNECT * 4:
-                    self._forget(duel)
-                continue
-            changed = self._step(duel, now)
-            if changed:
+        done = [
+            duel
+            for duel in self.duels.values()
+            if duel.finished and now - duel.finished["at"] > RECONNECT * 4
+        ]
+        for duel in done:
+            self._forget(duel)
+        for duel in self.duels.values():
+            if not duel.finished and self._step(duel, now):
                 self._bump(duel)
 
     def _step(self, duel, now):
@@ -516,8 +534,8 @@ class LocationDuels:
         season = season_of(now)
         row = self.db.execute("SELECT * FROM location_ratings WHERE uuid=?", (uuid,)).fetchone()
         if not row:
-            return {"rating": glicko.Rating(), "wins": 0, "losses": 0, "draws": 0, "peak": None}
-        rating = glicko.Rating(row["rating"], row["rd"], row["volatility"])
+            return {"rating": glicko.Strength(), "wins": 0, "losses": 0, "draws": 0, "peak": None}
+        rating = glicko.Strength(row["rating"], row["rd"], row["volatility"])
         stats = {key: row[key] for key in ("wins", "losses", "draws", "peak")}
         if row["season"] != season:
             for _ in range(max(0, months_between(row["season"], season))):
@@ -535,8 +553,7 @@ class LocationDuels:
                 me, them = players[index], players[1 - index]
                 score = 0.5 if winner is None else float(winner == index)
                 after = glicko.update(me["rating"], [(them["rating"], score)])
-                outcome = "draws" if winner is None else ("wins" if winner == index else "losses")
-                me[outcome] += 1
+                me[TALLY[outcome(winner, index)]] += 1
                 peak = max(me["peak"] or after.rating, after.rating)
                 self.db.execute(
                     "INSERT OR REPLACE INTO location_ratings VALUES (?,?,?,?,?,?,?,?,?,?,?)",
@@ -613,14 +630,7 @@ class LocationDuels:
         me, them = duel.seats[index], duel.seats[1 - index]
         now = self.clock()
         current = duel.rounds[-1]
-        if duel.finished:
-            phase = "finished"
-        elif current.result:
-            phase = "revealed"
-        elif current.started is not None and now >= current.started:
-            phase = "playing"
-        else:
-            phase = "loading"
+        phase = self._phase(duel, now)
         results = [self._side(item.result, index) for item in duel.rounds if item.result]
         state = {
             "version": duel.version,
@@ -654,11 +664,22 @@ class LocationDuels:
             winner = duel.finished["winner"]
             ratings = duel.finished["ratings"]
             state["finished"] = {
-                "result": "draw" if winner is None else ("win" if winner == index else "loss"),
+                "result": outcome(winner, index),
                 "reason": duel.finished["reason"],
                 "rating": ratings[index] if ratings else None,
             }
         return state
+
+    @staticmethod
+    def _phase(duel, now):
+        current = duel.rounds[-1]
+        if duel.finished:
+            return "finished"
+        if current.result:
+            return "revealed"
+        if current.started is not None and now >= current.started:
+            return "playing"
+        return "loading"
 
     @staticmethod
     def _side(result, index):
@@ -772,7 +793,7 @@ class LocationDuels:
                     "id": row["id"],
                     "finished": row["finished"],
                     "opponent": row["b_name"] if index == 0 else row["a_name"],
-                    "result": "draw" if winner is None else ("win" if winner == index else "loss"),
+                    "result": outcome(winner, index),
                     "reason": row["reason"],
                     "rated": bool(row["rated"]),
                     "rating": ratings[index],
