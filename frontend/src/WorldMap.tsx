@@ -107,12 +107,12 @@ export function WorldMap({
       const height = element.clientHeight || 1;
       const fitted = fit(world, width, height);
       smallest.current = fitted.scale;
+      if (!answer) {
+        setView(fitted);
+        return;
+      }
       const guess = pinned.current;
-      setView(
-        answer
-          ? frame(world, guess ? [guess, answer] : [answer], width, height)
-          : fitted,
-      );
+      setView(frame(world, guess ? [guess, answer] : [answer], width, height));
     };
     reframe();
     // A resized panel (a turned phone, the sheet opening) shows the whole map again.

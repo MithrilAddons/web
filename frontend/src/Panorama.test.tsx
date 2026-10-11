@@ -126,7 +126,7 @@ it("shows the panorama, reports it ready and turns with a drag", async () => {
   const onReady = vi.fn();
   const view = render(<Panorama src="/round.webp" onReady={onReady} />);
   await waitFor(() => expect(onReady).toHaveBeenCalledTimes(1));
-  const host = screen.getByRole("img", { name: /Drag to look around/ });
+  const host = screen.getByRole("figure", { name: /Drag to look around/ });
   const canvas = host.querySelector("canvas")!;
   expect(mocks.setSize).toHaveBeenCalledWith(400, 200, false);
   // Minecraft's right face fills three.js's -x slot, and so on.

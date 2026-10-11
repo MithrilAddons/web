@@ -69,7 +69,7 @@ export function Locations() {
   useEffect(() => {
     getWorld()
       .then(setWorld)
-      .catch((problem: unknown) => setError(message(problem)));
+      .catch((error_: unknown) => setError(message(error_)));
     refresh();
   }, [refresh]);
 
@@ -78,8 +78,8 @@ export function Locations() {
     setError("");
     try {
       setRun(await startSolo());
-    } catch (problem) {
-      setError(message(problem));
+    } catch (error_) {
+      setError(message(error_));
     } finally {
       setBusy(false);
     }
@@ -166,7 +166,7 @@ function SoloRun({
   onAgain: () => void;
   onLeave: (reason?: string) => void;
 }>) {
-  const [run, setRunState] = useState(initial);
+  const [run, setRun] = useState(initial);
   const [pin, setPin] = useState<[number, number] | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -176,9 +176,9 @@ function SoloRun({
   const shown = useRef(initial.panorama);
   shown.current = run.panorama ?? shown.current;
 
-  const setRun = useCallback((next: Run) => {
+  const update = useCallback((next: Run) => {
     offset.current = next.now * 1000 - Date.now();
-    setRunState(next);
+    setRun(next);
   }, []);
 
   const act = useCallback(
@@ -186,16 +186,16 @@ function SoloRun({
       setBusy(true);
       setError("");
       try {
-        setRun(await action());
-      } catch (problem) {
-        if (problem instanceof LocationsError && problem.status === 404)
-          onLeave(problem.message);
-        else setError(message(problem));
+        update(await action());
+      } catch (error_) {
+        if (error_ instanceof LocationsError && error_.status === 404)
+          onLeave(error_.message);
+        else setError(message(error_));
       } finally {
         setBusy(false);
       }
     },
-    [setRun, onLeave],
+    [update, onLeave],
   );
 
   const result = run.results[run.round - 1];
@@ -353,19 +353,21 @@ function Summary({
   onAgain,
   onLeave,
 }: Readonly<{ run: Run; onAgain: () => void; onLeave: () => void }>) {
-  const [guest] = useState(() =>
-    run.best ? null : recordGuestBest(run.total),
+  // Recorded once per finished run, not on every render.
+  const guest = useRef<ReturnType<typeof recordGuestBest> | null | undefined>(
+    undefined,
   );
-  const best = run.best?.best ?? guest?.best ?? run.total;
-  const beaten = run.best?.new_best ?? guest?.beaten ?? false;
+  guest.current ??= run.best ? null : recordGuestBest(run.total);
+  const best = run.best?.best ?? guest.current?.best ?? run.total;
+  const beaten = run.best?.new_best ?? guest.current?.beaten ?? false;
   return (
     <div className="curator-panel solo-summary">
       <h2>
         {points(run.total)} of {points(MAX_RUN)}
       </h2>
       <ol className="solo-rounds">
-        {run.results.map((result, index) => (
-          <li key={index}>
+        {run.results.map((result) => (
+          <li key={`${result.answer.x},${result.answer.z}`}>
             <span>{result.answer.name}</span>
             <span>{points(result.score)}</span>
           </li>

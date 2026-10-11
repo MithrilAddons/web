@@ -52,7 +52,7 @@ export function Panorama({
   src,
   onReady,
 }: Readonly<{ src: string; onReady: () => void }>) {
-  const host = useRef<HTMLDivElement>(null);
+  const host = useRef<HTMLElement>(null);
   const ready = useRef(onReady);
   const [failed, setFailed] = useState(false);
   ready.current = onReady;
@@ -83,7 +83,9 @@ export function Panorama({
       texture.colorSpace = three.SRGBColorSpace;
       texture.needsUpdate = true;
       scene.background = texture;
-      let view = { yaw: Math.random() * Math.PI * 2, pitch: 0 };
+      // Each round opens facing a random way.
+      const turn = crypto.getRandomValues(new Uint32Array(1))[0]! / 2 ** 32;
+      let view = { yaw: turn * Math.PI * 2, pitch: 0 };
       const draw = () => {
         camera.rotation.set(view.pitch, view.yaw, 0);
         renderer.render(scene, camera);
@@ -138,10 +140,9 @@ export function Panorama({
       The panorama couldn’t be loaded.
     </p>
   ) : (
-    <div
+    <figure
       className="panorama"
       ref={host}
-      role="img"
       aria-label="Panorama of the location. Drag to look around."
     />
   );
