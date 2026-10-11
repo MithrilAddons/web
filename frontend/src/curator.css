@@ -1,0 +1,399 @@
+/* Curator: the in-game grid at full width, a clue summary and one-line guesses on phones. */
+.curator-heading p {
+  margin-top: 8px;
+}
+.curator-views {
+  margin: 0;
+  min-width: 0;
+}
+.curator-round,
+.curator-board {
+  display: grid;
+  gap: 16px;
+}
+.curator-round-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+.curator-panel {
+  display: grid;
+  gap: 12px;
+  justify-items: start;
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.curator-new-day {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 16px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: #1a1b24;
+}
+.curator-guess {
+  display: flex;
+  gap: 8px;
+}
+.curator-combo {
+  position: relative;
+  flex: 1;
+}
+.curator-combo input {
+  width: 100%;
+  min-height: 40px;
+  padding-inline: 12px;
+  font-size: 14px;
+}
+.curator-suggestions {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 4px);
+  left: 0;
+  width: min(100%, 360px);
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  box-shadow: 0 8px 24px #0008;
+}
+.is-upward .curator-suggestions {
+  top: auto;
+  bottom: calc(100% + 4px);
+  width: 100%;
+}
+.curator-suggestions li {
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.is-upward .curator-suggestions li {
+  padding-block: 11px;
+}
+.curator-suggestions li[aria-selected="true"] {
+  background: #262833;
+}
+.curator-status {
+  margin-top: -8px;
+}
+.curator-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.curator-icon {
+  flex-shrink: 0;
+  image-rendering: pixelated;
+}
+.curator-item-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.curator-family {
+  color: var(--accent);
+  font-size: 11px;
+}
+.curator-grid-wrap {
+  overflow-x: auto;
+}
+.curator-grid {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 2px 4px;
+  table-layout: fixed;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.curator-grid thead th {
+  padding: 0 4px 2px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+  text-align: center;
+  cursor: help;
+}
+.curator-grid thead th:first-child {
+  width: 23%;
+  text-align: left;
+  cursor: auto;
+}
+.curator-grid tbody th {
+  padding: 0 10px;
+  height: 34px;
+  border-radius: 4px;
+  background: var(--surface);
+  font-weight: 400;
+  text-align: left;
+  overflow: hidden;
+}
+.curator-grid tbody th .curator-item {
+  max-width: 100%;
+}
+.clue {
+  position: relative;
+  height: 34px;
+  padding: 0 2px;
+  border-radius: 4px;
+  background: var(--surface-raised);
+  text-align: center;
+  white-space: nowrap;
+}
+.clue.is-exact,
+.curator-known .is-exact,
+.curator-clues .is-exact::before,
+.curator-strip .is-exact {
+  background: #2b4a3c;
+}
+.clue.is-partial,
+.curator-known .is-partial,
+.curator-clues .is-partial::before,
+.curator-strip .is-partial {
+  background: #4a4128;
+}
+.clue:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.clue-tip {
+  position: absolute;
+  z-index: 4;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  display: none;
+  width: max-content;
+  max-width: 240px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-raised);
+  color: var(--muted);
+  font-size: 12px;
+  text-align: left;
+  white-space: normal;
+  transform: translateX(-50%);
+  box-shadow: 0 6px 18px #0008;
+}
+.clue-tip strong {
+  display: block;
+  color: var(--text);
+  font-weight: 500;
+}
+.clue:hover .clue-tip,
+.clue:focus .clue-tip {
+  display: block;
+}
+.curator-grid tr.is-empty td {
+  height: 34px;
+  border: 1px dashed var(--border);
+  border-radius: 4px;
+}
+.curator-result {
+  display: grid;
+  gap: 4px;
+  padding: 16px 20px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.curator-answer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.curator-answer .curator-icon {
+  width: 32px;
+  height: 32px;
+}
+.curator-answer-name {
+  font-size: 16px;
+  font-weight: 600;
+}
+.curator-solved {
+  color: var(--success);
+  font-weight: 600;
+}
+.curator-failed {
+  color: var(--danger);
+  font-weight: 600;
+}
+.curator-result-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 8px;
+}
+.curator-known {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.curator-known h3 {
+  margin-bottom: 8px;
+  font-weight: 400;
+}
+.curator-known dl {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin: 0;
+}
+.curator-known dl > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: var(--surface-raised);
+}
+.curator-known dt {
+  color: var(--muted);
+  font-size: 11px;
+}
+.curator-known dd {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.curator-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.curator-list > li {
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: var(--surface);
+}
+.curator-list > li.is-open {
+  border-color: var(--accent);
+}
+.curator-list button {
+  justify-content: space-between;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 0;
+  background: transparent;
+}
+.curator-strip {
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 3px;
+}
+.curator-strip i {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  background: #33353f;
+}
+.curator-clues {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 12px;
+  margin: 0;
+  padding: 4px 12px 12px;
+  border-top: 1px solid var(--border);
+  list-style: none;
+}
+.curator-clues li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 6px;
+}
+.curator-clues li::before {
+  content: "";
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: #33353f;
+}
+.curator-dock {
+  position: sticky;
+  z-index: 3;
+  bottom: 0;
+  margin-inline: -20px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--border);
+  background: var(--background);
+}
+.curator-board-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 240px;
+  gap: 16px;
+  align-items: start;
+}
+.curator-standings tr.is-pinned {
+  border-top: 1px dashed var(--border);
+}
+.curator-standings tr.is-you td:first-child {
+  box-shadow: inset 2px 0 var(--accent);
+}
+.curator-season {
+  display: grid;
+  gap: 4px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.curator-season h4 {
+  margin-top: 8px;
+  font-weight: 400;
+}
+.curator-histogram {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.curator-histogram li {
+  display: grid;
+  grid-template-columns: 16px 1fr 24px;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+}
+.curator-histogram i {
+  min-width: 2px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.curator-board-note {
+  padding: 16px;
+}
+.curator-credit {
+  margin-top: 40px;
+  color: var(--muted);
+  font-size: 12px;
+}
+@media (max-width: 760px) {
+  .curator-board-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .curator-result-actions {
+    flex-wrap: wrap;
+  }
+}

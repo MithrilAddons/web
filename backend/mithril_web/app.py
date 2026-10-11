@@ -221,7 +221,8 @@ def create_app(
                     headers={"Cache-Control": "no-store"},
                 )
         response = await call_next(request)
-        response.headers["Cache-Control"] = "no-store"
+        # Only item icons set their own caching; everything else stays out of caches.
+        response.headers.setdefault("Cache-Control", "no-store")
         response.headers["X-Content-Type-Options"] = "nosniff"
         return response
 
@@ -709,7 +710,7 @@ def create_app(
     register_previews(app)
     register_moderation(app, browser, name_lookup)
     register_curator(app, browser)
-    register_curator_game(app, device_user)
+    register_curator_game(app, device_user, browser)
     register_privacy(app, browser, skins, cards, device_user)
 
     app.add_middleware(

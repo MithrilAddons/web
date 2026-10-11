@@ -476,7 +476,10 @@ saved in the account/record databases. No additional cookies are used.
 ## Curator
 
 The mod's Games screen plays Curator with its device session (`Authorization: Bearer`,
-no Origin header). Banned accounts get 403. Each UTC day has one answer, frozen with a
+no Origin header), and the website's `/games/curator` page with its session cookie.
+Both identify the same Minecraft account, so they share one round each day. Cookie
+requests that carry an Origin must come from `https://mithril.foo`, and guesses always
+need it. Without either credential the routes answer 401. Banned accounts get 403. Each UTC day has one answer, frozen with a
 market snapshot when the day starts; until then `today` reports `state: "preparing"`.
 Synthetic responses are in `contracts/curator-v1.json`.
 
@@ -504,7 +507,15 @@ points (11 minus guesses used for a solve, 0 otherwise), then fewer total guesse
 returns the top 10, the player's own row as `you` when outside them, the number of
 players and the player's season `stats` (points, rank, played, solved, average guesses
 per solve, a 10-slot histogram of solves by guesses used, failed rounds and streaks).
-Banned accounts are left out.
+Banned accounts are left out. It is public: without a credential `you` and `stats` are
+null.
+
+`GET /api/v1/games/curator/icon/{item_id}.png` is a public item icon: the item's texture
+from Hypixel's SkyBlock Resource Pack, or a custom head's face and hat drawn from its skin
+on Mojang's texture server, at 16×16. It answers 404 when the item has neither and 503
+(with `Retry-After`) while a head can't be fetched. Icons may be cached for a day. The
+art belongs to Hypixel; the pack's license lets Hypixel-related websites use it free of
+charge, and pages showing icons credit Hypixel.
 
 ## Operations and limits
 

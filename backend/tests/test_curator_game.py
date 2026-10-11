@@ -261,6 +261,56 @@ def test_game_routes_need_a_mod_session_and_no_ban(game):
     assert client.get("/api/v1/games/curator/today", headers=headers[BOB]).status_code == 403
 
 
+def test_the_website_plays_the_same_round_with_its_session(game):
+    client, app, _, headers, plan = game
+    plan("SYNTHESIZER_V3")
+    app.state.curator.load_lock()
+    session = app.state.auth.issue("session", ALICE, "Alice", DAY)
+    cookie = {"Cookie": f"{COOKIE}={session}"}
+    site = {**cookie, "Origin": ORIGIN}
+    guess(client, headers[ALICE], "HYPERION")
+    today = client.get("/api/v1/games/curator/today", headers=cookie).json()
+    assert [entry["item"] for entry in today["guesses"]] == ["HYPERION"]
+    assert client.get("/api/v1/games/curator/today", headers=site).status_code == 200
+    assert client.get("/api/v1/games/curator/catalog", headers=cookie).status_code == 200
+    # Guesses need the site's own Origin; reads from elsewhere are refused too.
+    assert guess(client, cookie, "SYNTHESIZER_V2").status_code == 403
+    elsewhere = {**cookie, "Origin": "https://example.com"}
+    assert client.get("/api/v1/games/curator/today", headers=elsewhere).status_code == 403
+    solved = guess(client, site, "SYNTHESIZER_V3").json()
+    assert solved["state"] == "solved"
+    assert len(solved["guesses"]) == 2
+    mod = client.get("/api/v1/games/curator/today", headers=headers[ALICE]).json()
+    assert mod["state"] == "solved"
+    expired = {"Cookie": f"{COOKIE}={'x' * 43}", "Origin": ORIGIN}
+    assert client.get("/api/v1/games/curator/today", headers=expired).status_code == 401
+    assert guess(client, expired, "HYPERION").status_code == 401
+
+
+def test_anyone_can_see_the_leaderboard_without_their_row(game):
+    client, app, _, headers, plan = game
+    plan("SYNTHESIZER_V3")
+    app.state.curator.load_lock()
+    guess(client, headers[ALICE], "SYNTHESIZER_V3")
+    board = client.get("/api/v1/games/curator/leaderboard").json()
+    assert board["players"] == 1
+    assert board["top"][0]["name"] == "Alice"
+    assert board["top"][0]["you"] is False
+    assert (board["you"], board["stats"]) == (None, None)
+    site = client.get("/api/v1/games/curator/leaderboard", headers={"Origin": ORIGIN})
+    assert site.json()["players"] == 1
+    other = client.get(
+        "/api/v1/games/curator/leaderboard", headers={"Origin": "https://example.com"}
+    )
+    assert other.status_code == 403
+    session = app.state.auth.issue("session", ALICE, "Alice", DAY)
+    mine = client.get(
+        "/api/v1/games/curator/leaderboard", headers={"Cookie": f"{COOKIE}={session}"}
+    ).json()
+    assert mine["top"][0]["you"] is True
+    assert mine["stats"]["points"] == 10
+
+
 def test_leaderboard_ranks_the_season_and_pins_your_row(game):
     client, app, _, headers, plan = game
     plan("SYNTHESIZER_V3")
