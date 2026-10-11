@@ -172,7 +172,8 @@ def test_the_pool_holds_only_live_spots_on_their_own_island(game):
     app.state.locations.refresh()
     pool = app.state.locations.pool
     assert set(pool) == {*hub_spots, bayou_spot}
-    assert stranded not in pool and retired not in pool
+    assert stranded not in pool
+    assert retired not in pool
     assert (pool[bayou_spot].x, pool[bayou_spot].z) == (108, 8)
     folder = app.state.captures.folder / "game"
     assert {path.stem for path in folder.glob("*.webp")} == set(pool)
@@ -290,7 +291,8 @@ def test_runs_belong_to_their_player_and_one_runs_at_a_time(game):
     assert start(client, {"Origin": "https://example.com"}).status_code == 403
     assert client.post("/api/v1/games/locations/solo", json={"version": 1}).status_code == 403
     me = client.get("/api/v1/games/locations/me").json()
-    assert me["kind"] == "guest" and me["name"].startswith("Guest #")
+    assert me["kind"] == "guest"
+    assert me["name"].startswith("Guest #")
 
 
 def test_too_few_locations_or_no_map_says_so(game):

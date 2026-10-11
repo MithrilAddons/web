@@ -109,40 +109,56 @@ class World:
         }
 
 
+def _neighbours(cell, cols, rows):
+    row, col = divmod(cell, cols)
+    if row:
+        yield cell - cols
+    if row < rows - 1:
+        yield cell + cols
+    if col:
+        yield cell - 1
+    if col < cols - 1:
+        yield cell + 1
+
+
+def _flood(start, joined, seen, cols, rows):
+    """Every cell joined to `start`, marking them seen."""
+    seen[start] = 1
+    queue, found = deque([start]), [start]
+    while queue:
+        for other in _neighbours(queue.popleft(), cols, rows):
+            if joined[other] and not seen[other]:
+                seen[other] = 1
+                queue.append(other)
+                found.append(other)
+    return found
+
+
 def _labels(cover, cols, rows):
     """Connected patches of covered cells, joining patches one cell apart."""
-    joined = (
-        Image.frombytes("L", (cols, rows), cover).filter(ImageFilter.MaxFilter(3)).tobytes()
-        if cols >= 3 and rows >= 3
-        else cover
-    )
+    joined = cover
+    if cols >= 3 and rows >= 3:
+        joined = Image.frombytes("L", (cols, rows), cover).filter(ImageFilter.MaxFilter(3))
+        joined = joined.tobytes()
     seen = bytearray(cols * rows)
     patches = []
     for start in range(cols * rows):
-        if not joined[start] or seen[start]:
-            continue
-        seen[start] = 1
-        queue, cells = deque([start]), []
-        while queue:
-            cell = queue.popleft()
-            if cover[cell]:
-                cells.append(cell)
-            row, col = divmod(cell, cols)
-            for nrow, ncol in ((row - 1, col), (row + 1, col), (row, col - 1), (row, col + 1)):
-                if 0 <= nrow < rows and 0 <= ncol < cols:
-                    other = nrow * cols + ncol
-                    if joined[other] and not seen[other]:
-                        seen[other] = 1
-                        queue.append(other)
-        if cells:
-            patches.append(cells)
+        if joined[start] and not seen[start]:
+            cells = [cell for cell in _flood(start, joined, seen, cols, rows) if cover[cell]]
+            if cells:
+                patches.append(cells)
     return patches
 
 
-def build(maps):
-    """maps: dicts with island, island_name, image (RGBA), min_x and min_z. None when empty."""
-    if not maps:
-        return None
+@dataclass(frozen=True)
+class _Grid:
+    x0: int
+    z0: int
+    cols: int
+    rows: int
+
+
+def _place(maps):
     placed = []
     for entry in maps:
         dx, dz = OFFSETS.get(entry["island"], (0, 0))
@@ -159,95 +175,122 @@ def build(maps):
     z0 = min(item.z for item in placed) // CELL * CELL
     cols = -(-(max(item.x + item.image.width for item in placed) - x0) // CELL)
     rows = -(-(max(item.z + item.image.height for item in placed) - z0) // CELL)
-
-    # Each map's coverage, one byte per cell, aligned to the world grid.
+    grid = _Grid(x0, z0, cols, rows)
     for item in placed:
-        left, top = (item.x - x0) % CELL, (item.z - z0) % CELL
-        item.cx, item.cz = (item.x - x0) // CELL, (item.z - z0) // CELL
-        item.cols = -(-(left + item.image.width) // CELL)
-        item.rows = -(-(top + item.image.height) // CELL)
-        alpha = Image.new("L", (item.cols * CELL, item.rows * CELL))
-        alpha.paste(item.image.getchannel("A"), (left, top))
-        item.cover = alpha.reduce(CELL).point(lambda value: 255 if value else 0).tobytes()
+        _cover(item, grid)
+    return placed, grid
 
-    def middle(item):
-        return (
-            item.x + item.image.width / 2,
-            item.z + item.image.height / 2,
-            math.hypot(item.image.width, item.image.height) / 2,
-        )
 
-    middles = [middle(item) for item in placed]
-    owner = bytearray(cols * rows)
+def _cover(item, grid):
+    """The map's coverage, one byte per cell, aligned to the world grid."""
+    left, top = (item.x - grid.x0) % CELL, (item.z - grid.z0) % CELL
+    item.cx, item.cz = (item.x - grid.x0) // CELL, (item.z - grid.z0) // CELL
+    item.cols = -(-(left + item.image.width) // CELL)
+    item.rows = -(-(top + item.image.height) // CELL)
+    alpha = Image.new("L", (item.cols * CELL, item.rows * CELL))
+    alpha.paste(item.image.getchannel("A"), (left, top))
+    item.cover = alpha.reduce(CELL).point(lambda value: 255 if value else 0).tobytes()
+
+
+def _remoteness(item, x, z):
+    """How far a point is from a map's middle, relative to the map's size."""
+    width, height = item.image.width, item.image.height
+    return math.hypot(x - (item.x + width / 2), z - (item.z + height / 2)) / (
+        math.hypot(width, height) / 2
+    )
+
+
+def _keeper(placed, patch, grid):
+    """Of the maps showing most of a patch, the one whose middle it is nearest."""
+    x = sum(col for _, col in patch) / len(patch) * CELL + grid.x0
+    z = sum(row for row, _ in patch) / len(patch) * CELL + grid.z0
+    showing = [
+        index
+        for index, item in enumerate(placed)
+        if sum(1 for row, col in patch if item.covers(col, row)) * 2 > len(patch)
+    ]
+    return min(showing, key=lambda index: _remoteness(placed[index], x, z))
+
+
+def _owners(placed, grid):
+    owner = bytearray(grid.cols * grid.rows)
     for index, item in enumerate(placed):
         for cells in _labels(item.cover, item.cols, item.rows):
-            world = [(item.cz + cell // item.cols, item.cx + cell % item.cols) for cell in cells]
-            px = sum(col for _, col in world) / len(world) * CELL + x0
-            pz = sum(row for row, _ in world) / len(world) * CELL + z0
-            candidates = [
-                other
-                for other, candidate in enumerate(placed)
-                if sum(1 for row, col in world if candidate.covers(col, row)) * 2 > len(world)
-            ]
-            best = min(
-                candidates,
-                key=lambda other: (
-                    math.hypot(px - middles[other][0], pz - middles[other][1]) / middles[other][2]
-                ),
-            )
-            if best == index:
-                for row, col in world:
-                    owner[row * cols + col] = index + 1
+            patch = [(item.cz + cell // item.cols, item.cx + cell % item.cols) for cell in cells]
+            if _keeper(placed, patch, grid) == index:
+                for row, col in patch:
+                    owner[row * grid.cols + col] = index + 1
+    return owner
 
+
+def _islands(placed, owner, grid):
     islands = {}
     for index, item in enumerate(placed):
-        cells = [cell for cell in range(cols * rows) if owner[cell] == index + 1]
+        cells = [cell for cell, value in enumerate(owner) if value == index + 1]
         if not cells or item.island in islands:
             continue
-        rows_of = [cell // cols for cell in cells]
-        cols_of = [cell % cols for cell in cells]
+        rows_of = [cell // grid.cols for cell in cells]
+        cols_of = [cell % grid.cols for cell in cells]
         islands[item.island] = Island(
             item.island,
             item.name,
             index + 1,
             (
-                x0 + min(cols_of) * CELL,
-                z0 + min(rows_of) * CELL,
-                x0 + (max(cols_of) + 1) * CELL,
-                z0 + (max(rows_of) + 1) * CELL,
+                grid.x0 + min(cols_of) * CELL,
+                grid.z0 + min(rows_of) * CELL,
+                grid.x0 + (max(cols_of) + 1) * CELL,
+                grid.z0 + (max(rows_of) + 1) * CELL,
             ),
         )
+    return islands
 
-    # The void belongs to the nearest island.
+
+def _nearest(owner, grid):
+    """The void belongs to the nearest island."""
     nearest = bytearray(owner)
-    queue = deque(cell for cell in range(cols * rows) if owner[cell])
+    queue = deque(cell for cell, value in enumerate(owner) if value)
     while queue:
         cell = queue.popleft()
-        row, col = divmod(cell, cols)
-        for nrow, ncol in ((row - 1, col), (row + 1, col), (row, col - 1), (row, col + 1)):
-            if 0 <= nrow < rows and 0 <= ncol < cols and not nearest[nrow * cols + ncol]:
-                nearest[nrow * cols + ncol] = nearest[cell]
-                queue.append(nrow * cols + ncol)
+        for other in _neighbours(cell, grid.cols, grid.rows):
+            if not nearest[other]:
+                nearest[other] = nearest[cell]
+                queue.append(other)
+    return nearest
 
-    # Everything first, then each island's own ground on top of its neighbours' views of it.
-    canvas = Image.new("RGBA", (cols * CELL, rows * CELL))
+
+def _draw(placed, owner, grid):
+    """Everything first, then each island's own ground over its neighbours' views of it."""
+    canvas = Image.new("RGBA", (grid.cols * CELL, grid.rows * CELL))
     for item in placed:
-        canvas.alpha_composite(item.image, (item.x - x0, item.z - z0))
-    grid = Image.frombytes("L", (cols, rows), bytes(owner))
+        canvas.alpha_composite(item.image, (item.x - grid.x0, item.z - grid.z0))
+    cells = Image.frombytes("L", (grid.cols, grid.rows), bytes(owner))
     for index, item in enumerate(placed):
-        mine = grid.point(lambda value, wanted=index + 1: 255 if value == wanted else 0)
-        mask = mine.resize((cols * CELL, rows * CELL), Image.Resampling.NEAREST).crop(
-            (
-                item.x - x0,
-                item.z - z0,
-                item.x - x0 + item.image.width,
-                item.z - z0 + item.image.height,
-            )
+        left, top = item.x - grid.x0, item.z - grid.z0
+        mine = cells.point(lambda value, wanted=index + 1: 255 if value == wanted else 0)
+        mask = mine.resize(canvas.size, Image.Resampling.NEAREST).crop(
+            (left, top, left + item.image.width, top + item.image.height)
         )
-        mask = ImageChops.multiply(mask, item.image.getchannel("A"))
-        canvas.paste(item.image, (item.x - x0, item.z - z0), mask)
+        canvas.paste(item.image, (left, top), ImageChops.multiply(mask, item.image.getchannel("A")))
     output = io.BytesIO()
     canvas.save(output, "PNG")
-    png = output.getvalue()
-    revision = hashlib.sha256(png).hexdigest()[:16]
-    return World(revision, x0, z0, cols, rows, bytes(owner), bytes(nearest), islands, png)
+    return output.getvalue()
+
+
+def build(maps):
+    """maps: dicts with island, island_name, image (RGBA), min_x and min_z. None when empty."""
+    if not maps:
+        return None
+    placed, grid = _place(maps)
+    owner = _owners(placed, grid)
+    png = _draw(placed, owner, grid)
+    return World(
+        hashlib.sha256(png).hexdigest()[:16],
+        grid.x0,
+        grid.z0,
+        grid.cols,
+        grid.rows,
+        bytes(owner),
+        bytes(_nearest(owner, grid)),
+        _islands(placed, owner, grid),
+        png,
+    )
