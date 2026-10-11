@@ -3,16 +3,19 @@ import {
   useEffect,
   useId,
   useMemo,
+  useRef,
   useState,
   type KeyboardEvent,
 } from "react";
 import {
   CuratorError,
   getCatalog,
+  getGuestToday,
   getLeaderboard,
   getToday,
   iconUrl,
   sendGuess,
+  sendGuestGuess,
   type Leaderboard,
   type Today,
 } from "./curatorApi";
@@ -32,7 +35,6 @@ import {
   type ColumnInfo,
   type Guess,
 } from "./curatorFormat";
-import { ModDownload } from "./ModDownload";
 import "./curator.css";
 
 type View = "today" | "leaderboard";
@@ -137,26 +139,23 @@ export function Curator() {
   );
 }
 
-function SignedOut({ what }: Readonly<{ what: string }>) {
+function GuestNote() {
   return (
-    <section className="curator-panel curator-signed-out">
-      <p>Link your Minecraft account to {what}.</p>
-      <p className="quiet-label">
-        Open <code>/mpf</code> in Minecraft, select{" "}
-        <strong>Link browser</strong>, then confirm here.
-      </p>
-      <a className="button primary" href="/link">
-        Enter a linking code
-      </a>
-      <ModDownload />
-    </section>
+    <p className="quiet-label curator-guest">
+      Playing as a guest: your guesses stay in this browser and don’t count for
+      the leaderboard. <a href="/link">Link your Minecraft account</a> to keep
+      streaks and rank.
+    </p>
   );
 }
 
 function TodayView() {
   const [today, setToday] = useState<Today | null>(null);
   const [items, setItems] = useState<CatalogItem[]>([]);
-  const [blocked, setBlocked] = useState<"signed_out" | "banned" | null>(null);
+  const [banned, setBanned] = useState(false);
+  // Signed-out visitors play as guests; a ref so switching doesn't reload twice.
+  const guest = useRef(false);
+  const [asGuest, setAsGuest] = useState(false);
   const [error, setError] = useState("");
   const [stale, setStale] = useState(false);
   const now = useNow();
@@ -164,8 +163,7 @@ function TodayView() {
 
   const fail = useCallback((problem: unknown) => {
     const status = problem instanceof CuratorError ? problem.status : 0;
-    if (status === 401) setBlocked("signed_out");
-    else if (status === 403) setBlocked("banned");
+    if (status === 403 && !guest.current) setBanned(true);
     else if (
       problem instanceof CuratorError &&
       problem.message === "A new item is ready"
@@ -180,11 +178,20 @@ function TodayView() {
   }, []);
 
   const load = useCallback(() => {
-    getToday()
+    const round = guest.current
+      ? getGuestToday()
+      : getToday().catch((problem: unknown) => {
+          if (!(problem instanceof CuratorError) || problem.status !== 401)
+            throw problem;
+          guest.current = true;
+          setAsGuest(true);
+          return getGuestToday();
+        });
+    round
       .then((value) => {
         setToday(value);
         setStale(false);
-        setBlocked(null);
+        setBanned(false);
         setError("");
       })
       .catch(fail);
@@ -200,9 +207,13 @@ function TodayView() {
 
   const guess = useCallback(
     async (item: string) => {
-      if (!today) return false;
+      if (!today || today.state === "preparing") return false;
       try {
-        setToday(await sendGuess(today.day, item));
+        setToday(
+          await (guest.current
+            ? sendGuestGuess(today, item)
+            : sendGuess(today.day, item)),
+        );
         setError("");
         return true;
       } catch (error_) {
@@ -213,9 +224,7 @@ function TodayView() {
     [today, fail],
   );
 
-  if (blocked === "signed_out") return <SignedOut what="play Curator" />;
-  if (blocked === "banned")
-    return <p role="alert">This account can’t play Curator.</p>;
+  if (banned) return <p role="alert">This account can’t play Curator.</p>;
   if (!today)
     return error ? (
       <p role="alert">{error}</p>
@@ -232,17 +241,20 @@ function TodayView() {
       </section>
     );
   return (
-    <Round
-      today={today}
-      items={items}
-      narrow={narrow}
-      newDay={newDay}
-      next={next}
-      error={error}
-      onError={setError}
-      onGuess={guess}
-      onLoad={load}
-    />
+    <>
+      {asGuest && <GuestNote />}
+      <Round
+        today={today}
+        items={items}
+        narrow={narrow}
+        newDay={newDay}
+        next={next}
+        error={error}
+        onError={setError}
+        onGuess={guess}
+        onLoad={load}
+      />
+    </>
   );
 }
 

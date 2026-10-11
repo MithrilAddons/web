@@ -7,7 +7,7 @@ from fastapi import HTTPException, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from .auth import COOKIE
-from .curator_game import GameError
+from .curator_game import GUESSES, GameError
 
 ITEM_PATTERN = r"[A-Za-z0-9_:;.\-]{1,128}"
 ItemId = Annotated[str, Field(pattern=f"^{ITEM_PATTERN}$")]
@@ -32,6 +32,11 @@ class DayChange(CuratorBody):
 class Guess(CuratorBody):
     day: Day
     item: ItemId
+
+
+class GuestRound(CuratorBody):
+    day: Day | None
+    items: Annotated[list[ItemId], Field(max_length=GUESSES)]
 
 
 class Settings(CuratorBody):
@@ -146,7 +151,11 @@ def register_curator_game(app, device_user, browser):
 
     @app.get("/api/v1/games/curator/catalog")
     def catalog(request: Request, version: Annotated[str, Query(max_length=64)] = ""):
-        players.player(request)
+        # Guests need the names too; they are no secret, but a signed-in ban still applies.
+        if players.signed_in(request):
+            players.player(request)
+        elif "origin" in request.headers:
+            browser(request)
         current, items, rarities = app.state.curator.guess_list()
         if version and version == current:
             return {"version": 1, "catalog": current, "unchanged": True}
@@ -162,6 +171,15 @@ def register_curator_game(app, device_user, browser):
         row = players.player(request, write=True)
         try:
             return app.state.curator_game.guess(row["uuid"], row["name"], body.day, body.item)
+        except GameError as error:
+            raise HTTPException(error.status, error.detail) from None
+
+    @app.post("/api/v1/games/curator/guest")
+    def guest(body: GuestRound, request: Request):
+        """The website's guest round: judged here, kept only in the browser, never ranked."""
+        browser(request)
+        try:
+            return app.state.curator_game.guest(body.day, body.items)
         except GameError as error:
             raise HTTPException(error.status, error.detail) from None
 

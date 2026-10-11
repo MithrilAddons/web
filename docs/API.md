@@ -479,7 +479,8 @@ The mod's Games screen plays Curator with its device session (`Authorization: Be
 no Origin header), and the website's `/games/curator` page with its session cookie.
 Both identify the same Minecraft account, so they share one round each day. Cookie
 requests that carry an Origin must come from `https://mithril.foo`, and guesses always
-need it. Without either credential the routes answer 401. Banned accounts get 403. Each UTC day has one answer, frozen with a
+need it. Without either credential `today` and `guess` answer 401; the catalog is public and
+the website plays signed-out visitors as guests (below). Banned accounts get 403. Each UTC day has one answer, frozen with a
 market snapshot when the day starts; until then `today` reports `state: "preparing"`.
 Synthetic responses are in `contracts/curator-v1.json`.
 
@@ -503,6 +504,13 @@ and all-time `stats` (played, solved, streak, best_streak).
 shape as `today`. It answers 404 for an unknown item and 409 when the day has changed
 ("A new item is ready"), the day is still being prepared, the item was already guessed
 or the round is over. Rejected guesses never use up one of the ten.
+
+`POST /api/v1/games/curator/guest` plays the website's guest round. It needs the site's
+Origin, takes `version`, `day` (null to start) and `items`, all of the guest's guesses so far
+(at most 10), and returns the same shape as `today` without `stats`. Nothing is stored: the
+browser keeps the guesses and sends them again with each new one, so guests never reach the
+results or the leaderboard. It answers 404 for an unknown item and 409 for a guess list from
+another day, a repeated item or guesses after the answer.
 
 `GET /api/v1/games/curator/leaderboard` ranks the current calendar-month season by
 points (11 minus guesses used for a solve, 0 otherwise), then fewer total guesses. It

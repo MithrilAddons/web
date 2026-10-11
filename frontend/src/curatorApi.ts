@@ -107,6 +107,76 @@ export function sendGuess(day: string, item: string) {
   });
 }
 
+const GUEST_KEY = "mithril.curator.guest";
+
+type GuestRound = { day: string; items: string[] };
+
+function storedGuest(): GuestRound | null {
+  try {
+    const value: unknown = JSON.parse(
+      localStorage.getItem(GUEST_KEY) ?? "null",
+    );
+    if (
+      typeof value === "object" &&
+      value !== null &&
+      "day" in value &&
+      typeof value.day === "string" &&
+      "items" in value &&
+      Array.isArray(value.items) &&
+      value.items.every((item) => typeof item === "string")
+    )
+      return value as GuestRound;
+  } catch {
+    // A damaged or blocked store just starts today's round again.
+  }
+  return null;
+}
+
+function storeGuest(round: GuestRound | null) {
+  try {
+    if (round) localStorage.setItem(GUEST_KEY, JSON.stringify(round));
+    else localStorage.removeItem(GUEST_KEY);
+  } catch {
+    // The guesses still count for this visit.
+  }
+}
+
+/** A guest round is judged on the server but remembered only by this browser. */
+async function playAsGuest(day: string | null, items: string[]) {
+  const today = await request<Today>("/guest", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ version: 1, day, items }),
+  });
+  if (today.state !== "preparing")
+    storeGuest({ day: today.day, items: today.guesses.map((g) => g.item) });
+  return today;
+}
+
+export async function getGuestToday() {
+  const saved = storedGuest();
+  if (!saved?.items.length) return playAsGuest(null, []);
+  try {
+    return await playAsGuest(saved.day, saved.items);
+  } catch (error) {
+    // Yesterday's guesses, or ones the server no longer accepts: start today afresh.
+    if (
+      !(error instanceof CuratorError) ||
+      ![404, 409, 422].includes(error.status)
+    )
+      throw error;
+    storeGuest(null);
+    return playAsGuest(null, []);
+  }
+}
+
+export function sendGuestGuess(
+  today: { day: string; guesses: Guess[] },
+  item: string,
+) {
+  return playAsGuest(today.day, [...today.guesses.map((g) => g.item), item]);
+}
+
 export function getLeaderboard() {
   return request<Leaderboard>("/leaderboard");
 }

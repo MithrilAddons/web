@@ -201,13 +201,22 @@ it("offers the next item once the day turns over", async () => {
   expect(screen.queryByText("A new item is ready")).toBeNull();
 });
 
-it("asks signed-out visitors to link and still shows the leaderboard", async () => {
-  serve({
+it("lets signed-out visitors play as guests and keeps their guesses here", async () => {
+  localStorage.setItem(
+    "mithril.curator.guest",
+    JSON.stringify({ day: "2027-01-15", items: ["SYNTHESIZER_V2"] }),
+  );
+  const guestSolved = { ...solved, stats: undefined };
+  const fetcher = serve({
     "GET /today": {
       status: 401,
       body: { detail: "Link your Minecraft account to play Curator" },
     },
-    "GET /catalog": { status: 401, body: {} },
+    "GET /catalog": { body: { version: 1, catalog: "3:1", items: ITEMS } },
+    "POST /guest": (init) => {
+      const { items } = JSON.parse(init?.body as string) as { items: string[] };
+      return { body: items.length === 2 ? guestSolved : playing };
+    },
     "GET /leaderboard": {
       body: {
         ...contract.leaderboard,
@@ -217,14 +226,68 @@ it("asks signed-out visitors to link and still shows the leaderboard", async () 
     },
   });
   render(<Curator />);
-  expect(
-    await screen.findByText("Link your Minecraft account to play Curator."),
-  ).toBeTruthy();
+  expect(await screen.findByText("Curator #1")).toBeTruthy();
+  expect(screen.getByText(/Playing as a guest/)).toBeTruthy();
+  const resumed = fetcher.mock.calls.find(
+    ([, init]) => init?.method === "POST",
+  );
+  expect(JSON.parse(resumed?.[1]?.body as string)).toEqual({
+    version: 1,
+    day: "2027-01-15",
+    items: ["SYNTHESIZER_V2"],
+  });
+  const box = screen.getByRole("combobox");
+  await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(3));
+  fireEvent.change(box, { target: { value: "synthesizer v3" } });
+  fireEvent.keyDown(box, { key: "Enter" });
+  fireEvent.keyDown(box, { key: "Enter" });
+  expect(await screen.findByText("Solved in 2 of 10")).toBeTruthy();
+  expect(screen.queryByText(/Streak/)).toBeNull();
+  const last = fetcher.mock.calls
+    .filter(([, init]) => init?.method === "POST")
+    .at(-1);
+  expect(JSON.parse(last?.[1]?.body as string).items).toEqual([
+    "SYNTHESIZER_V2",
+    "SYNTHESIZER_V3",
+  ]);
+  expect(JSON.parse(localStorage.getItem("mithril.curator.guest")!)).toEqual({
+    day: "2027-01-15",
+    items: ["SYNTHESIZER_V2", "SYNTHESIZER_V3"],
+  });
   fireEvent.click(screen.getByRole("button", { name: "Leaderboard" }));
   expect(await screen.findByText("January season")).toBeTruthy();
   expect(screen.getByText("Alice")).toBeTruthy();
   expect(screen.getByText("Link your Minecraft account")).toBeTruthy();
-  expect(localStorage.getItem("mithril.curator.view")).toBe("leaderboard");
+});
+
+it("starts a guest afresh when the saved guesses are from another day", async () => {
+  localStorage.setItem(
+    "mithril.curator.guest",
+    JSON.stringify({ day: "2027-01-14", items: ["HYPERION"] }),
+  );
+  const fetcher = serve({
+    "GET /today": { status: 401, body: { detail: "Link" } },
+    "GET /catalog": { body: { version: 1, catalog: "3:1", items: ITEMS } },
+    "POST /guest": (init) => {
+      const { items } = JSON.parse(init?.body as string) as { items: string[] };
+      return items.length
+        ? { status: 409, body: { detail: "A new item is ready" } }
+        : { body: { ...playing, guesses: [] } };
+    },
+  });
+  render(<Curator />);
+  expect(await screen.findByText("0 of 10 guesses")).toBeTruthy();
+  const posts = fetcher.mock.calls.filter(
+    ([, init]) => init?.method === "POST",
+  );
+  expect(posts.map(([, init]) => JSON.parse(init?.body as string))).toEqual([
+    { version: 1, day: "2027-01-14", items: ["HYPERION"] },
+    { version: 1, day: null, items: [] },
+  ]);
+  expect(JSON.parse(localStorage.getItem("mithril.curator.guest")!)).toEqual({
+    day: "2027-01-15",
+    items: [],
+  });
 });
 
 it("shows your season, a pinned row and when the season ends", async () => {
