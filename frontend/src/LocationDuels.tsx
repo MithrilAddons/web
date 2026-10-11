@@ -1,10 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type FormEvent,
-} from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   LocationsError,
   acceptChallenge,
@@ -47,20 +41,21 @@ function useHeld<T>(
     if (!load) return;
     const controller = new AbortController();
     let after = -1;
-    void (async () => {
-      while (!controller.signal.aborted) {
-        try {
-          const value = await load(after, controller.signal);
-          if (controller.signal.aborted) return;
-          after = latest.current.revision(value);
-          latest.current.onValue(value);
-        } catch (problem) {
-          if (controller.signal.aborted || latest.current.onFail?.(problem))
-            return;
-          await new Promise((resolve) => setTimeout(resolve, RETRY_MS));
-        }
+    const ask = async (): Promise<void> => {
+      if (controller.signal.aborted) return;
+      try {
+        const value = await load(after, controller.signal);
+        if (controller.signal.aborted) return;
+        after = latest.current.revision(value);
+        latest.current.onValue(value);
+      } catch (error_) {
+        if (controller.signal.aborted || latest.current.onFail?.(error_))
+          return;
+        await new Promise((resolve) => setTimeout(resolve, RETRY_MS));
       }
-    })();
+      return ask();
+    };
+    void ask();
     return () => controller.abort();
   }, [load]);
 }
@@ -146,7 +141,7 @@ function Lobby({
     }
   };
 
-  const challenge = (event: FormEvent) => {
+  const challenge = (event: { preventDefault: () => void }) => {
     event.preventDefault();
     if (name.trim())
       void act(async () => {
@@ -451,7 +446,7 @@ function DuelMatch({
     },
   );
 
-  const act = async (action: () => Promise<Duel | unknown>) => {
+  const act = async (action: () => Promise<unknown>) => {
     setError("");
     try {
       const value = await action();
@@ -490,25 +485,7 @@ function DuelMatch({
               </span>
             )}
           </span>
-          {duel.state === "playing" && duel.deadline !== undefined && (
-            <Countdown deadline={duel.deadline} offset={offset} />
-          )}
-          {duel.state === "loading" && duel.countdown !== undefined && (
-            <Countdown
-              deadline={duel.countdown}
-              offset={offset}
-              label={(seconds) =>
-                seconds > 0 ? `Starting in ${seconds}` : "Go!"
-              }
-            />
-          )}
-          {duel.state === "revealed" && duel.next !== undefined && (
-            <Countdown
-              deadline={duel.next}
-              offset={offset}
-              label={(seconds) => `Next round in ${seconds}`}
-            />
-          )}
+          <DuelClock duel={duel} offset={offset} />
         </div>
         <HealthBar
           name={opponent.name}
@@ -554,22 +531,11 @@ function DuelMatch({
             </button>
           )}
           {result && (
-            <div className="solo-result" aria-live="polite">
-              <p className="solo-score">
-                +{points(result.me.score)}{" "}
-                <span className="quiet-label">
-                  vs {opponent.name} +{points(result.opponent.score)}
-                </span>
-              </p>
-              <p>{guessDetail(world, result.me)}</p>
-              <p>{damage(result, opponent.name)}</p>
-              <p className="quiet-label">
-                {result.answer.name}
-                {result.captured_by
-                  ? ` · captured by ${result.captured_by}`
-                  : ""}
-              </p>
-            </div>
+            <DuelResult
+              world={world}
+              result={result}
+              opponent={opponent.name}
+            />
           )}
         </aside>
       </div>
@@ -582,46 +548,18 @@ function DuelMatch({
       </button>
       {error && <p role="alert">{error}</p>}
       {duel.finished ? (
-        <div className="curator-panel solo-summary">
-          <h2>{HEADINGS[duel.finished.result]}</h2>
-          <p>
-            {REASONS[duel.finished.reason]?.(
-              opponent.name,
-              duel.finished.result === "win",
-            )}
-          </p>
-          {duel.finished.rating ? (
-            <p>
-              Rating {duel.finished.rating.before} →{" "}
-              {duel.finished.rating.after}
-              {duel.finished.rating.provisional ? "?" : ""} (
-              {signed(duel.finished.rating.after - duel.finished.rating.before)}
-              )
-            </p>
-          ) : (
-            duel.finished.reason !== "cancelled" && (
-              <p className="quiet-label">This duel was unrated.</p>
-            )
-          )}
-          <div className="hero-actions">
-            <button
-              type="button"
-              className="primary"
-              disabled={rematchSent}
-              onClick={() =>
-                void act(async () => {
-                  await rematch(id);
-                  setRematchSent(true);
-                })
-              }
-            >
-              {rematchSent ? `Waiting for ${opponent.name}…` : "Rematch"}
-            </button>
-            <button type="button" className="secondary" onClick={onDone}>
-              Back to duels
-            </button>
-          </div>
-        </div>
+        <DuelEnd
+          finished={duel.finished}
+          opponent={opponent.name}
+          rematchSent={rematchSent}
+          onRematch={() =>
+            void act(async () => {
+              await rematch(id);
+              setRematchSent(true);
+            })
+          }
+          onDone={onDone}
+        />
       ) : (
         <button
           type="button"
@@ -632,5 +570,102 @@ function DuelMatch({
         </button>
       )}
     </section>
+  );
+}
+
+function DuelClock({
+  duel,
+  offset,
+}: Readonly<{ duel: Duel; offset: { current: number } }>) {
+  if (duel.state === "playing" && duel.deadline !== undefined)
+    return <Countdown deadline={duel.deadline} offset={offset} />;
+  if (duel.state === "loading" && duel.countdown !== undefined)
+    return (
+      <Countdown
+        deadline={duel.countdown}
+        offset={offset}
+        label={(seconds) => (seconds > 0 ? `Starting in ${seconds}` : "Go!")}
+      />
+    );
+  if (duel.state === "revealed" && duel.next !== undefined)
+    return (
+      <Countdown
+        deadline={duel.next}
+        offset={offset}
+        label={(seconds) => `Next round in ${seconds}`}
+      />
+    );
+  return null;
+}
+
+function DuelResult({
+  world,
+  result,
+  opponent,
+}: Readonly<{
+  world: World;
+  result: Duel["results"][number];
+  opponent: string;
+}>) {
+  return (
+    <div className="solo-result" aria-live="polite">
+      <p className="solo-score">
+        +{points(result.me.score)}{" "}
+        <span className="quiet-label">
+          vs {opponent} +{points(result.opponent.score)}
+        </span>
+      </p>
+      <p>{guessDetail(world, result.me)}</p>
+      <p>{damage(result, opponent)}</p>
+      <p className="quiet-label">
+        {result.answer.name}
+        {result.captured_by ? ` · captured by ${result.captured_by}` : ""}
+      </p>
+    </div>
+  );
+}
+
+function DuelEnd({
+  finished,
+  opponent,
+  rematchSent,
+  onRematch,
+  onDone,
+}: Readonly<{
+  finished: NonNullable<Duel["finished"]>;
+  opponent: string;
+  rematchSent: boolean;
+  onRematch: () => void;
+  onDone: () => void;
+}>) {
+  const rating = finished.rating;
+  return (
+    <div className="curator-panel solo-summary">
+      <h2>{HEADINGS[finished.result]}</h2>
+      <p>{REASONS[finished.reason]?.(opponent, finished.result === "win")}</p>
+      {rating && (
+        <p>
+          Rating {rating.before} → {rating.after}
+          {rating.provisional ? "?" : ""} (
+          {signed(rating.after - rating.before)})
+        </p>
+      )}
+      {!rating && finished.reason !== "cancelled" && (
+        <p className="quiet-label">This duel was unrated.</p>
+      )}
+      <div className="hero-actions">
+        <button
+          type="button"
+          className="primary"
+          disabled={rematchSent}
+          onClick={onRematch}
+        >
+          {rematchSent ? `Waiting for ${opponent}…` : "Rematch"}
+        </button>
+        <button type="button" className="secondary" onClick={onDone}>
+          Back to duels
+        </button>
+      </div>
+    </div>
   );
 }
