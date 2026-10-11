@@ -92,8 +92,9 @@ class World:
         distance = math.hypot(x - spot_x, z - spot_z)
         if distance <= PERFECT:
             return MAX_POINTS, distance, guessed
-        scale = self.islands[island].size / 10
-        return round(MAX_POINTS * math.exp(-distance / scale)), distance, guessed
+        # A bell curve: near misses cost little, misses across the island cost nearly all.
+        scale = self.islands[island].size / 6
+        return round(MAX_POINTS * math.exp(-((distance / scale) ** 2))), distance, guessed
 
     def describe(self):
         return {
