@@ -37,6 +37,21 @@ class RecordStore:
             CREATE TABLE IF NOT EXISTS location_seen (
                 player TEXT NOT NULL, location TEXT NOT NULL, seen REAL NOT NULL,
                 PRIMARY KEY(player, location));
+            CREATE TABLE IF NOT EXISTS location_ratings (
+                uuid TEXT PRIMARY KEY, name TEXT NOT NULL, rating REAL NOT NULL, rd REAL NOT NULL,
+                volatility REAL NOT NULL, season TEXT NOT NULL, wins INTEGER NOT NULL,
+                losses INTEGER NOT NULL, draws INTEGER NOT NULL, peak REAL NOT NULL,
+                played REAL NOT NULL);
+            CREATE TABLE IF NOT EXISTS location_duels (
+                id TEXT PRIMARY KEY, finished REAL NOT NULL, a_uuid TEXT, a_name TEXT NOT NULL,
+                b_uuid TEXT, b_name TEXT NOT NULL, winner INTEGER, reason TEXT NOT NULL,
+                rated INTEGER NOT NULL, ratings TEXT NOT NULL, rounds TEXT NOT NULL,
+                a_health INTEGER NOT NULL, b_health INTEGER NOT NULL);
+            CREATE INDEX IF NOT EXISTS location_duels_a ON location_duels(a_uuid, finished);
+            CREATE INDEX IF NOT EXISTS location_duels_b ON location_duels(b_uuid, finished);
+            CREATE TABLE IF NOT EXISTS location_season_tops (
+                season TEXT NOT NULL, rank INTEGER NOT NULL, uuid TEXT, name TEXT NOT NULL,
+                rating INTEGER NOT NULL, PRIMARY KEY(season, rank));
             CREATE TABLE IF NOT EXISTS location_solo_best (
                 uuid TEXT PRIMARY KEY, best INTEGER NOT NULL, runs INTEGER NOT NULL,
                 points INTEGER NOT NULL, updated REAL NOT NULL);

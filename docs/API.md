@@ -597,9 +597,52 @@ stale round or a run that has ended answers 409 or 404.
 `GET /api/v1/games/locations/me` returns `kind` (linked or guest), the player's name (Guest #1234
 for guests) and, for linked players, their solo `best`, `runs` and `average`.
 
-Runs live in memory, so a restart ends them. Which locations a player has seen and linked
-players' solo bests are in records.sqlite3 (`location_seen`, `location_solo_best`); erasing
-records removes them, and guests' rows go after 30 days.
+### Duels
+
+Two players see the same panoramas round after round; after each round the player with the
+lower score loses the difference times the round's multiplier (×1 for rounds 1–3, ×1.5 in round
+4, then 0.5 more each round) from 6,000 health. A round lasts 25 seconds from when both have the
+panorama on screen (the first round counts down 3 seconds first); the first guess cuts the other
+player's time to 10 seconds. Results show for 8 seconds, then the next round starts by itself.
+A duel ends when someone has no health, or after up to 15 rounds (never more than the live pool),
+when more health wins or equal health draws. A player who hasn't checked in for 30 seconds
+forfeits; if both vanish the duel is cancelled.
+
+`GET /api/v1/games/locations/duels/inbox?after=` returns the player's `revision`, `incoming`
+challenges, `outgoing` challenges and invites, and `duel`, the player's live duel. It is held for
+up to 25 seconds until the revision passes `after`. Keeping it open also lets other players
+challenge you by name. It sets the guest cookie for new guests.
+`POST .../duels/challenge` takes a Minecraft `name` of someone with the game open (404 otherwise);
+challenges last 2 minutes. `POST .../duels/invite` returns a 6-character `code` for a link that
+works once within 10 minutes; `POST .../duels/join` takes it. `POST .../duels/challenges/{id}/accept`
+and `.../decline` answer a challenge. A player in a live duel can't start another (409).
+
+`GET /api/v1/games/locations/duels/{id}?after=` returns the duel from the player's side, held up
+to 25 seconds until its `version` passes `after`: `state` (loading, playing, revealed,
+finished), `round`, `rounds`, `health`, `me` and `opponent` (name, health, whether they've
+guessed, and for the opponent whether they're connected and a guest), `results` from the
+player's side (each player's score, distance, island guessed and pin, the damage, whether you
+lost the round, the answer and who captured it), and `multiplier`. Loading adds `panorama` and,
+for the first round, `countdown`; playing adds `deadline`; revealed adds `next`. A finished duel
+has `finished` with `result` (win, loss or draw), `reason` (health, rounds, forfeit or
+cancelled) and the player's `rating` change when rated. `POST .../ready`, `.../guess` (round,
+x, z), `.../leave` (forfeits) and `.../rematch` (challenges the same opponent) act on it.
+
+Duels between two linked players change Glicko-2 ratings straight away (start 1500, deviation
+350, volatility 0.06), but only the first 3 between the same pair each UTC day count. A rating is
+provisional until its deviation drops below 110. Deviation grows each idle week, and at the start
+of each calendar-month season every rating moves a quarter of the way back to 1500 and its
+deviation rises by 100. Duels with a guest are unrated; duels with at least one linked player are
+kept in `location_duels` for history.
+
+`GET /api/v1/games/locations/leaderboard` ranks the season's established players (top 10, your
+row as `you` when outside them, `players`) and lists each past season's final top 10 as `past`.
+`GET .../duels/history?offset=` returns a linked player's duels, 20 at a time, with every round.
+`GET .../me` adds the linked player's `rating` (rating, provisional, wins, losses, draws, peak).
+
+Runs, duels, challenges and invites live in memory, so a restart ends them without rating changes. Which locations a player has seen and linked
+players' solo bests and ratings are in records.sqlite3 (`location_seen`, `location_solo_best`,
+`location_ratings`); erasing records removes them and renames the erased side of past duels, and guests' rows go after 30 days.
 
 ## Operations and limits
 

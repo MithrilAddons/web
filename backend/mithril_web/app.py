@@ -28,6 +28,7 @@ from .curator_data import CuratorData
 from .curator_game import CuratorGame
 from .link_previews import register_previews
 from .location_api import register_locations
+from .location_duels import LocationDuels
 from .location_game import LocationGame
 from .moderation import Moderation
 from .moderation_api import register_moderation
@@ -173,6 +174,7 @@ def create_app(
         app.state.locations = LocationGame(
             app.state.records, app.state.captures, Path(path).with_name("captures") / "game"
         )
+        app.state.duels = LocationDuels(app.state.locations, app.state.records, wait=party_wait)
         try:
             await run_in_threadpool(app.state.locations.refresh)
         except (OSError, ValueError):
@@ -188,12 +190,20 @@ def create_app(
                 await run_in_threadpool(app.state.privacy.cleanup)
                 await run_in_threadpool(app.state.captures.cleanup)
                 await run_in_threadpool(app.state.locations.cleanup)
+                app.state.duels.cleanup()
+
+        async def duel_clock():
+            # Moves duel rounds along on time, even while nobody is sending a request.
+            while True:
+                await asyncio.sleep(0.25)
+                app.state.duels.advance()
 
         tasks = [
             asyncio.create_task(cleanup()),
             asyncio.create_task(sweep_parties()),
             asyncio.create_task(slayer_market.run()),
             asyncio.create_task(app.state.curator.run()),
+            asyncio.create_task(duel_clock()),
         ]
         try:
             yield
