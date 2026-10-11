@@ -3,6 +3,7 @@ import { getHealth } from "./api";
 import { Account, CookiePolicy, LinkAccount } from "./account";
 import { Capture } from "./Capture";
 import { Curator } from "./Curator";
+import { Locations } from "./Locations";
 import { PartyWorkspace } from "./PartyFinder";
 import { AccountPrivacy, PrivacyPolicy } from "./Privacy";
 import { Moderation } from "./Moderation";
@@ -120,6 +121,8 @@ function PageContent({ path }: Readonly<{ path: string }>) {
       return <SlayerProfits />;
     case "/games/curator":
       return <Curator />;
+    case "/games/locations":
+      return <Locations />;
     case "/privacy":
       return <PrivacyPolicy />;
     case "/profile":
