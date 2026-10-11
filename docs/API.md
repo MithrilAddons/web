@@ -484,8 +484,10 @@ market snapshot when the day starts; until then `today` reports `state: "prepari
 Synthetic responses are in `contracts/curator-v1.json`.
 
 `GET /api/v1/games/curator/catalog?version=` returns `catalog` (a version string) and
-`items`, a list of `[item_id, name]` pairs with each name once, for autocomplete. When
-`version` matches, the response is `{"unchanged": true}` instead of the list.
+`items`, a list of `[item_id, name]` pairs with each name once, for autocomplete, with
+`rarities` beside it: each item's SkyBlock rarity (or null) in the same order, so clients
+can colour suggestions. When `version` matches, the response is `{"unchanged": true}`
+instead of the list.
 
 `GET /api/v1/games/curator/today` returns the day, its number (#1 on launch day), the
 state (preparing, playing, solved or failed), the 10-guess limit, `resets_at` (Unix

@@ -240,6 +240,16 @@ def test_catalog_lists_each_name_once_and_skips_unchanged_downloads(game):
     catalog = client.get("/api/v1/games/curator/catalog", headers=headers[ALICE]).json()
     assert ["SYNTHESIZER_V3", "Synthesizer v3"] in catalog["items"]
     assert len(catalog["items"]) == 1003
+    # Rarities line up with the items; the version marks the list's new shape.
+    rarity = dict(zip((item for item, _ in catalog["items"]), catalog["rarities"], strict=True))
+    assert (rarity["SYNTHESIZER_V3"], rarity["HYPERION"], rarity["FILLER_0001"]) == (
+        "EPIC",
+        "LEGENDARY",
+        "RARE",
+    )
+    assert catalog["catalog"].endswith(":rarity")
+    stale = client.get("/api/v1/games/curator/catalog?version=3:1", headers=headers[ALICE]).json()
+    assert "items" in stale
     again = client.get(
         f"/api/v1/games/curator/catalog?version={catalog['catalog']}", headers=headers[ALICE]
     ).json()

@@ -535,16 +535,25 @@ class CuratorData:
         }
 
     def guess_list(self):
-        """Every guessable name once, for autocomplete, with the catalog version."""
+        """Every guessable name once with its rarity, for autocomplete, and the list's version.
+
+        The version changes with the list's shape too, so clients holding a list from before
+        rarities were added download it again.
+        """
         with self.lock:
             version = self._meta("catalog_updated", "")
             rows = self.db.execute(
-                "SELECT id, name FROM curator_items WHERE guessable=1 ORDER BY id"
+                "SELECT id, name, clues FROM curator_items WHERE guessable=1 ORDER BY id"
             ).fetchall()
         names = {}
         for row in rows:
-            names.setdefault(row["name"], row["id"])
-        return version, sorted(([item, name] for name, item in names.items()), key=lambda r: r[1])
+            names.setdefault(row["name"], (row["id"], json.loads(row["clues"]).get("rarity")))
+        entries = sorted(names.items())
+        return (
+            f"{version}:rarity",
+            [[item, name] for name, (item, _) in entries],
+            [rarity for _, (_, rarity) in entries],
+        )
 
 
 def date_of(text):

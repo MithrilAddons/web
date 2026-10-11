@@ -147,10 +147,11 @@ def register_curator_game(app, device_user, browser):
     @app.get("/api/v1/games/curator/catalog")
     def catalog(request: Request, version: Annotated[str, Query(max_length=64)] = ""):
         players.player(request)
-        current, items = app.state.curator.guess_list()
+        current, items, rarities = app.state.curator.guess_list()
         if version and version == current:
             return {"version": 1, "catalog": current, "unchanged": True}
-        return {"version": 1, "catalog": current, "items": items}
+        # Rarities sit beside the [id, name] pairs, which older mods read strictly.
+        return {"version": 1, "catalog": current, "items": items, "rarities": rarities}
 
     @app.get("/api/v1/games/curator/today")
     def today(request: Request):

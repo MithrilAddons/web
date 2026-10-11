@@ -62,7 +62,14 @@ it("plays a round on a wide screen and shares the result", async () => {
   vi.stubGlobal("navigator", { clipboard: { writeText } });
   const fetcher = serve({
     "GET /today": { body: playing },
-    "GET /catalog": { body: { version: 1, catalog: "3:1", items: ITEMS } },
+    "GET /catalog": {
+      body: {
+        version: 1,
+        catalog: "3:1",
+        items: ITEMS,
+        rarities: ["EPIC", "EPIC", "LEGENDARY", null],
+      },
+    },
     "POST /guess": { body: solved },
   });
   render(<Curator />);
@@ -85,6 +92,10 @@ it("plays a round on a wide screen and shares the result", async () => {
   expect(options.map((option) => option.textContent)).toEqual([
     "Synthesizer v3",
   ]);
+  // Suggestions take their SkyBlock rarity colour.
+  expect(within(options[0]!).getByText("Synthesizer v3").style.color).toBe(
+    "rgb(170, 0, 170)",
+  );
   fireEvent.keyDown(box, { key: "Enter" });
   expect((box as HTMLInputElement).value).toBe("Synthesizer v3");
   fireEvent.keyDown(box, { key: "Enter" });
