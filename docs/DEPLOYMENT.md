@@ -145,7 +145,9 @@ Location game captures add the idempotent `capture_locations`, `capture_maps`,
 databases; the hourly cleanup deletes files no row points at and rejected submissions after 30
 days. Install the updated nginx configuration with the release: `/api/v1/capture/` has its own
 zone (120 requests/minute/IP, burst 60) and accepts 8 MiB bodies there only, and the backend
-allows 8 MiB only for capture PUTs. After deployment, verify the capture routes refuse requests
+allows 8 MiB only for capture PUTs. Capture review images and decisions under `/api/v1/moderation/captures/` have their own
+zone (600 requests/minute/IP, burst 200), because each location in the queue loads seven images;
+reviewers' browsers cache those images privately for a day. After deployment, verify the capture routes refuse requests
 without an upload code and the review endpoints refuse non-reviewers.
 
 API responses are not publicly cached. Authentication has an nginx limit of

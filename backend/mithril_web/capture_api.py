@@ -76,6 +76,8 @@ def version_tuple(text):
 
 
 PNG = "image/png"
+# Reviewable images never change (uploads end at submission), so the reviewer's browser keeps them.
+IMAGE_CACHE = {"Cache-Control": "private, max-age=86400"}
 
 
 def handle(action):
@@ -285,9 +287,10 @@ def register_review_routes(app, access, browser):
     ):
         access.reviewer(request)
         data = handle(lambda: access.store.image("locations", location_id, face))
-        return Response(data, media_type=PNG)
+        return Response(data, media_type=PNG, headers=IMAGE_CACHE)
 
     @app.get("/api/v1/moderation/captures/maps/{map_id}.png")
     def map_image(map_id: SubmissionId, request: Request):
         access.reviewer(request)
-        return Response(handle(lambda: access.store.image("maps", map_id)), media_type=PNG)
+        data = handle(lambda: access.store.image("maps", map_id))
+        return Response(data, media_type=PNG, headers=IMAGE_CACHE)
