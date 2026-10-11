@@ -139,21 +139,40 @@ class LocationGame:
 
     # Runs
 
-    def _choose(self, player):
+    def pick(self, players, count):
+        """Up to `count` live locations, those every player has seen least first."""
+        marks = ",".join("?" * len(players))
         with self.records.lock:
             seen = dict(
                 self.db.execute(
-                    "SELECT location, seen FROM location_seen WHERE player=?", (player,)
+                    "SELECT location, MAX(seen) FROM location_seen WHERE player IN "
+                    f"({marks}) GROUP BY location",
+                    list(players),
                 ).fetchall()
             )
         ids = list(self.pool)
-        if len(ids) < ROUNDS:
-            raise GameError(503, "Not enough locations yet. Check back soon.")
         _random.shuffle(ids)
         ids.sort(key=lambda location_id: seen.get(location_id, 0))
-        chosen = ids[:ROUNDS]
+        chosen = ids[:count]
         _random.shuffle(chosen)
         return [self.pool[location_id] for location_id in chosen]
+
+    def mark_seen(self, player, location_id, now):
+        with self.records.lock, self.db:
+            self.db.execute(
+                "INSERT OR REPLACE INTO location_seen VALUES (?, ?, ?)", (player, location_id, now)
+            )
+
+    def atlas(self, location_id):
+        path = self._atlas(location_id)
+        if not path.is_file():
+            raise GameError(404, "Unknown panorama")
+        return path.read_bytes()
+
+    def _choose(self, player):
+        if len(self.pool) < ROUNDS:
+            raise GameError(503, "Not enough locations yet. Check back soon.")
+        return self.pick([player], ROUNDS)
 
     def _issue(self, run, index, now):
         token = secrets.token_urlsafe(18)
@@ -224,11 +243,7 @@ class LocationGame:
             },
             "captured_by": location.captured_by,
         }
-        with self.records.lock, self.db:
-            self.db.execute(
-                "INSERT OR REPLACE INTO location_seen VALUES (?, ?, ?)",
-                (run.player, location.id, now),
-            )
+        self.mark_seen(run.player, location.id, now)
         if run.index == len(run.rounds) - 1 and run.uuid:
             run.best = self._record(run.uuid, sum(r.result["score"] for r in run.rounds), now)
 
@@ -337,10 +352,7 @@ class LocationGame:
             if not run or run.index != found[1]:
                 raise GameError(404, "Unknown panorama")
             location_id = run.rounds[found[1]].location.id
-        path = self._atlas(location_id)
-        if not path.is_file():
-            raise GameError(404, "Unknown panorama")
-        return path.read_bytes()
+        return self.atlas(location_id)
 
     def cleanup(self):
         now = self.clock()

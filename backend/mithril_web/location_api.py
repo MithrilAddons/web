@@ -10,7 +10,7 @@ import secrets
 import time
 from typing import Annotated, Literal
 
-from fastapi import HTTPException, Path, Request, Response
+from fastapi import HTTPException, Path, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.concurrency import run_in_threadpool
 
@@ -36,6 +36,18 @@ class Step(Body):
 class Pin(Step):
     x: Coordinate
     z: Coordinate
+
+
+class Challenge(Body):
+    name: Annotated[str, Field(pattern=r"^[A-Za-z0-9_]{1,16}$")]
+
+
+class Join(Body):
+    code: Annotated[str, Field(pattern=r"^[A-Za-z0-9]{6}$")]
+
+
+DuelId = Annotated[str, Path(pattern=r"^[A-Za-z0-9_-]{22}$")]
+PendingId = Annotated[str, Path(pattern=r"^[A-Za-z0-9_-]{12}$")]
 
 
 def guest_name(player):
@@ -87,7 +99,9 @@ def register_locations(app, browser, clock=time.monotonic):
     players = Players(app, browser, clock)
     register_world(app)
     register_player(app, browser, players)
+    register_rankings(app, browser, players)
     register_solo(app, browser, players)
+    register_duels(app, browser, players)
 
 
 def register_world(app):
@@ -128,9 +142,45 @@ def register_player(app, browser, players):
                 raise
             return {"version": 1, "kind": "guest", "name": None, "solo": None}
         if not who["uuid"]:
-            return {"version": 1, "kind": "guest", "name": who["name"], "solo": None}
-        solo = app.state.locations.best(who["uuid"])
-        return {"version": 1, "kind": "linked", "name": who["name"], "solo": solo}
+            return {
+                "version": 1,
+                "kind": "guest",
+                "name": who["name"],
+                "solo": None,
+                "rating": None,
+            }
+        return {
+            "version": 1,
+            "kind": "linked",
+            "name": who["name"],
+            "solo": app.state.locations.best(who["uuid"]),
+            "rating": app.state.duels.standing(who["uuid"]),
+        }
+
+
+def register_rankings(app, browser, players):
+    """The duel leaderboard (public) and a linked player's duel history."""
+
+    @app.get("/api/v1/games/locations/leaderboard")
+    def leaderboard(request: Request):
+        if "origin" in request.headers:
+            browser(request)
+        try:
+            uuid = players.identify(request)["uuid"]
+        except HTTPException as error:
+            if error.status_code != 401:
+                raise
+            uuid = None
+        return app.state.duels.leaderboard(uuid)
+
+    @app.get("/api/v1/games/locations/duels/history")
+    def history(request: Request, offset: Annotated[int, Query(ge=0, le=100_000)] = 0):
+        if "origin" in request.headers:
+            browser(request)
+        who = players.identify(request)
+        if not who["uuid"]:
+            return {"version": 1, "total": 0, "duels": []}
+        return app.state.duels.history(who["uuid"], offset)
 
 
 def register_solo(app, browser, players):
@@ -171,7 +221,95 @@ def register_solo(app, browser, players):
     @app.get("/api/v1/games/locations/panorama/{token}.webp")
     async def panorama(token: Annotated[str, Path(pattern=r"^[A-Za-z0-9_-]{24}$")]):
         # The token is the round's own; the image's name never repeats between rounds.
-        data = await run_in_threadpool(handle, lambda: game().panorama(token))
+        def find():
+            try:
+                return game().panorama(token)
+            except GameError:
+                return app.state.duels.panorama(token)
+
+        data = await run_in_threadpool(handle, find)
         return Response(
             data, media_type="image/webp", headers={"Cache-Control": "private, max-age=600"}
         )
+
+
+def register_duels(app, browser, players):
+    """Duels run on the event loop, so these routes are async and never block it for long."""
+
+    def duels():
+        return app.state.duels
+
+    def site(request):
+        browser(request)
+        return players.identify(request)
+
+    def reading(request):
+        if "origin" in request.headers:
+            browser(request)
+        return players.identify(request)
+
+    @app.get("/api/v1/games/locations/duels/inbox")
+    async def inbox(request: Request, response: Response, after: Annotated[int, Query(ge=-1)] = -1):
+        """Incoming and outgoing challenges and the player's live duel; held until it changes."""
+        if "origin" in request.headers:
+            browser(request)
+        who = players.identify(request, response)
+        return await duels().wait_inbox(who, after)
+
+    @app.post("/api/v1/games/locations/duels/challenge")
+    async def challenge(body: Challenge, request: Request):
+        who = site(request)
+        return handle(lambda: duels().challenge(who, body.name))
+
+    @app.post("/api/v1/games/locations/duels/invite")
+    async def invite(body: Body, request: Request, response: Response):
+        browser(request)
+        who = players.identify(request, response)
+        return handle(lambda: duels().invite(who))
+
+    @app.post("/api/v1/games/locations/duels/join")
+    async def join(body: Join, request: Request, response: Response):
+        browser(request)
+        who = players.identify(request, response)
+        return handle(lambda: duels().join(body.code, who))
+
+    @app.post("/api/v1/games/locations/duels/challenges/{challenge_id}/accept")
+    async def accept(challenge_id: PendingId, body: Body, request: Request):
+        who = site(request)
+        return handle(lambda: duels().accept(challenge_id, who))
+
+    @app.post("/api/v1/games/locations/duels/challenges/{challenge_id}/decline")
+    async def decline(challenge_id: PendingId, body: Body, request: Request):
+        who = site(request)
+        return duels().decline(challenge_id, who)
+
+    @app.get("/api/v1/games/locations/duels/{duel_id}")
+    async def duel_state(
+        duel_id: DuelId, request: Request, after: Annotated[int, Query(ge=-1)] = -1
+    ):
+        """The duel from this player's side, held until something changes."""
+        who = reading(request)
+        try:
+            return await duels().wait_state(duel_id, who, after)
+        except GameError as error:
+            raise HTTPException(error.status, error.detail) from None
+
+    @app.post("/api/v1/games/locations/duels/{duel_id}/ready")
+    async def duel_ready(duel_id: DuelId, body: Step, request: Request):
+        who = site(request)
+        return handle(lambda: duels().ready(duel_id, who, body.round))
+
+    @app.post("/api/v1/games/locations/duels/{duel_id}/guess")
+    async def duel_guess(duel_id: DuelId, body: Pin, request: Request):
+        who = site(request)
+        return handle(lambda: duels().guess(duel_id, who, body.round, body.x, body.z))
+
+    @app.post("/api/v1/games/locations/duels/{duel_id}/leave")
+    async def duel_leave(duel_id: DuelId, body: Body, request: Request):
+        who = site(request)
+        return handle(lambda: duels().leave(duel_id, who))
+
+    @app.post("/api/v1/games/locations/duels/{duel_id}/rematch")
+    async def duel_rematch(duel_id: DuelId, body: Body, request: Request):
+        who = site(request)
+        return handle(lambda: duels().rematch(duel_id, who))
