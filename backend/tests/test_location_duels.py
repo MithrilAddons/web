@@ -3,7 +3,7 @@ from fastapi.testclient import TestClient
 from mithril_web.app import create_app
 from mithril_web.auth import COOKIE, DAY
 from mithril_web.capture import new_id
-from mithril_web.glicko import Rating, idle, soften, update
+from mithril_web.glicko import Strength, idle, soften, update
 from mithril_web.location_duels import (
     CHALLENGE_KEPT,
     COUNTDOWN,
@@ -126,15 +126,15 @@ def test_damage_grows_so_long_duels_end():
 
 def test_glicko_matches_the_published_example_and_the_monthly_reset():
     after = update(
-        Rating(1500, 200, 0.06),
-        [(Rating(1400, 30), 1), (Rating(1550, 100), 0), (Rating(1700, 300), 0)],
+        Strength(1500, 200, 0.06),
+        [(Strength(1400, 30), 1), (Strength(1550, 100), 0), (Strength(1700, 300), 0)],
     )
     assert (round(after.rating, 2), round(after.rd, 2)) == (1464.05, 151.52)
     assert round(after.volatility, 4) == 0.06
-    assert soften(Rating(2100, 80)) == Rating(1950, 180)
-    assert soften(Rating(1500, 300)).rd == 350
-    assert idle(Rating(1500, 50), 0) == Rating(1500, 50)
-    assert idle(Rating(1500, 50), 52).rd > 50
+    assert soften(Strength(2100, 80)) == Strength(1950, 180)
+    assert soften(Strength(1500, 300)).rd == 350
+    assert idle(Strength(1500, 50), 0) == Strength(1500, 50)
+    assert idle(Strength(1500, 50), 52).rd > 50
 
 
 def test_guests_duel_through_an_invite_link(duel):
@@ -229,11 +229,14 @@ def test_linked_players_duel_for_rating_and_history(duel):
     assert final["finished"]["result"] == "win"
     assert final["finished"]["reason"] == "health"
     change = final["finished"]["rating"]
-    assert change["before"] == 1500 and change["after"] > 1500 and change["provisional"]
+    assert change["before"] == 1500
+    assert change["after"] > 1500
+    assert change["provisional"]
     bob = view(client, duel_id, linked[BOB])["finished"]["rating"]
     assert bob["after"] < 1500
     me = client.get("/api/v1/games/locations/me", headers=linked[ALICE]).json()
-    assert me["rating"]["wins"] == 1 and me["rating"]["provisional"] is True
+    assert me["rating"]["wins"] == 1
+    assert me["rating"]["provisional"] is True
     history = client.get(f"{BASE}/history", headers=linked[BOB]).json()
     assert history["total"] == 1
     past = history["duels"][0]

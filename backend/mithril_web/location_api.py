@@ -99,6 +99,7 @@ def register_locations(app, browser, clock=time.monotonic):
     players = Players(app, browser, clock)
     register_world(app)
     register_player(app, browser, players)
+    register_rankings(app, browser, players)
     register_solo(app, browser, players)
     register_duels(app, browser, players)
 
@@ -155,6 +156,10 @@ def register_player(app, browser, players):
             "solo": app.state.locations.best(who["uuid"]),
             "rating": app.state.duels.standing(who["uuid"]),
         }
+
+
+def register_rankings(app, browser, players):
+    """The duel leaderboard (public) and a linked player's duel history."""
 
     @app.get("/api/v1/games/locations/leaderboard")
     def leaderboard(request: Request):

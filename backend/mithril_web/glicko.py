@@ -12,18 +12,18 @@ EPSILON = 0.000001
 
 
 @dataclass(frozen=True)
-class Rating:
+class Strength:
     rating: float = START
     rd: float = START_RD
     volatility: float = START_VOLATILITY
 
 
-def idle(player: Rating, periods: float) -> Rating:
+def idle(player: Strength, periods: float) -> Strength:
     """Uncertainty grows while a player doesn't play; the rating itself never moves."""
     if periods <= 0:
         return player
     phi = math.sqrt((player.rd / SCALE) ** 2 + periods * player.volatility**2)
-    return Rating(player.rating, min(START_RD, phi * SCALE), player.volatility)
+    return Strength(player.rating, min(START_RD, phi * SCALE), player.volatility)
 
 
 def _g(phi):
@@ -57,7 +57,7 @@ def _volatility(sigma, phi, v, delta):
     return math.exp(low / 2)
 
 
-def update(player: Rating, games) -> Rating:
+def update(player: Strength, games) -> Strength:
     """The player's rating after a period's games: (opponent, score) pairs, where the score
     is 1 for a win, 0.5 for a draw and 0 for a loss."""
     mu, phi = (player.rating - START) / SCALE, player.rd / SCALE
@@ -72,12 +72,12 @@ def update(player: Rating, games) -> Rating:
     sigma = _volatility(player.volatility, phi, v, v * improvement)
     phi_star = math.sqrt(phi**2 + sigma**2)
     phi_new = 1 / math.sqrt(1 / phi_star**2 + 1 / v)
-    return Rating((mu + phi_new**2 * improvement) * SCALE + START, phi_new * SCALE, sigma)
+    return Strength((mu + phi_new**2 * improvement) * SCALE + START, phi_new * SCALE, sigma)
 
 
-def soften(player: Rating) -> Rating:
+def soften(player: Strength) -> Strength:
     """The monthly soft reset: a quarter of the way back to 1500, and 100 less certain."""
-    return Rating(
+    return Strength(
         player.rating + (START - player.rating) / 4,
         min(START_RD, player.rd + 100),
         player.volatility,
